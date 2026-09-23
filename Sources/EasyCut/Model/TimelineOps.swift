@@ -207,7 +207,8 @@ extension Project {
         var end = c.end
         if i + 1 < sorted.count {
             let next = sorted[i + 1].start
-            if next - c.end < 1.5 { end = max(c.end, next) }
+            // 문장 뒤 쉬는 시간(3초 이내)도 그 문장과 함께 옮기거나 지운다
+            if next - c.end < 3.0 { end = max(c.end, next) }
         }
         end = min(end, max(duration, c.end))
         return c.start...max(end, c.start + 0.05)
