@@ -31,6 +31,12 @@ struct ChatItem: Identifiable, Equatable {
     var text: String
 }
 
+enum AIBackend: String, CaseIterable, Identifiable {
+    case plan = "Claude 플랜 (Pro/Max 로그인)"
+    case api = "API 키"
+    var id: String { rawValue }
+}
+
 /// 앱 안의 AI 편집 도우미: Claude가 편집 도구(AITools)를 호출해 타임라인을 직접 고친다.
 @MainActor
 final class AIAssistant: ObservableObject {
@@ -38,8 +44,23 @@ final class AIAssistant: ObservableObject {
     @Published var busy = false
     @Published var hasKey = Keychain.load() != nil
     @Published var status = ""
+    @Published var needsLogin = false
+    @Published var backend: AIBackend = AIBackend(rawValue: UserDefaults.standard.string(forKey: "aiBackend") ?? "") ?? .plan {
+        didSet { UserDefaults.standard.set(backend.rawValue, forKey: "aiBackend"); reset() }
+    }
 
     static let model = "claude-opus-5"
+    private var process: Process?
+    private var planSession: String?
+
+    /// 설치된 Claude Code CLI (플랜 로그인으로 동작)
+    static var claudeBinary: String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = ["\(home)/.local/bin/claude", "\(home)/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    var ready: Bool { backend == .plan ? Self.claudeBinary != nil : hasKey }
     private var messages: [[String: Any]] = []
     private var task: Task<Void, Never>?
     unowned let store: EditorStore
@@ -66,6 +87,9 @@ final class AIAssistant: ObservableObject {
 
     func reset() {
         task?.cancel()
+        process?.terminate()
+        process = nil
+        planSession = nil
         messages = []
         items = []
         busy = false
@@ -74,6 +98,7 @@ final class AIAssistant: ObservableObject {
 
     func cancel() {
         task?.cancel()
+        process?.terminate()
         busy = false
         status = "중지됨"
     }
@@ -81,6 +106,7 @@ final class AIAssistant: ObservableObject {
     func send(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !busy else { return }
+        if backend == .plan { sendPlan(t); return }
         guard let key = Keychain.load() else {
             items.append(ChatItem(role: .error, text: "Claude API 키를 먼저 설정하세요."))
             return
@@ -94,6 +120,163 @@ final class AIAssistant: ObservableObject {
             self?.status = ""
         }
     }
+
+    // MARK: Claude 플랜 (Claude Code CLI 경유)
+
+    private func sendPlan(_ text: String) {
+        guard let bin = Self.claudeBinary else {
+            items.append(ChatItem(role: .error, text: "Claude Code가 설치되어 있지 않습니다. claude.com/claude-code 에서 설치 후 로그인하세요."))
+            return
+        }
+        items.append(ChatItem(role: .user, text: text))
+        busy = true
+        needsLogin = false
+        status = "Claude에 연결 중…"
+
+        let appBin = Bundle.main.executableURL?.path ?? "/Applications/EasyCut.app/Contents/MacOS/EasyCut"
+        let work = AppPaths.support.appendingPathComponent("ai-work", isDirectory: true)
+        try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        // 한글이 명령 인자로 넘어가면 자모로 분해되므로(파일시스템 표기) 프롬프트는 stdin, 나머지는 파일로 전달한다
+        let mcp: [String: Any] = ["mcpServers": ["easycut": ["command": appBin, "args": ["--mcp"]]]]
+        let mcpFile = work.appendingPathComponent("mcp.json")
+        let sysFile = work.appendingPathComponent("system.txt")
+        try? JSONSerialization.data(withJSONObject: mcp).write(to: mcpFile)
+        try? (Self.system + "\n편집 도구 이름은 mcp__easycut__ 로 시작합니다. 이 앱 편집 외의 작업(파일 수정, 명령 실행)은 하지 않습니다.")
+            .write(to: sysFile, atomically: true, encoding: .utf8)
+        var args = ["-p",
+                    "--output-format", "stream-json", "--verbose",
+                    "--tools", "",
+                    "--strict-mcp-config", "--mcp-config", mcpFile.path,
+                    "--allowedTools", "mcp__easycut",
+                    "--append-system-prompt-file", sysFile.path]
+        if let sid = planSession { args += ["--resume", sid] }
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bin)
+        p.arguments = args
+        p.currentDirectoryURL = work
+        // 사용자 플랜 로그인만 쓰도록 최소 환경으로 실행 (API 키·다른 Claude 세션 변수가 섞이지 않게)
+        let parent = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var env: [String: String] = [
+            "HOME": home,
+            "PATH": "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "LANG": "ko_KR.UTF-8",
+            "SHELL": "/bin/zsh",
+        ]
+        for k in ["USER", "LOGNAME", "TMPDIR", "SSH_AUTH_SOCK", "__CF_USER_TEXT_ENCODING"] { env[k] = parent[k] }
+        p.environment = env
+        let out = Pipe(), err = Pipe(), inp = Pipe()
+        p.standardOutput = out
+        p.standardError = err
+        p.standardInput = inp
+        let logURL = work.appendingPathComponent("last-run.log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        let log = try? FileHandle(forWritingTo: logURL)
+
+        final class LineBuffer: @unchecked Sendable { var data = Data() }
+        let buf = LineBuffer()
+        out.fileHandleForReading.readabilityHandler = { [weak self] h in
+            let chunk = h.availableData
+            guard !chunk.isEmpty else { return }
+            log?.write(chunk)
+            buf.data.append(chunk)
+            while let nl = buf.data.firstIndex(of: 0x0A) {
+                let line = buf.data[..<nl]
+                buf.data.removeSubrange(...nl)
+                guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { continue }
+                Task { @MainActor in self?.handlePlanEvent(obj) }
+            }
+        }
+        let errBuf = LineBuffer()
+        err.fileHandleForReading.readabilityHandler = { h in
+            let d = h.availableData
+            errBuf.data.append(d)
+            log?.write(d)
+        }
+        p.terminationHandler = { [weak self] proc in
+            Task { @MainActor in
+                out.fileHandleForReading.readabilityHandler = nil
+                err.fileHandleForReading.readabilityHandler = nil
+                guard let self else { return }
+                if proc.terminationStatus != 0 && proc.terminationReason != .uncaughtSignal && self.busy {
+                    let msg = String(decoding: errBuf.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !msg.isEmpty { self.report(msg) }
+                }
+                self.busy = false
+                self.status = ""
+                self.process = nil
+            }
+        }
+        do {
+            try p.run()
+            inp.fileHandleForWriting.write(Data(text.utf8))
+            try? inp.fileHandleForWriting.close()
+            process = p
+        } catch {
+            busy = false
+            items.append(ChatItem(role: .error, text: "Claude Code 실행 실패: \(error.localizedDescription)"))
+        }
+    }
+
+    private var lastAssistantText = ""
+
+    private func handlePlanEvent(_ e: [String: Any]) {
+        switch e["type"] as? String {
+        case "system":
+            if let sid = e["session_id"] as? String { planSession = sid }
+            status = "생각 중…"
+        case "assistant":
+            let content = (e["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
+            for b in content {
+                switch b["type"] as? String {
+                case "text":
+                    let t = (b["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !t.isEmpty else { continue }
+                    if Self.isAuthError(t) { report(t); continue }
+                    lastAssistantText = t
+                    items.append(ChatItem(role: .assistant, text: t))
+                case "tool_use":
+                    let name = (b["name"] as? String ?? "").replacingOccurrences(of: "mcp__easycut__", with: "")
+                    status = "실행: \(Self.label(name))"
+                    if !name.hasPrefix("get_") { items.append(ChatItem(role: .tool, text: Self.label(name))) }
+                default: break
+                }
+            }
+        case "user":
+            status = "생각 중…"
+        case "result":
+            if let sid = e["session_id"] as? String { planSession = sid }
+            let text = (e["result"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if (e["is_error"] as? Bool) == true {
+                let dupAuth = Self.isAuthError(text) && needsLogin
+                if !dupAuth && text != lastAssistantText { report(text.isEmpty ? "Claude 오류" : text) }
+            } else if !text.isEmpty && text != lastAssistantText {
+                items.append(ChatItem(role: .assistant, text: text))
+            }
+            busy = false
+            status = ""
+        default:
+            break
+        }
+    }
+
+    static func isAuthError(_ t: String) -> Bool {
+        let l = t.lowercased()
+        return l.contains("authenticate") || l.contains("oauth") || l.contains("/login") || l.contains("not logged in") || l.contains("invalid api key")
+    }
+
+    private func report(_ t: String) {
+        if Self.isAuthError(t) {
+            needsLogin = true
+            items.append(ChatItem(role: .error, text: "Claude 로그인이 필요합니다. 터미널에서 claude 를 실행하고 /login 으로 Pro/Max 계정에 로그인한 뒤 다시 시도하세요."))
+            planSession = nil
+        } else {
+            items.append(ChatItem(role: .error, text: t))
+        }
+    }
+
+    // MARK: API 키 경로
 
     private func loop(key: String) async {
         for _ in 0..<25 {

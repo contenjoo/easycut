@@ -27,6 +27,8 @@ struct WhisperModel: Identifiable, Hashable {
     let id: String
     let title: String
     let sizeMB: Int
+    /// whisper.cpp --dtw 프리셋 (단어 시간 정렬)
+    let dtw: String
     var fileName: String { "ggml-\(id).bin" }
     var url: URL { URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(fileName)")! }
     var localURL: URL { AppPaths.models.appendingPathComponent(fileName) }
@@ -35,9 +37,9 @@ struct WhisperModel: Identifiable, Hashable {
     }
 
     static let all: [WhisperModel] = [
-        .init(id: "large-v3-turbo-q5_0", title: "Large v3 Turbo (추천, 정확·빠름)", sizeMB: 574),
-        .init(id: "small", title: "Small (가벼움)", sizeMB: 488),
-        .init(id: "base", title: "Base (매우 가벼움, 정확도 낮음)", sizeMB: 148),
+        .init(id: "large-v3-turbo-q5_0", title: "Large v3 Turbo (추천, 정확·빠름)", sizeMB: 574, dtw: "large.v3.turbo"),
+        .init(id: "small", title: "Small (가벼움)", sizeMB: 488, dtw: "small"),
+        .init(id: "base", title: "Base (매우 가벼움, 정확도 낮음)", sizeMB: 148, dtw: "base"),
     ]
 }
 
@@ -286,7 +288,7 @@ enum Transcriber {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = ["-m", model.localURL.path, "-f", wav.path, "-l", language.whisperCode,
-                       "-ml", "1", "-sow", "-oj", "-of", outBase, "-pp",
+                       "-ojf", "--dtw", model.dtw, "-nfa", "-of", outBase, "-pp",
                        "-t", "\(max(2, ProcessInfo.processInfo.activeProcessorCount - 2))"]
         let err = Pipe()
         p.standardError = err
@@ -316,7 +318,56 @@ enum Transcriber {
         }
         let data = try Data(contentsOf: URL(fileURLWithPath: outBase + ".json"))
         progress(1, "완료")
-        return fixOverlaps(parseWhisperJSON(data))
+        return fixOverlaps(parseWhisperFull(data))
+    }
+
+    /// -ojf(토큰 포함) 출력 파싱. 단어 글자는 세그먼트 문장에서, 시간은 DTW 토큰 시간에서 가져온다.
+    static func parseWhisperFull(_ data: Data) -> [Word] {
+        let text = String(decoding: data, as: UTF8.self)
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+              let segs = obj["transcription"] as? [[String: Any]] else { return [] }
+        var words: [Word] = []
+        for seg in segs {
+            let off = seg["offsets"] as? [String: Any]
+            let segFrom = ((off?["from"] as? NSNumber)?.doubleValue ?? 0) / 1000
+            let segTo = ((off?["to"] as? NSNumber)?.doubleValue ?? 0) / 1000
+            let segText = (seg["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let segWords = segText.split(whereSeparator: \.isWhitespace).map(String.init).filter { !$0.hasPrefix("[") }
+            guard !segWords.isEmpty else { continue }
+            // 토큰을 단어로 묶기 (앞 공백 = 새 단어)
+            var starts: [Double] = []
+            var sawToken = false
+            for t in seg["tokens"] as? [[String: Any]] ?? [] {
+                let tt = t["text"] as? String ?? ""
+                if tt.hasPrefix("[_") { continue }
+                let dtw = (t["t_dtw"] as? NSNumber)?.doubleValue ?? -1
+                let from = ((t["offsets"] as? [String: Any])?["from"] as? NSNumber)?.doubleValue ?? -1
+                let time = dtw >= 0 ? dtw / 100 - 0.15 : from / 1000
+                if tt.hasPrefix(" ") || !sawToken {
+                    if tt.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+                    starts.append(time)
+                    sawToken = true
+                }
+            }
+            var times: [Double]
+            if starts.count == segWords.count {
+                times = starts
+            } else {
+                // 개수가 안 맞으면 글자 수 비율로 세그먼트 안에 나눈다
+                let total = Double(segWords.map(\.count).reduce(0, +))
+                var acc = 0.0
+                times = segWords.map { w in
+                    defer { acc += Double(w.count) }
+                    return segFrom + (segTo - segFrom) * acc / max(1, total)
+                }
+            }
+            for (k, w) in segWords.enumerated() {
+                let st = max(segFrom, times[k])
+                let en = k + 1 < times.count ? max(st + 0.05, times[k + 1]) : max(st + 0.1, segTo)
+                words.append(Word(text: w, start: st, end: en))
+            }
+        }
+        return words
     }
 
     static func parseWhisperJSON(_ data: Data) -> [Word] {

@@ -25,9 +25,13 @@ struct AIPanel: View {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(.purple)
                 Text("AI 편집").font(.headline)
-                Text("Claude").font(.caption).foregroundStyle(.secondary)
+                Text(ai.backend == .plan ? "Claude 플랜" : "Claude API").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Menu {
+                    Picker("연결 방식", selection: $ai.backend) {
+                        ForEach(AIBackend.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    Divider()
                     Button("API 키 설정…") { showKey = true }
                     Button("Claude Code / 데스크톱에 연결…") { showConnect = true }
                     Divider()
@@ -38,7 +42,17 @@ struct AIPanel: View {
             .padding(10)
             Divider()
 
-            if !ai.hasKey {
+            if ai.backend == .plan && !ai.ready {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Claude 플랜으로 쓰려면 Claude Code가 필요합니다.").font(.callout.weight(.semibold))
+                    Text("Claude Code를 설치하고 터미널에서 claude 실행 → /login 으로 Pro/Max 계정에 로그인하면, API 키 없이 구독 플랜으로 AI 편집을 쓸 수 있습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Claude Code 설치 안내 열기") { NSWorkspace.shared.open(URL(string: "https://claude.com/claude-code")!) }
+                    Button("API 키 방식으로 바꾸기") { ai.backend = .api }.controlSize(.small)
+                    Spacer()
+                }
+                .padding(12)
+            } else if ai.backend == .api && !ai.hasKey {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("말로 편집하려면 Claude API 키가 필요합니다.").font(.callout.weight(.semibold))
                     Text("console.anthropic.com 에서 키를 만든 뒤 아래에 붙여 넣으세요. 키는 이 Mac의 키체인에만 저장됩니다.")
@@ -90,6 +104,17 @@ struct AIPanel: View {
                     .onChange(of: ai.items.count) { _, _ in
                         withAnimation { proxy.scrollTo(ai.items.last?.id, anchor: .bottom) }
                     }
+                }
+                if ai.needsLogin {
+                    HStack {
+                        Image(systemName: "person.badge.key.fill").foregroundStyle(.orange)
+                        Text("터미널에서  claude  →  /login").font(.system(.caption, design: .monospaced))
+                        Spacer()
+                        Button("터미널 열기") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")) }
+                            .controlSize(.small)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.12))
                 }
                 Divider()
                 HStack(alignment: .bottom, spacing: 6) {
