@@ -4,7 +4,7 @@
 
 ## 설치 (배포용)
 
-`dist/EasyCut-1.1.0.dmg` 를 나눠 주면 됩니다. **M1 이상 Apple Silicon Mac, macOS 14 이상** 전용입니다.
+`dist/EasyCut-1.2.0.dmg` 를 나눠 주면 됩니다. **M1 이상 Apple Silicon Mac, macOS 14 이상** 전용입니다.
 Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다.
 사용자용 설치 안내는 DMG 안의 `설치 방법.txt`에 있습니다.
 
