@@ -23,6 +23,13 @@ enum MediaConverter {
         convertibleExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// 받은 MP4가 VP9/AV1처럼 macOS 편집에 맞지 않는 코덱인지
+    static func needsTranscode(_ url: URL) -> Bool {
+        guard let ffprobe, let info = try? probe(ffprobe, url) else { return false }
+        guard let v = info.videoCodec else { return false }
+        return !["h264", "hevc", "prores"].contains(v)
+    }
+
     struct Result {
         let video: URL
         let subtitles: [Caption]

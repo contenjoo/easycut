@@ -152,6 +152,8 @@ struct TransportBar: View {
                 Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .foregroundStyle(.secondary)
                     .help("미리보기 볼륨")
+                LevelMeter(level: player.level)
+                    .help("재생 중인 소리 크기 — 막대가 움직이는데 안 들리면 Mac 출력 장치/음량을 확인하세요")
                 Slider(value: Binding(get: { Double(player.volume) }, set: { player.volume = Float($0) }), in: 0...1)
                     .frame(width: 60)
                     .controlSize(.small)
@@ -167,6 +169,24 @@ struct TransportBar: View {
         Button(action: action) { Image(systemName: name).frame(width: 20, height: 20) }
             .buttonStyle(.borderless)
             .help(help)
+    }
+}
+
+/// 재생 소리 크기 막대
+struct LevelMeter: View {
+    let level: Float
+
+    var body: some View {
+        let db = 20 * log10(max(Double(level), 0.0001))
+        let fill = max(0, min(1, (db + 50) / 50))
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.25))
+            RoundedRectangle(cornerRadius: 2)
+                .fill(fill > 0.9 ? Color.red : (fill > 0.7 ? Color.yellow : Color.green))
+                .frame(height: 18 * fill)
+        }
+        .frame(width: 6, height: 18)
+        .animation(.linear(duration: 0.05), value: fill)
     }
 }
 

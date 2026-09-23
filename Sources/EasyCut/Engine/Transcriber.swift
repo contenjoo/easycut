@@ -139,19 +139,22 @@ enum Transcriber {
 
     // MARK: 인식
 
+    static var whisperReady: Bool { whisperBinary != nil && WhisperModel.all.contains(where: \.isInstalled) }
+
     static func transcribe(url: URL, engine: STTEngine, language: STTLanguage, whisperModel: WhisperModel?,
+                           partial: (([Word]) -> Void)? = nil,
                            progress: @escaping (Double, String) -> Void) async throws -> [Word] {
         progress(0, "오디오 추출 중…")
         let samples = try await pcm16k(url: url)
         guard !samples.isEmpty else { return [] }
         switch engine {
         case .apple:
-            return try await transcribeApple(samples: samples, language: language, progress: progress)
+            return try await transcribeApple(samples: samples, language: language, partial: partial, progress: progress)
         case .whisper:
-            guard let model = whisperModel ?? WhisperModel.all.first(where: \.isInstalled) else {
+            guard let model = (whisperModel?.isInstalled == true ? whisperModel : nil) ?? WhisperModel.all.first(where: \.isInstalled) else {
                 throw MediaError.failed("Whisper 모델이 없습니다. 설정에서 모델을 내려받아 주세요.")
             }
-            return try await transcribeWhisper(samples: samples, language: language, model: model, progress: progress)
+            return try await transcribeWhisper(samples: samples, language: language, model: model, partial: partial, progress: progress)
         }
     }
 
@@ -163,7 +166,8 @@ enum Transcriber {
         }
     }
 
-    static func transcribeApple(samples: [Int16], language: STTLanguage, progress: @escaping (Double, String) -> Void) async throws -> [Word] {
+    static func transcribeApple(samples: [Int16], language: STTLanguage, partial: (([Word]) -> Void)? = nil,
+                                progress: @escaping (Double, String) -> Void) async throws -> [Word] {
         let auth = await requestAuthorization()
         guard auth == .authorized else {
             throw MediaError.failed("음성 인식 권한이 없습니다. 시스템 설정 › 개인정보 보호 및 보안 › 음성 인식에서 EasyCut을 허용해 주세요.")
@@ -177,9 +181,15 @@ enum Transcriber {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         var words: [Word] = []
+        let started = Date()
         for (i, r) in parts.enumerated() {
             try Task.checkCancellation()
-            progress(Double(i) / Double(parts.count), "음성 인식 중… (\(i + 1)/\(parts.count))")
+            var eta = ""
+            if i >= 2 {
+                let per = Date().timeIntervalSince(started) / Double(i)
+                eta = " · 남은 시간 약 \(TimeFormat.short(per * Double(parts.count - i)))"
+            }
+            progress(Double(i) / Double(parts.count), "음성 인식 중… (\(i + 1)/\(parts.count))\(eta)")
             let slice = samples[r]
             if rms(slice) < 60 { continue } // 거의 무음
             let url = dir.appendingPathComponent("c\(i).wav")
@@ -193,6 +203,8 @@ enum Transcriber {
                 let cap = 0.35 + Double(text.count) * 0.22
                 words.append(Word(text: text, start: offset + s.start, end: offset + s.start + min(max(0.05, s.duration), cap)))
             }
+            // 인식된 부분은 바로 대본에 보여 준다
+            if !segs.isEmpty { partial?(fixOverlaps(words)) }
         }
         progress(1, "완료")
         return fixOverlaps(words)
@@ -272,7 +284,7 @@ enum Transcriber {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    static func transcribeWhisper(samples: [Int16], language: STTLanguage, model: WhisperModel,
+    static func transcribeWhisper(samples: [Int16], language: STTLanguage, model: WhisperModel, partial: (([Word]) -> Void)? = nil,
                                   progress: @escaping (Double, String) -> Void) async throws -> [Word] {
         guard let bin = whisperBinary else {
             throw MediaError.failed("whisper-cli가 설치되어 있지 않습니다. 터미널에서 'brew install whisper-cpp'를 실행해 주세요.")
@@ -289,10 +301,28 @@ enum Transcriber {
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = ["-m", model.localURL.path, "-f", wav.path, "-l", language.whisperCode,
                        "-ojf", "--dtw", model.dtw, "-nfa", "-of", outBase, "-pp",
+                       // 이전 문장을 문맥으로 쓰지 않아 긴 녹화에서 같은 문장이 반복되는 현상을 막는다
+                       "-mc", "0",
                        "-t", "\(max(2, ProcessInfo.processInfo.activeProcessorCount - 2))"]
         let err = Pipe()
         p.standardError = err
-        p.standardOutput = FileHandle.nullDevice
+        // 진행 중 출력되는 문장("[00:00:01.000 --> 00:00:04.000]  내용")으로 대본을 미리 보여 준다
+        let outPipe = Pipe()
+        p.standardOutput = outPipe
+        final class Live: @unchecked Sendable { var buf = Data(); var words: [Word] = [] }
+        let live = Live()
+        outPipe.fileHandleForReading.readabilityHandler = { h in
+            live.buf.append(h.availableData)
+            var changed = false
+            while let nl = live.buf.firstIndex(of: 0x0A) {
+                let line = String(decoding: live.buf[..<nl], as: UTF8.self)
+                live.buf.removeSubrange(...nl)
+                guard let seg = parseWhisperLine(line) else { continue }
+                live.words += seg
+                changed = true
+            }
+            if changed { partial?(live.words) }
+        }
         final class Tail: @unchecked Sendable { var text = "" }
         let tailBox = Tail()
         err.fileHandleForReading.readabilityHandler = { h in
@@ -312,6 +342,7 @@ enum Transcriber {
             p.terminate()
         }
         err.fileHandleForReading.readabilityHandler = nil
+        outPipe.fileHandleForReading.readabilityHandler = nil
         try Task.checkCancellation()
         guard p.terminationStatus == 0 else {
             throw MediaError.failed("Whisper 실행 실패 (코드 \(p.terminationStatus))\n\(tailBox.text.suffix(400))")
@@ -319,6 +350,29 @@ enum Transcriber {
         let data = try Data(contentsOf: URL(fileURLWithPath: outBase + ".json"))
         progress(1, "완료")
         return fixOverlaps(parseWhisperFull(data))
+    }
+
+    /// "[00:01:02.300 --> 00:01:05.100]  문장" → 글자 수 비율로 나눈 단어들
+    static func parseWhisperLine(_ line: String) -> [Word]? {
+        guard line.hasPrefix("["), let close = line.firstIndex(of: "]") else { return nil }
+        let stamp = line[line.index(after: line.startIndex)..<close].components(separatedBy: " --> ")
+        guard stamp.count == 2, let a = clockSeconds(stamp[0]), let b = clockSeconds(stamp[1]), b > a else { return nil }
+        let text = line[line.index(after: close)...].trimmingCharacters(in: .whitespaces)
+        let parts = text.split(whereSeparator: \.isWhitespace).map(String.init).filter { !$0.hasPrefix("[") && !$0.hasPrefix("(") }
+        guard !parts.isEmpty else { return nil }
+        let total = Double(parts.map(\.count).reduce(0, +))
+        var acc = 0.0
+        return parts.map { w in
+            let s = a + (b - a) * acc / total
+            acc += Double(w.count)
+            return Word(text: w, start: s, end: a + (b - a) * acc / total)
+        }
+    }
+
+    static func clockSeconds(_ s: String) -> Double? {
+        let p = s.trimmingCharacters(in: .whitespaces).split(separator: ":")
+        guard p.count == 3, let h = Double(p[0]), let m = Double(p[1]), let sec = Double(p[2]) else { return nil }
+        return h * 3600 + m * 60 + sec
     }
 
     /// -ojf(토큰 포함) 출력 파싱. 단어 글자는 세그먼트 문장에서, 시간은 DTW 토큰 시간에서 가져온다.

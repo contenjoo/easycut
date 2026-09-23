@@ -43,6 +43,16 @@ struct TranscriptPanel: View {
                 }
             }
 
+            if store.sttEngine == .apple && Transcriber.whisperReady {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill").foregroundStyle(.yellow)
+                    Text("Whisper가 설치되어 있어요. 긴 영상은 Whisper가 훨씬 빠르고 정확합니다.").font(.caption)
+                    Spacer(minLength: 0)
+                    Button("Whisper로 바꾸기") { store.sttEngine = .whisper }.controlSize(.small)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Color.yellow.opacity(0.1))
+            }
             Divider()
             if words.isEmpty {
                 VStack(spacing: 10) {

@@ -12,6 +12,29 @@ enum Main {
             IconMaker.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
             return
         }
+        if let i = CommandLine.arguments.firstIndex(of: "--audio-probe"), i + 2 < CommandLine.arguments.count {
+            SelfTest.audioProbe(URL(fileURLWithPath: CommandLine.arguments[i + 1]), at: Double(CommandLine.arguments[i + 2]) ?? 0)
+            return
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--link-test"), i + 1 < CommandLine.arguments.count {
+            let a = CommandLine.arguments
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached {
+                var o = LinkImporter.Options()
+                o.quality = .p720
+                if i + 3 < a.count { o.start = Double(a[i + 2]); o.end = Double(a[i + 3]) }
+                do {
+                    let r = try await LinkImporter.download(a[i + 1], options: o) { v, m in if Int(v * 100) % 25 == 0 { print(m) } }
+                    let transcode = MediaConverter.needsTranscode(r.file)
+                    let asset = try await MediaProbe.probe(r.file)
+                    print("완료:", r.file.path, "제목:", r.title, String(format: "길이 %.1f초 %d×%d 오디오:%@ 변환필요:%@ 자막:%d",
+                          asset.duration, Int(asset.width), Int(asset.height), asset.hasAudio ? "예" : "아니오", transcode ? "예" : "아니오", r.subtitles.count))
+                } catch { print("오류:", error.localizedDescription) }
+                sem.signal()
+            }
+            while sem.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            return
+        }
         if CommandLine.arguments.contains("--mcp") {
             MCPBridge.run()
             return
@@ -49,8 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openURLs(urls)
     }
 
-    private func openURLs(_ urls: [URL]) {
-        guard let store else { return }
+    private var recent: [String: Date] = [:]
+
+    /// 같은 파일이 두 경로(델리게이트·onOpenURL)로 동시에 들어와도 한 번만 연다
+    func openURLs(_ urls: [URL]) {
+        guard let store else { pending += urls; return }
+        let now = Date()
+        let urls = urls.filter { u in
+            defer { recent[u.path] = now }
+            return now.timeIntervalSince(recent[u.path] ?? .distantPast) > 3
+        }
+        guard !urls.isEmpty else { return }
         MainActor.assumeIsolated {
             let projects = urls.filter { $0.pathExtension.lowercased() == "easycut" }
             if let p = projects.first { store.open(p) }
@@ -68,6 +100,8 @@ struct EasyCutApp: App {
         Window("EasyCut", id: "main") {
             ContentView(store: store)
                 .onAppear { delegate.store = store }
+                // 앱이 꺼진 상태에서 파일로 실행될 때 SwiftUI가 넘겨주는 경로
+                .onOpenURL { url in if url.isFileURL { delegate.openURLs([url]) } }
                 .preferredColorScheme(.dark)
         }
         .defaultSize(width: 1440, height: 900)
@@ -91,6 +125,7 @@ struct AppCommands: Commands {
             Button("프로젝트 열기…") { store.openPanel() }.keyboardShortcut("o")
             Divider()
             Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")
+            Button("링크로 가져오기 (유튜브 등)…") { store.showLinkSheet = true }.keyboardShortcut("i", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .saveItem) {
             Button("저장") { store.save() }.keyboardShortcut("s")

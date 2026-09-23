@@ -12,6 +12,11 @@ final class PlayerController: ObservableObject {
     @Published private(set) var speed: Double = 1
     @Published private(set) var duration: Double = 0
     @Published var volume: Float = 1 { didSet { player.volume = volume } }
+    /// 지금 재생 중인 소리 크기 (0~1, 음량 미터용)
+    @Published private(set) var level: Float = 0
+
+    private let meter = AudioMeter()
+    private var meterTimer: Timer?
 
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -36,7 +41,7 @@ final class PlayerController: ObservableObject {
         let wasPlaying = isPlaying
         let item = AVPlayerItem(asset: built.composition)
         item.videoComposition = built.videoComposition
-        item.audioMix = built.audioMix
+        item.audioMix = meter.tapped(built.audioMix)
         item.audioTimePitchAlgorithm = .spectral
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
@@ -70,6 +75,25 @@ final class PlayerController: ObservableObject {
         if time >= duration - 0.05 { seek(0) }
         isPlaying = true
         applyRate()
+        startMeter()
+    }
+
+    private func startMeter() {
+        guard meterTimer == nil else { return }
+        _ = meter.take()
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let v = self.meter.take()
+                // 빠르게 오르고 천천히 내려가게
+                self.level = max(v, self.level * 0.8)
+                if !self.isPlaying && self.level < 0.01 {
+                    self.level = 0
+                    self.meterTimer?.invalidate()
+                    self.meterTimer = nil
+                }
+            }
+        }
     }
 
     func pause() {

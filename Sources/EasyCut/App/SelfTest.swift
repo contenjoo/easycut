@@ -34,6 +34,27 @@ enum SelfTest {
         exit(failures == 0 ? 0 : 1)
     }
 
+    /// `--audio-probe 파일 시간` : 앱과 같은 재생 경로로 해당 파일 소리 측정
+    static func audioProbe(_ url: URL, at t: Double) {
+        let sem = DispatchSemaphore(value: 0)
+        Task.detached {
+            do {
+                let a = try await MediaProbe.probe(url)
+                var p = Project()
+                p.assets = [a]
+                p.insert(asset: a, track: 0, at: 0)
+                let built = try await CompositionBuilder.build(project: p, renderSize: CompositionBuilder.previewSize(for: p))
+                print("오디오 트랙 수(합성):", built.composition.tracks(withMediaType: .audio).count, "믹스 입력:", built.audioMix.inputParameters.count)
+                for sp: Float in [1, 2] {
+                    let peak = try await AudioProbe.measure(built: built, rate: sp, seconds: 1.5, at: t)
+                    print(String(format: "%gx @%.0f초: 최대 음량 %.3f", sp, t, peak))
+                }
+            } catch { print("오류:", error) }
+            sem.signal()
+        }
+        while sem.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
     static func runAsync(_ dir: URL) async throws {
         print("1) 모델 연산")
         testTimelineOps()
@@ -221,6 +242,13 @@ enum SelfTest {
         await MainActor.run { player.pause() }
         print(String(format: "  canPlayFastForward=%@ rate=%.1f, 0.4초 동안 %.2f초 진행", ff ? "예" : "아니오", rate, r1 - r0))
         check((r1 - r0) > 3.0 || !ff, "20배속 재생 진행 (터보 모드 대체 가능)")
+
+        print("8) 재생 소리 (실제 재생 중 오디오 신호 측정)")
+        for sp: Float in [1, 2, 4, 8, 20] {
+            let peak = try await AudioProbe.measure(built: built, rate: sp, seconds: sp >= 4 ? 0.5 : 1.0)
+            print(String(format: "  %gx: 최대 음량 %.3f", sp, peak))
+            if sp <= 2 { check(peak > 0.01, "\(Int(sp))배속 재생 시 소리 나옴") }
+        }
     }
 
     static func testTimelineOps() {
@@ -319,5 +347,54 @@ enum SelfTest {
         await withCheckedContinuation { c in ex.exportAsynchronously { c.resume() } }
         try? FileManager.default.removeItem(at: silent)
         if ex.status != .completed { throw MediaError.failed("테스트 영상 생성 실패: \(ex.error?.localizedDescription ?? "")") }
+    }
+}
+
+import MediaToolbox
+
+/// 재생 중인 오디오를 탭으로 잡아 최대 음량 측정 (진단용)
+enum AudioProbe {
+    final class Box: @unchecked Sendable { var peak: Float = 0 }
+
+    static func measure(built: BuiltComposition, rate: Float, seconds: Double, at start: Double = 0.3) async throws -> Float {
+        let box = Box()
+        let item = AVPlayerItem(asset: built.composition)
+        item.videoComposition = built.videoComposition
+        item.audioTimePitchAlgorithm = .spectral
+        let mix = AVMutableAudioMix()
+        var params: [AVMutableAudioMixInputParameters] = []
+        for p in built.audioMix.inputParameters {
+            guard let mp = p.mutableCopy() as? AVMutableAudioMixInputParameters else { continue }
+            var cb = MTAudioProcessingTapCallbacks(
+                version: kMTAudioProcessingTapCallbacksVersion_0,
+                clientInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(box).toOpaque()),
+                init: { _, info, storage in storage.pointee = info },
+                finalize: nil, prepare: nil, unprepare: nil,
+                process: { tap, frames, _, abl, framesOut, flagsOut in
+                    guard MTAudioProcessingTapGetSourceAudio(tap, frames, abl, flagsOut, nil, framesOut) == noErr else { return }
+                    let b = Unmanaged<Box>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue()
+                    for buf in UnsafeMutableAudioBufferListPointer(abl) {
+                        guard let d = buf.mData?.assumingMemoryBound(to: Float.self) else { continue }
+                        let n = Int(buf.mDataByteSize) / 4
+                        for i in 0..<n { b.peak = max(b.peak, abs(d[i])) }
+                    }
+                })
+            var tap: Unmanaged<MTAudioProcessingTap>?
+            if MTAudioProcessingTapCreate(kCFAllocatorDefault, &cb, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr {
+                mp.audioTapProcessor = tap?.takeRetainedValue()
+            }
+            params.append(mp)
+        }
+        mix.inputParameters = params
+        item.audioMix = mix
+        let player = AVPlayer(playerItem: item)
+        player.volume = 0 // 스피커로는 내보내지 않음
+        player.automaticallyWaitsToMinimizeStalling = false
+        for _ in 0..<50 where item.status != .readyToPlay { try await Task.sleep(nanoseconds: 100_000_000) }
+        await player.seek(to: CMTime(seconds: start, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.rate = rate
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        player.pause()
+        return box.peak
     }
 }

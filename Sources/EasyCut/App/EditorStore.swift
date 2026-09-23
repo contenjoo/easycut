@@ -36,6 +36,7 @@ final class EditorStore: ObservableObject {
     @Published var showShortcuts = false
     @Published var showSTTSettings = false
     @Published var showSilenceSheet = false
+    @Published var showLinkSheet = false
     @Published var snapping = true
     @Published var followPlayhead = true
     @Published var timelineVersion = 0
@@ -82,6 +83,26 @@ final class EditorStore: ObservableObject {
 
     init() {
         Task { _ = try? await BlankVideo.url() }
+        // Whisper가 준비돼 있고 사용자가 엔진을 고른 적 없으면 더 빠르고 정확한 Whisper를 기본으로
+        if UserDefaults.standard.object(forKey: "sttEngine") == nil && Transcriber.whisperReady {
+            sttEngineRaw = STTEngine.whisper.rawValue
+        }
+    }
+
+    /// 인식 중간 결과를 실행 취소 기록 없이 바로 반영
+    private func setWordsLive(_ id: UUID, _ words: [Word]) {
+        guard let i = project.assets.firstIndex(where: { $0.id == id }) else { return }
+        project.assets[i].words = words
+        timelineVersion += 1
+    }
+
+    /// 실행 취소로 되돌릴 때 그 뒤에 생긴 대본은 지우지 않는다
+    private func keepTranscripts(_ p: Project) -> Project {
+        var p = p
+        for i in p.assets.indices where p.assets[i].words == nil {
+            if let cur = project.asset(p.assets[i].id)?.words { p.assets[i].words = cur }
+        }
+        return p
     }
 
     // MARK: 변경 적용
@@ -118,7 +139,7 @@ final class EditorStore: ObservableObject {
         guard let prev = undoStack.popLast() else { return }
         redoStack.append(project)
         lastCoalesceKey = nil
-        setProject(prev)
+        setProject(keepTranscripts(prev))
         showToast("실행 취소")
     }
 
@@ -126,7 +147,7 @@ final class EditorStore: ObservableObject {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(project)
         lastCoalesceKey = nil
-        setProject(next)
+        setProject(keepTranscripts(next))
         showToast("다시 실행")
     }
 
@@ -171,11 +192,42 @@ final class EditorStore: ObservableObject {
     }
 
     /// 파일을 미디어 목록에 추가. place가 있으면 타임라인에도 놓는다.
-    func importFiles(_ urls: [URL], place: (track: Int, time: Double)? = nil) {
-        Task {
+    func importFiles(_ urls: [URL], place: (track: Int, time: Double)? = nil, subtitles: [Caption] = []) {
+        Task { await importFilesNow(urls, place: place, subtitles: subtitles) }
+    }
+
+    /// 영상 링크(유튜브 등)에서 받아 가져오기. 성공하면 받은 파일 경로
+    @discardableResult
+    func importLink(_ link: String, options: LinkImporter.Options) async -> URL? {
+        let key = "링크 영상"
+        converting[key] = JobProgress(value: 0, message: "준비 중…")
+        leftTab = .media
+        defer { converting[key] = nil }
+        do {
+            let r = try await LinkImporter.download(link, options: options) { v, m in
+                Task { @MainActor [weak self] in if self?.converting[key] != nil { self?.converting[key] = JobProgress(value: v, message: m) } }
+            }
+            var file = r.file
+            if MediaConverter.needsTranscode(file) {
+                converting[key] = JobProgress(value: 0, message: "편집용으로 변환 중…")
+                let c = try await MediaConverter.convert(file) { v, m in
+                    Task { @MainActor [weak self] in if self?.converting[key] != nil { self?.converting[key] = JobProgress(value: v, message: m) } }
+                }
+                file = c.video
+            }
+            await importFilesNow([file], place: nil, subtitles: r.subtitles)
+            return r.file
+        } catch {
+            if !(error is CancellationError) { alert = error.localizedDescription }
+            return nil
+        }
+    }
+
+    private func importFilesNow(_ urls: [URL], place: (track: Int, time: Double)?, subtitles: [Caption]) async {
+        do {
             var added: [MediaAsset] = []
             var failed: [String] = []
-            var embeddedSubs: [Caption] = []
+            var embeddedSubs: [Caption] = subtitles
             for url in urls {
                 if let existing = project.assets.first(where: { $0.path == url.path || $0.originalPath == url.path }) { added.append(existing); continue }
                 do {
@@ -223,7 +275,7 @@ final class EditorStore: ObservableObject {
                 apply { $0.captions = embeddedSubs; $0.showCaptions = true }
             }
             for a in added { media.prepare(a) }
-            showToast("\(added.count)개 파일을 가져왔습니다" + (embeddedSubs.isEmpty ? "" : " (내장 자막 \(embeddedSubs.count)개)"))
+            showToast("\(added.count)개 파일을 가져왔습니다" + (embeddedSubs.isEmpty ? "" : " (자막 \(embeddedSubs.count)개)"))
         }
     }
 
@@ -544,7 +596,12 @@ final class EditorStore: ObservableObject {
         leftTab = .transcript
         transcribeTasks[assetID] = Task { [weak self] in
             do {
-                let words = try await Transcriber.transcribe(url: asset.url, engine: engine, language: lang, whisperModel: model) { v, m in
+                let words = try await Transcriber.transcribe(url: asset.url, engine: engine, language: lang, whisperModel: model, partial: { ws in
+                    Task { @MainActor in
+                        guard let self, self.transcribing[assetID] != nil else { return }
+                        self.setWordsLive(assetID, ws)
+                    }
+                }) { v, m in
                     Task { @MainActor in self?.transcribing[assetID] = JobProgress(value: v, message: m) }
                 }
                 guard let self else { return }
@@ -561,6 +618,7 @@ final class EditorStore: ObservableObject {
                 self.transcribing[assetID] = nil
                 self.transcribeTasks[assetID] = nil
                 if !(error is CancellationError) { self.alert = error.localizedDescription }
+                else if self.project.asset(assetID)?.words?.isEmpty == false { self.showToast("음성 인식을 중지했습니다 (인식된 부분까지 남김)") }
             }
         }
     }

@@ -64,6 +64,10 @@ enum AITools {
         tool("set_playhead", "재생헤드를 옮긴다.", ["time": num("초")], required: ["time"]),
         tool("set_playback_speed", "미리보기 재생 속도(0.25~20배)를 바꾸고 선택적으로 재생한다.",
              ["speed": num, "play": ["type": "boolean"]], required: ["speed"]),
+        tool("import_url", "유튜브 등 영상 링크를 내려받아 프로젝트에 가져온다(빈 타임라인이면 바로 배치). 사용자가 권한이 있는 영상만.",
+             ["url": str("영상 페이지 주소"), "quality": ["type": "string", "enum": ["720p", "1080p", "best", "audio"]] as [String: Any],
+              "start": num("일부만 받을 때 시작(초)"), "end": num("일부만 받을 때 끝(초)")],
+             required: ["url"]),
         tool("transcribe", "타임라인 영상/오디오의 음성 인식(STT)을 시작한다. 끝나면 대본과 자막이 생긴다(수 초~수 분)."),
         tool("undo", "마지막 편집을 되돌린다.", ["steps": ["type": "integer", "description": "되돌릴 횟수 (기본 1)"]]),
     ]
@@ -269,6 +273,14 @@ enum AITools {
             store.player.setSpeed(sp)
             if b("play") == true { store.player.play() }
             return ("미리보기 \(TimelineNSView.speedLabel(store.player.speed)) 재생 속도", false)
+
+        case "import_url":
+            guard let u = s("url"), LinkImporter.isLink(u) else { return ("올바른 링크가 필요합니다", true) }
+            var o = LinkImporter.Options()
+            switch s("quality") { case "720p": o.quality = .p720; case "best": o.quality = .best; case "audio": o.quality = .audio; default: o.quality = .p1080 }
+            o.start = d("start"); o.end = d("end")
+            guard let file = await store.importLink(u, options: o) else { return ("가져오기 실패", true) }
+            return changed("가져옴: \(file.lastPathComponent)")
 
         case "transcribe":
             let used = Set(store.project.tracks.flatMap(\.clips).compactMap(\.assetID))

@@ -17,6 +17,8 @@ struct MediaBinPanel: View {
                 Button { store.importPanel() } label: { Label("가져오기", systemImage: "plus") }
                     .buttonStyle(.borderedProminent)
                     .help("영상·오디오·사진 가져오기 (⌘I)")
+                Button { store.showLinkSheet = true } label: { Label("링크", systemImage: "link") }
+                    .help("유튜브 등 영상 링크로 가져오기 (⇧⌘I)")
                 Spacer()
                 Text("\(store.project.assets.count)개").font(.caption).foregroundStyle(.secondary)
             }

@@ -267,7 +267,7 @@ enum Shortcuts {
             .init(keys: "⌘=  /  ⌘-", desc: "타임라인 확대 / 축소 (⌘+스크롤)"),
             .init(keys: "⇧Z", desc: "타임라인 전체 보기"),
             .init(keys: "N", desc: "스냅(자석) 켜기/끄기"),
-            .init(keys: "⌘I", desc: "미디어 가져오기"),
+            .init(keys: "⌘I / ⇧⌘I", desc: "미디어 가져오기 / 링크(유튜브)로 가져오기"),
             .init(keys: "⌘E", desc: "내보내기"),
             .init(keys: "⌘S / ⇧⌘S", desc: "저장 / 다른 이름으로 저장"),
             .init(keys: "⌘O / ⌘N", desc: "열기 / 새 프로젝트"),
@@ -310,5 +310,81 @@ struct ShortcutsSheet: View {
         }
         .padding(22)
         .frame(width: 760, height: 560)
+    }
+}
+
+// MARK: 링크로 가져오기
+
+struct LinkSheet: View {
+    @ObservedObject var store: EditorStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var link = ""
+    @AppStorage("linkQuality") private var qualityRaw = LinkImporter.Quality.p1080.rawValue
+    @AppStorage("linkSubs") private var subtitles = true
+    @State private var partOnly = false
+    @State private var from = ""
+    @State private var to = ""
+
+    var quality: LinkImporter.Quality { LinkImporter.Quality(rawValue: qualityRaw) ?? .p1080 }
+    var valid: Bool { LinkImporter.isLink(link) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("링크로 가져오기", systemImage: "link").font(.title2.bold())
+            Text("유튜브 등 영상 페이지 주소를 붙여 넣으세요. 받은 파일은 ‘동영상 › EasyCut 다운로드’ 폴더에 저장됩니다.")
+                .font(.callout).foregroundStyle(.secondary)
+            TextField("https://www.youtube.com/watch?v=…", text: $link)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { if valid { start() } }
+            Form {
+                Picker("화질", selection: $qualityRaw) {
+                    ForEach(LinkImporter.Quality.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                }
+                Toggle("업로더가 올린 자막도 받기 (한국어·영어)", isOn: $subtitles)
+                    .disabled(quality == .audio)
+                Toggle("일부 구간만 받기", isOn: $partOnly)
+                if partOnly {
+                    HStack {
+                        TextField("시작 (예: 1:30)", text: $from)
+                        Text("~")
+                        TextField("끝 (예: 5:00)", text: $to)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            Label("본인 영상이나 저작권자에게 이용 허락을 받은 영상만 내려받아 편집하세요.", systemImage: "exclamationmark.shield")
+                .font(.caption).foregroundStyle(.orange)
+            if LinkImporter.ytdlp == nil {
+                Text("yt-dlp가 필요합니다: 터미널에서  brew install yt-dlp").font(.caption.monospaced()).foregroundStyle(.red)
+            }
+            HStack {
+                Button("클립보드에서 붙여넣기") {
+                    if let s = NSPasteboard.general.string(forType: .string) { link = s.trimmingCharacters(in: .whitespacesAndNewlines) }
+                }
+                Spacer()
+                Button("취소") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("가져오기") { start() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!valid || LinkImporter.ytdlp == nil)
+            }
+        }
+        .padding(22)
+        .frame(width: 520)
+        .onAppear {
+            if let s = NSPasteboard.general.string(forType: .string), LinkImporter.isLink(s) { link = s.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
+    }
+
+    func start() {
+        var o = LinkImporter.Options()
+        o.quality = quality
+        o.subtitles = subtitles
+        if partOnly {
+            o.start = LinkImporter.parseTime(from)
+            o.end = LinkImporter.parseTime(to)
+        }
+        let l = link
+        dismiss()
+        Task { await store.importLink(l, options: o) }
     }
 }
