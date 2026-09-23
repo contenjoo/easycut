@@ -19,8 +19,10 @@ enum AITools {
 
     static let definitions: [[String: Any]] = [
         tool("get_project_state", "현재 프로젝트 상태: 전체 길이, 재생헤드, 캔버스, 트랙별 클립(id, 종류, 이름, 시작/끝, 속도, 볼륨), 자막 목록 일부, 대본 유무, 선택 항목. 편집 전에 먼저 호출해 구조를 파악한다."),
-        tool("get_transcript", "타임라인 순서의 대본 단어 목록. 각 줄은 '[단어번호] 시작-끝 단어' (초, 타임라인 기준). 범위를 주면 그 구간만.",
+        tool("get_transcript", "대본을 문장 단위로 돌려준다. 각 줄은 '[첫단어번호-끝단어번호] 시작~끝초 문장'. 길면 from/to(초)로 범위를 나눠 읽는다. 특정 말을 찾을 때는 search_transcript가 훨씬 빠르다.",
              ["from": num("시작 시간(초), 선택"), "to": num("끝 시간(초), 선택")]),
+        tool("search_transcript", "대본에서 문구를 찾아 해당 단어 번호 구간과 시간을 돌려준다(띄어쓰기 무시). 찾은 번호로 delete_words를 바로 쓸 수 있다.",
+             ["query": str("찾을 말"), "limit": ["type": "integer", "description": "최대 결과 수 (기본 30)"]], required: ["query"]),
         tool("delete_words", "대본 단어 번호 구간을 삭제한다. 해당 말이 영상·오디오·자막에서 함께 잘리고 뒤가 당겨진다. 번호는 get_transcript 기준이며 삭제 후 번호가 바뀌므로 여러 구간은 한 번에 보낸다.",
              ["ranges": ["type": "array", "description": "삭제할 단어 번호 구간 목록 (from~to 포함)",
                          "items": ["type": "object", "properties": ["from": ["type": "integer"], "to": ["type": "integer"]], "required": ["from", "to"]] as [String: Any]] as [String: Any]],
@@ -101,11 +103,46 @@ enum AITools {
             if words.isEmpty { return ("대본이 없습니다. transcribe 도구로 음성 인식을 먼저 실행하세요.", false) }
             let from = d("from") ?? 0, to = d("to") ?? .infinity
             var lines: [String] = []
-            for (n, w) in words.enumerated() where w.end > from && w.start < to {
-                lines.append(String(format: "[%d] %.2f-%.2f %@", n, w.start, w.end, w.word.text))
+            var chars = 0
+            var i = words.firstIndex { $0.end > from } ?? words.count
+            while i < words.count, words[i].start < to {
+                // 문장 끝(.?!)·긴 쉼·20단어 단위로 한 줄
+                var j = i
+                while j + 1 < words.count, words[j + 1].start < to, j - i < 20,
+                      !(words[j].word.text.last.map { ".?!".contains($0) } ?? false),
+                      words[j + 1].start - words[j].end < 1.0 { j += 1 }
+                let text = words[i...j].map(\.word.text).joined(separator: " ")
+                let line = String(format: "[%d-%d] %.1f~%.1f %@", i, j, words[i].start, words[j].end, text)
+                chars += line.count
+                if chars > 60_000 {
+                    lines.append(String(format: "… 여기까지 %.1f초. 이어서 보려면 from=%.1f", words[i].start, words[i].start))
+                    break
+                }
+                lines.append(line)
+                i = j + 1
             }
-            if lines.count > 4000 { lines = Array(lines.prefix(4000)) + ["… (이후 생략, from/to로 범위를 좁히세요)"] }
-            return (lines.joined(separator: "\n"), false)
+            return ("단어 \(words.count)개, 전체 \(TimeFormat.clock(store.project.duration))\n" + lines.joined(separator: "\n"), false)
+
+        case "search_transcript":
+            guard let q = s("query")?.replacingOccurrences(of: " ", with: ""), !q.isEmpty else { return ("query가 필요합니다", true) }
+            let words = store.project.timelineWords()
+            let limit = max(1, i("limit") ?? 30)
+            var hits: [String] = []
+            for st in words.indices where hits.count < limit {
+                var acc = ""
+                var en = st
+                while en < words.count, acc.count < q.count + 20 {
+                    acc += Project.normalized(words[en].word.text).replacingOccurrences(of: " ", with: "")
+                    if acc.hasPrefix(q) || acc == q { break }
+                    if !q.hasPrefix(acc) { break }
+                    en += 1
+                }
+                guard en < words.count, acc.hasPrefix(q) else { continue }
+                let ctxA = max(0, st - 4), ctxB = min(words.count - 1, en + 4)
+                let ctx = words[ctxA...ctxB].map(\.word.text).joined(separator: " ")
+                hits.append(String(format: "[%d-%d] %.1f~%.1f초 · …%@…", st, en, words[st].start, words[en].end, ctx))
+            }
+            return (hits.isEmpty ? "'\(q)'를 찾지 못했습니다" : "\(hits.count)곳 찾음\n" + hits.joined(separator: "\n"), false)
 
         case "delete_words":
             let words = store.project.timelineWords()
@@ -287,7 +324,7 @@ enum AITools {
         case "set_playback_speed":
             guard let sp = d("speed") else { return ("speed가 필요합니다", true) }
             store.player.setSpeed(sp)
-            if b("play") == true { store.player.play() }
+            if b("play") == true { store.player.play() } else if b("play") == false { store.player.pause() }
             return ("미리보기 \(TimelineNSView.speedLabel(store.player.speed)) 재생 속도", false)
 
         case "import_url":
@@ -349,18 +386,22 @@ enum AITools {
         o.append(String(format: "전체 길이 %.2f초, 재생헤드 %.2f초, 캔버스 %d×%d, %gfps", p.duration, store.time, Int(p.canvasWidth), Int(p.canvasHeight), p.fps))
         o.append("미디어: " + p.assets.map { "\($0.name)(\($0.kind.rawValue), \(String(format: "%.1f", $0.duration))초, 대본 \($0.words == nil ? "없음" : "\($0.words!.count)단어"))" }.joined(separator: ", "))
         for (ti, t) in p.tracks.enumerated() {
-            o.append("트랙 \(ti)\(ti == 0 ? " (기본)" : "")\(t.muted ? " 음소거" : "")\(t.hidden ? " 숨김" : ""):")
-            for c in t.clips {
+            o.append("트랙 \(ti)\(ti == 0 ? " (기본)" : "")\(t.muted ? " 음소거" : "")\(t.hidden ? " 숨김" : ""): 클립 \(t.clips.count)개")
+            if t.clips.count > 30 {
+                o.append("  (많아서 처음 15개와 마지막 5개만 표시. 특정 시간대 클립은 편집 도구에 시간으로 지정하세요)")
+            }
+            let shown = t.clips.count > 30 ? Array(t.clips.prefix(15)) + Array(t.clips.suffix(5)) : t.clips
+            for c in shown {
                 let label = c.kind == .text ? "텍스트 \"\(c.text)\"" : "\(p.asset(c.assetID)?.kind.rawValue ?? "?") \(p.asset(c.assetID)?.name ?? "")"
                 o.append(String(format: "  - id %@ | %@ | %.2f~%.2f초 | 원본 %.2f~%.2f | %g배속 | 볼륨 %.0f%% | 크기 %.0f%%",
                                 String(c.id.uuidString.prefix(8)), label, c.start, c.end, c.sourceIn, c.sourceOut, c.speed, c.volume * 100, c.scale * 100))
             }
         }
         o.append("자막 \(p.captions.count)개 (표시 \(p.showCaptions ? "켬" : "끔"), 크기 \(Int(p.captionStyle.fontSize)), 위치 \(String(format: "%.2f", p.captionStyle.positionY)))")
-        for (n, c) in p.captions.prefix(60).enumerated() {
+        for (n, c) in p.captions.prefix(20).enumerated() {
             o.append(String(format: "  [%d] %.2f~%.2f %@", n, c.start, c.end, c.text))
         }
-        if p.captions.count > 60 { o.append("  … 이하 \(p.captions.count - 60)개 생략") }
+        if p.captions.count > 20 { o.append("  … 이하 \(p.captions.count - 20)개 생략 (자막 내용은 대본과 같습니다)") }
         o.append("대본 단어 \(p.timelineWords().count)개")
         if !store.selection.isEmpty { o.append("선택된 클립: " + store.selection.map { String($0.uuidString.prefix(8)) }.joined(separator: ", ")) }
         if let r = store.markRange { o.append(String(format: "In/Out 구간: %.2f~%.2f", r.lowerBound, r.upperBound)) }
