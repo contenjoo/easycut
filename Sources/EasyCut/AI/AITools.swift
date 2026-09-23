@@ -57,7 +57,8 @@ enum AITools {
               "delete": ["type": "array", "items": ["type": "integer"]] as [String: Any]]),
         tool("set_caption_style", "전체 자막 스타일 변경.",
              ["font_size": num("1080p 기준 글자 크기"), "text_color": str("#RRGGBB"), "background_color": str("#RRGGBB"),
-              "background_opacity": num("0~1"), "outline": ["type": "boolean"], "bold": ["type": "boolean"],
+              "background_opacity": num("0~1 (0이면 배경 없음)"), "outline": ["type": "boolean"], "outline_color": str("외곽선 색 #RRGGBB"),
+              "bold": ["type": "boolean"], "font_name": str("글꼴 PostScript 이름 (예: AppleSDGothicNeo-Bold), 빈 문자열이면 기본"),
               "position_y": num("0(위)~1(아래)"), "visible": ["type": "boolean", "description": "자막 표시 여부"]]),
         tool("set_canvas", "화면 크기/비율 변경.", ["width": num, "height": num], required: ["width", "height"]),
         tool("set_playhead", "재생헤드를 옮긴다.", ["time": num("초")], required: ["time"]),
@@ -245,6 +246,8 @@ enum AITools {
                 }
                 if let v = d("background_opacity") { p.captionStyle.backgroundColor.a = min(1, max(0, v)) }
                 if let v = b("outline") { p.captionStyle.outline = v }
+                if let c = s("outline_color").flatMap(hexColor) { p.captionStyle.outlineColor = c; p.captionStyle.outline = true }
+                if let v = s("font_name") { p.captionStyle.fontName = v }
                 if let v = b("bold") { p.captionStyle.bold = v }
                 if let v = d("position_y") { p.captionStyle.positionY = min(0.97, max(0.03, v)) }
                 if let v = b("visible") { p.showCaptions = v }

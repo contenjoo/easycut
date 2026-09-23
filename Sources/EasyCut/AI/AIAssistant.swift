@@ -146,6 +146,8 @@ final class AIAssistant: ObservableObject {
         var args = ["-p",
                     "--output-format", "stream-json", "--verbose",
                     "--tools", "",
+                    // 사용자의 개인 Claude Code 설정(플러그인·훅)은 앱 AI에 섞지 않는다
+                    "--setting-sources", "project",
                     "--strict-mcp-config", "--mcp-config", mcpFile.path,
                     "--allowedTools", "mcp__easycut",
                     "--append-system-prompt-file", sysFile.path]
