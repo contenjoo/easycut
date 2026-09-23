@@ -210,15 +210,10 @@ final class EditorStore: ObservableObject {
             let r = try await LinkImporter.download(link, options: options) { v, m in
                 Task { @MainActor [weak self] in if self?.converting[key] != nil { self?.converting[key] = JobProgress(value: v, message: m) } }
             }
-            var file = r.file
-            if MediaConverter.needsTranscode(file) {
-                converting[key] = JobProgress(value: 0, message: "편집용으로 변환 중…")
-                let c = try await MediaConverter.convert(file) { v, m in
-                    Task { @MainActor [weak self] in if self?.converting[key] != nil { self?.converting[key] = JobProgress(value: v, message: m) } }
-                }
-                file = c.video
-            }
-            await importFilesNow([file], place: nil, subtitles: r.subtitles)
+            let file = r.file
+            // VP9·AV1 등 편집에 맞지 않는 코덱이면 MKV처럼 변환해서 가져온다 (이름은 원래 제목 유지)
+            let force: Set<URL> = MediaConverter.needsTranscode(file) ? [file] : []
+            await importFilesNow([file], place: nil, subtitles: r.subtitles, convert: force)
             return r.file
         } catch {
             if !(error is CancellationError) { alert = error.localizedDescription }
@@ -226,7 +221,7 @@ final class EditorStore: ObservableObject {
         }
     }
 
-    private func importFilesNow(_ urls: [URL], place: (track: Int, time: Double)?, subtitles: [Caption]) async {
+    private func importFilesNow(_ urls: [URL], place: (track: Int, time: Double)?, subtitles: [Caption], convert: Set<URL> = []) async {
         do {
             var added: [MediaAsset] = []
             var failed: [String] = []
@@ -234,7 +229,7 @@ final class EditorStore: ObservableObject {
             for url in urls {
                 if let existing = project.assets.first(where: { $0.path == url.path || $0.originalPath == url.path }) { added.append(existing); continue }
                 do {
-                    if MediaConverter.needsConversion(url) {
+                    if MediaConverter.needsConversion(url) || convert.contains(url) {
                         let name = url.lastPathComponent
                         converting[name] = JobProgress(value: 0, message: "준비 중…")
                         defer { converting[name] = nil }

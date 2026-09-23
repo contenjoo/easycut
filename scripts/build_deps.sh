@@ -28,7 +28,7 @@ build_ffmpeg() {
   "$SRC/ffmpeg/configure" --arch=$arch --target-os=darwin --cc="clang -arch $arch" ${extra[@]+"${extra[@]}"} \
     --extra-cflags="-mmacosx-version-min=$MIN" --extra-ldflags="-mmacosx-version-min=$MIN" --extra-libs="-liconv" \
     --disable-autodetect --enable-videotoolbox --enable-audiotoolbox --enable-zlib --enable-bzlib --enable-iconv \
-    --disable-doc --disable-debug --disable-ffplay --disable-network --disable-shared --enable-static \
+    --enable-securetransport --disable-doc --disable-debug --disable-ffplay --disable-shared --enable-static \
     --disable-indevs --disable-outdevs >/dev/null
   make -j "$JOBS" ffmpeg ffprobe >/dev/null 2>"$dir/make.err" || { tail -20 "$dir/make.err"; exit 1; }
   cp ffmpeg "$SRC/ffmpeg-$arch"; cp ffprobe "$SRC/ffprobe-$arch"

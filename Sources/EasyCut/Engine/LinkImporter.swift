@@ -77,13 +77,58 @@ enum LinkImporter {
         if options.start != nil || options.end != nil {
             let a = options.start ?? 0
             let b = options.end.map { String(format: "%.2f", $0) } ?? "inf"
-            args += ["--download-sections", String(format: "*%.2f-%@", a, b), "--force-keyframes-at-cuts"]
+            // 재압축 없이 원본 그대로 자른다 (경계는 가장 가까운 키프레임으로 1~2초 앞당겨질 수 있음)
+            args += ["--download-sections", String(format: "*%.2f-%@", a, b)]
         }
         if options.subtitles && options.quality != .audio {
             args += ["--write-subs", "--sub-langs", options.subLangs, "--convert-subs", "srt"]
         }
 
         progress(0, "링크 확인 중…")
+        args += ["--retries", "5", "--fragment-retries", "5"]
+        var outcome: (status: Int32, file: String?, title: String, tail: String) = (1, nil, "", "")
+        for attempt in 1...3 {
+            if attempt > 1 { progress(0, "다시 시도하는 중… (\(attempt)/3)") }
+            outcome = try await runOnce(bin: bin, args: args, work: work, progress: progress)
+            if outcome.status == 0, outcome.file != nil { break }
+            // 일시적인 차단(403)·네트워크 오류만 다시 시도
+            let t = outcome.tail.lowercased()
+            guard t.contains("403") || t.contains("code 8") || t.contains("timed out") || t.contains("connection") else { break }
+            try await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
+        }
+        guard outcome.status == 0, let path = outcome.file, FileManager.default.fileExists(atPath: path) else {
+            throw MediaError.failed("영상을 받지 못했습니다.\n" + friendlyError(outcome.tail))
+        }
+        let st = (title: outcome.title, file: path)
+
+        // 받은 파일을 다운로드 폴더로 옮긴다 (같은 이름이 있으면 번호 붙이기)
+        let src = URL(fileURLWithPath: path)
+        var dest = downloadDir.appendingPathComponent(src.lastPathComponent)
+        var n = 2
+        while FileManager.default.fileExists(atPath: dest.path) {
+            dest = downloadDir.appendingPathComponent("\(src.deletingPathExtension().lastPathComponent) (\(n)).\(src.pathExtension)")
+            n += 1
+        }
+        try FileManager.default.moveItem(at: src, to: dest)
+
+        // 업로더 자막 (첫 번째 것)
+        var caps: [Caption] = []
+        if let srt = (try? FileManager.default.contentsOfDirectory(at: work, includingPropertiesForKeys: nil))?
+            .filter({ $0.pathExtension.lowercased() == "srt" }).sorted(by: { a, b in
+                // 한국어 자막 우선
+                a.lastPathComponent.contains(".ko") && !b.lastPathComponent.contains(".ko")
+            }).first,
+           let text = try? String(contentsOf: srt, encoding: .utf8) {
+            caps = SRT.parse(text).map { var c = $0; c.text = MediaConverter.stripTags(c.text); return c }
+            try? FileManager.default.moveItem(at: srt, to: dest.deletingPathExtension().appendingPathExtension("srt"))
+        }
+        progress(1, "완료")
+        return Result(file: dest, title: st.title, subtitles: caps)
+    }
+
+    /// yt-dlp 한 번 실행
+    private static func runOnce(bin: String, args: [String], work: URL, progress: @escaping (Double, String) -> Void) async throws
+        -> (status: Int32, file: String?, title: String, tail: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = args
@@ -137,33 +182,8 @@ enum LinkImporter {
         out.fileHandleForReading.readabilityHandler = nil
         err.fileHandleForReading.readabilityHandler = nil
         try Task.checkCancellation()
-        guard p.terminationStatus == 0, let path = st.file, FileManager.default.fileExists(atPath: path) else {
-            throw MediaError.failed("영상을 받지 못했습니다.\n" + friendlyError(st.tail))
-        }
+        return (p.terminationStatus, st.file, st.title, st.tail)
 
-        // 받은 파일을 다운로드 폴더로 옮긴다 (같은 이름이 있으면 번호 붙이기)
-        let src = URL(fileURLWithPath: path)
-        var dest = downloadDir.appendingPathComponent(src.lastPathComponent)
-        var n = 2
-        while FileManager.default.fileExists(atPath: dest.path) {
-            dest = downloadDir.appendingPathComponent("\(src.deletingPathExtension().lastPathComponent) (\(n)).\(src.pathExtension)")
-            n += 1
-        }
-        try FileManager.default.moveItem(at: src, to: dest)
-
-        // 업로더 자막 (첫 번째 것)
-        var caps: [Caption] = []
-        if let srt = (try? FileManager.default.contentsOfDirectory(at: work, includingPropertiesForKeys: nil))?
-            .filter({ $0.pathExtension.lowercased() == "srt" }).sorted(by: { a, b in
-                // 한국어 자막 우선
-                a.lastPathComponent.contains(".ko") && !b.lastPathComponent.contains(".ko")
-            }).first,
-           let text = try? String(contentsOf: srt, encoding: .utf8) {
-            caps = SRT.parse(text).map { var c = $0; c.text = MediaConverter.stripTags(c.text); return c }
-            try? FileManager.default.moveItem(at: srt, to: dest.deletingPathExtension().appendingPathExtension("srt"))
-        }
-        progress(1, "완료")
-        return Result(file: dest, title: st.title, subtitles: caps)
     }
 
     static func friendlyError(_ tail: String) -> String {
@@ -177,7 +197,7 @@ enum LinkImporter {
         if l.contains("drm") { return "DRM으로 보호된 영상은 받을 수 없습니다." }
         if l.contains("unsupported url") { return "지원하지 않는 링크입니다." }
         if l.contains("unable to download") || l.contains("http error") || l.contains("timed out") { return "네트워크 오류입니다. 연결을 확인하고 다시 시도하세요." }
-        if l.contains("video unavailable") { return "볼 수 없는 영상입니다." }
+        if l.contains("unavailable") || l.contains("not available") { return "볼 수 없는 영상입니다. 주소가 맞는지, 삭제·비공개된 영상은 아닌지 확인하세요." }
         return tail.split(separator: "\n").last(where: { $0.contains("ERROR") }).map(String.init) ?? String(tail.suffix(300))
     }
 }
