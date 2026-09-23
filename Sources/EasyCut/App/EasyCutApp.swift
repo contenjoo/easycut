@@ -1,0 +1,221 @@
+import SwiftUI
+import AppKit
+
+@main
+enum Main {
+    static func main() {
+        if CommandLine.arguments.contains("--selftest") {
+            SelfTest.run()
+            return
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--make-icon"), i + 1 < CommandLine.arguments.count {
+            IconMaker.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            return
+        }
+        if CommandLine.arguments.contains("--mcp") {
+            MCPBridge.run()
+            return
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--stt-test"), i + 2 < CommandLine.arguments.count {
+            STTTest.run(URL(fileURLWithPath: CommandLine.arguments[i + 1]), out: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+            return
+        }
+        EasyCutApp.main()
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var store: EditorStore?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let store else { return .terminateNow }
+        return MainActor.assumeIsolated { store.confirmDiscard() } ? .terminateNow : .terminateCancel
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let store else { return }
+        MainActor.assumeIsolated {
+            let projects = urls.filter { $0.pathExtension.lowercased() == "easycut" }
+            if let p = projects.first { store.open(p) }
+            let media = urls.filter { $0.pathExtension.lowercased() != "easycut" }
+            if !media.isEmpty { store.importFiles(media) }
+        }
+    }
+}
+
+struct EasyCutApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @StateObject private var store = EditorStore()
+
+    var body: some Scene {
+        Window("EasyCut", id: "main") {
+            ContentView(store: store)
+                .onAppear { delegate.store = store }
+                .preferredColorScheme(.dark)
+        }
+        .defaultSize(width: 1440, height: 900)
+        .commands { AppCommands(store: store) }
+    }
+}
+
+struct AppCommands: Commands {
+    @ObservedObject var store: EditorStore
+
+    /// 글자 입력 중이면 해당 칸의 기본 동작을 쓰도록
+    func textEditing() -> NSResponder? {
+        guard let r = NSApp.keyWindow?.firstResponder else { return nil }
+        if let tv = r as? NSTextView, tv.isEditable { return tv }
+        return nil
+    }
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("새 프로젝트") { store.newProject() }.keyboardShortcut("n")
+            Button("프로젝트 열기…") { store.openPanel() }.keyboardShortcut("o")
+            Divider()
+            Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")
+        }
+        CommandGroup(replacing: .saveItem) {
+            Button("저장") { store.save() }.keyboardShortcut("s")
+            Button("다른 이름으로 저장…") { store.save(as: true) }.keyboardShortcut("s", modifiers: [.command, .shift])
+            Divider()
+            Button("영상 내보내기…") { store.showExport = true }.keyboardShortcut("e")
+            Button("SRT 자막 내보내기…") { store.exportSRT() }
+            Button("대본 텍스트 내보내기…") { store.exportTranscript() }
+            Button("현재 장면 PNG로 저장…") { store.snapshot() }
+            Divider()
+            Button("SRT 자막 가져오기…") { store.importSRT() }
+        }
+        CommandGroup(replacing: .undoRedo) {
+            Button("실행 취소") {
+                if let t = textEditing() { t.undoManager?.undo() } else { store.undo() }
+            }.keyboardShortcut("z")
+            Button("다시 실행") {
+                if let t = textEditing() { t.undoManager?.redo() } else { store.redo() }
+            }.keyboardShortcut("z", modifiers: [.command, .shift])
+        }
+        CommandMenu("타임라인") {
+            Button("재생헤드에서 분할  (S)") { store.splitAtPlayhead() }.keyboardShortcut("t")
+            Button("모든 트랙 분할") { store.splitAtPlayhead(all: true) }.keyboardShortcut("t", modifiers: [.command, .shift])
+            Divider()
+            Button("삭제  (⌫)") { store.deleteSelection(ripple: false) }
+            Button("삭제 후 빈틈 메우기  (⌘⌫)") { store.deleteSelection(ripple: true) }
+            Button("복제  (⌘D)") { store.duplicateSelection() }
+            Divider()
+            Button("구간 시작  (I)") { store.setMarkIn() }
+            Button("구간 끝  (O)") { store.setMarkOut() }
+            Button("구간 해제  (X)") { store.clearMarks() }
+            Divider()
+            Button("텍스트(제목) 추가  (T)") { store.addTextClip() }
+            Button("트랙 추가") { store.addTrack() }
+            Button("빈 트랙 정리") { store.removeEmptyTracks() }
+            Divider()
+            Button("확대") { store.zoom = min(800, store.zoom * 1.5) }.keyboardShortcut("=")
+            Button("축소") { store.zoom = max(0.5, store.zoom / 1.5) }.keyboardShortcut("-")
+            Button("전체 보기  (⇧Z)") { store.zoomToFit() }
+        }
+        CommandMenu("재생") {
+            Button("재생 / 일시정지  (Space)") { store.player.toggle() }
+            Button("빠르게  (L)") { store.player.faster() }
+            Button("느리게  (J)") { store.player.slower() }
+            Button("정지  (K)") { store.player.pause() }
+            Divider()
+            Menu("재생 속도") {
+                ForEach(PlayerController.speeds, id: \.self) { s in
+                    Button(TimelineNSView.speedLabel(s)) { store.player.setSpeed(s) }
+                }
+            }
+            Divider()
+            Button("처음으로  (Home)") { store.seek(0) }
+            Button("끝으로  (End)") { store.seek(store.player.duration) }
+            Button("이전 편집점  (↑)") { store.jumpEditPoint(forward: false) }
+            Button("다음 편집점  (↓)") { store.jumpEditPoint(forward: true) }
+        }
+        CommandMenu("도구") {
+            Button("음성 인식 (STT)") { store.transcribeTimeline() }.keyboardShortcut("r", modifiers: [.command, .shift])
+            Button("대본으로 자막 만들기") { store.generateCaptions() }.keyboardShortcut("c", modifiers: [.command, .shift])
+            Button("무음 컷 (원클릭)…") { store.showSilenceSheet = true }.keyboardShortcut("x", modifiers: [.command, .shift])
+            Button("군더더기 말 제거") { store.removeFillers() }
+            Divider()
+            Button("자막 추가  (C)") { store.addCaption() }
+            Button("음성 인식 설정…") { store.showSTTSettings = true }.keyboardShortcut(",", modifiers: [.command, .shift])
+        }
+        CommandGroup(replacing: .help) {
+            Button("단축키 보기") { store.showShortcuts = true }.keyboardShortcut("/")
+        }
+    }
+}
+
+/// 앱 아이콘(1024px PNG) 생성
+enum IconMaker {
+    static func write(to url: URL) {
+        let size = 1024
+        let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let s = CGFloat(size)
+        let body = CGRect(x: s * 0.1, y: s * 0.1, width: s * 0.8, height: s * 0.8)
+        let path = CGPath(roundedRect: body, cornerWidth: s * 0.18, cornerHeight: s * 0.18, transform: nil)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.012), blur: s * 0.03, color: CGColor(gray: 0, alpha: 0.35))
+        ctx.addPath(path); ctx.setFillColor(CGColor(gray: 0.1, alpha: 1)); ctx.fillPath()
+        ctx.restoreGState()
+        ctx.saveGState()
+        ctx.addPath(path); ctx.clip()
+        let grad = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: [
+            CGColor(srgbRed: 0.98, green: 0.36, blue: 0.33, alpha: 1),
+            CGColor(srgbRed: 0.55, green: 0.24, blue: 0.93, alpha: 1),
+            CGColor(srgbRed: 0.16, green: 0.45, blue: 0.98, alpha: 1)] as CFArray, locations: [0, 0.55, 1])!
+        ctx.drawLinearGradient(grad, start: CGPoint(x: body.minX, y: body.maxY), end: CGPoint(x: body.maxX, y: body.minY), options: [])
+        // 필름 구멍
+        ctx.setFillColor(CGColor(gray: 1, alpha: 0.22))
+        for i in 0..<7 {
+            let x = body.minX + s * 0.06 + CGFloat(i) * s * 0.105
+            ctx.fill(CGRect(x: x, y: body.maxY - s * 0.085, width: s * 0.06, height: s * 0.045))
+            ctx.fill(CGRect(x: x, y: body.minY + s * 0.04, width: s * 0.06, height: s * 0.045))
+        }
+        ctx.restoreGState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        let cfg = NSImage.SymbolConfiguration(pointSize: s * 0.36, weight: .bold)
+        if let sym = NSImage(systemSymbolName: "scissors", accessibilityDescription: nil)?.withSymbolConfiguration(cfg) {
+            let tinted = sym.tinted(.white)
+            let w = tinted.size.width, h = tinted.size.height
+            tinted.draw(in: CGRect(x: (s - w) / 2, y: (s - h) / 2 + s * 0.03, width: w, height: h))
+        }
+        let t = "EasyCut" as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: s * 0.075, weight: .heavy), .foregroundColor: NSColor.white.withAlphaComponent(0.92)]
+        let ts = t.size(withAttributes: attrs)
+        t.draw(at: CGPoint(x: (s - ts.width) / 2, y: body.minY + s * 0.1), withAttributes: attrs)
+        NSGraphicsContext.current = nil
+        let img = ctx.makeImage()!
+        let d = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(d, img, nil)
+        CGImageDestinationFinalize(d)
+    }
+}
+
+/// `--stt-test 파일 결과.txt` : 앱 번들 안에서 Apple 음성 인식 전체 과정을 실행해 결과를 기록 (진단용)
+enum STTTest {
+    static func run(_ url: URL, out: URL) {
+        let sem = DispatchSemaphore(value: 0)
+        Task.detached {
+            var log = ""
+            do {
+                let words = try await Transcriber.transcribe(url: url, engine: .apple, language: STTLanguage.all[0], whisperModel: nil) { _, _ in }
+                log = words.map { String(format: "%.2f-%.2f %@", $0.start, $0.end, $0.text) }.joined(separator: "\n")
+            } catch {
+                log = "오류: \(error.localizedDescription)"
+            }
+            try? log.write(to: out, atomically: true, encoding: .utf8)
+            sem.signal()
+        }
+        while sem.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+}

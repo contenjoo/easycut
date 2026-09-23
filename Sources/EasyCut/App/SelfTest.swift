@@ -1,0 +1,291 @@
+import AVFoundation
+import AppKit
+
+/// `EasyCut --selftest [작업폴더]` : 화면 없이 편집 엔진 전체를 검사한다.
+enum SelfTest {
+    static var failures = 0
+
+    static func check(_ cond: Bool, _ msg: String) {
+        print(cond ? "  ✅ \(msg)" : "  ❌ \(msg)")
+        if !cond { failures += 1 }
+    }
+
+    static func run() {
+        let args = CommandLine.arguments
+        let dir: URL
+        if let i = args.firstIndex(of: "--selftest"), i + 1 < args.count {
+            dir = URL(fileURLWithPath: args[i + 1])
+        } else {
+            dir = FileManager.default.temporaryDirectory.appendingPathComponent("easycut-selftest")
+        }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let sem = DispatchSemaphore(value: 0)
+        Task.detached {
+            do { try await runAsync(dir) } catch {
+                print("❌ 오류: \(error)")
+                failures += 1
+            }
+            sem.signal()
+        }
+        while sem.wait(timeout: .now() + 0.05) == .timedOut {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        print(failures == 0 ? "\n모든 검사 통과" : "\n실패 \(failures)건")
+        exit(failures == 0 ? 0 : 1)
+    }
+
+    static func runAsync(_ dir: URL) async throws {
+        print("1) 모델 연산")
+        testTimelineOps()
+
+        print("2) 테스트 미디어 생성 (\(dir.path))")
+        let speech = dir.appendingPathComponent("speech.aiff")
+        if !FileManager.default.fileExists(atPath: speech.path) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            p.arguments = ["-v", "Yuna", "-o", speech.path,
+                           "안녕하세요. 오늘은 영상 편집 프로그램을 소개하겠습니다. [[slnc 1500]] 음성을 텍스트로 바꾸고, 텍스트를 지우면 영상도 같이 잘립니다. [[slnc 2500]] 정말 편리하죠?"]
+            try p.run(); p.waitUntilExit()
+        }
+        let video = dir.appendingPathComponent("test_video.mp4")
+        if !FileManager.default.fileExists(atPath: video.path) {
+            try await makeTestVideo(audio: speech, to: video)
+        }
+        let image = dir.appendingPathComponent("logo.png")
+        try makeTestImage(to: image)
+
+        let v = try await MediaProbe.probe(video)
+        let a = try await MediaProbe.probe(speech)
+        let im = try await MediaProbe.probe(image)
+        check(v.kind == .video && v.hasAudio && v.width == 1280, "영상 분석: \(v.kind) \(Int(v.width))x\(Int(v.height)) \(String(format: "%.2f", v.duration))초 오디오:\(v.hasAudio)")
+        check(a.kind == .audio, "오디오 분석: \(String(format: "%.2f", a.duration))초")
+        check(im.kind == .image, "이미지 분석: \(Int(im.width))x\(Int(im.height))")
+
+        print("3) 음성 인식")
+        var words: [Word] = []
+        if Transcriber.whisperBinary != nil, let m = WhisperModel.all.first(where: \.isInstalled) {
+            let t0 = Date()
+            words = try await Transcriber.transcribe(url: video, engine: .whisper, language: STTLanguage.all[0], whisperModel: m) { _, _ in }
+            print("  Whisper(\(m.id)) \(String(format: "%.1f", Date().timeIntervalSince(t0)))초: " + words.map { "\($0.text)[\(String(format: "%.1f", $0.start))]" }.joined(separator: " "))
+            check(words.count >= 10, "Whisper 단어 \(words.count)개 인식")
+        } else {
+            print("  (Whisper 미설치 — 합성 대본으로 대체. Apple 인식은 앱에서 권한 허용 후 사용)")
+        }
+        // Apple 인식 배치 합치기 (실측 콜백 순서 재현)
+        let bc = Transcriber.BatchCollector()
+        bc.add([("안녕하세요", 0, 0.9)])
+        bc.add([("안녕하세요.", 0, 0.9), ("오늘은", 1.0, 0.5)])
+        bc.add([("음성을", 0, 0.4)])                       // 시간 미확정 중간 결과 → 버림
+        bc.add([("음성을", 6.0, 0.39), ("텍스트로", 6.39, 0.6)])
+        bc.add([("음성을", 6.0, 0.39), ("텍스트로", 6.39, 0.6), ("바꾸고", 6.99, 0.6)])
+        bc.add([("정말", 13.47, 0.45), ("편리하죠", 13.92, 0.81)])
+        check(bc.all.map(\.text) == ["안녕하세요.", "오늘은", "음성을", "텍스트로", "바꾸고", "정말", "편리하죠"], "Apple 인식 배치 합치기: \(bc.all.map(\.text).joined(separator: " "))")
+
+        // 소리 크기 기준 무음 검출 (Recut 방식)
+        let db = try await SilenceDetector.loudness(url: video)
+        let th = SilenceDetector.autoThreshold(db)
+        let sil = SilenceDetector.silences(db, threshold: th, minSilence: 0.8, padding: 0.1)
+        print("  자동 기준 \(Int(th))dB, 무음: " + sil.map { String(format: "%.2f~%.2f", $0.lowerBound, $0.upperBound) }.joined(separator: ", "))
+        check(sil.count >= 2 && sil.contains { $0.upperBound - $0.lowerBound > 1.0 }, "파형 기준 무음 \(sil.count)곳 검출 (문장 사이 1.5초·2.5초 쉼)")
+
+        let samples = try await Transcriber.pcm16k(url: video)
+        check(abs(Double(samples.count) / 16000 - v.duration) < 0.3, "오디오 16kHz 추출: \(samples.count) 샘플")
+        let ch = Transcriber.chunks(samples, minLen: 3, maxLen: 6)
+        check(ch.first?.lowerBound == 0 && ch.last?.upperBound == samples.count, "무음 기준 청크 분할: \(ch.count)개")
+        if words.isEmpty {
+            // 합성 대본: 1초 간격 단어
+            words = (0..<12).map { i in Word(text: "단어\(i)", start: Double(i) * 0.7 + 0.2, end: Double(i) * 0.7 + 0.7) }
+        }
+
+        print("4) 대본 편집 → 컷")
+        var p = Project()
+        var va = v; va.words = words
+        p.assets = [va, a, im]
+        p.canvasWidth = 1280; p.canvasHeight = 720
+        p.insert(asset: va, track: 0, at: 0)
+        let before = p.duration
+        let tw = p.timelineWords()
+        let del = Set(tw[2...4].map(\.id))
+        let ranges = Project.deletionRanges(selected: del, in: tw)
+        p.rippleDelete(ranges: ranges)
+        let removed = ranges.map { $0.upperBound - $0.lowerBound }.reduce(0, +)
+        check(abs((before - p.duration) - removed) < 0.01, String(format: "단어 3개 삭제 → %.2f초 잘림 (클립 %d개)", removed, p.tracks[0].clips.count))
+        let tw2 = p.timelineWords()
+        check(tw2.count == tw.count - 3 && !tw2.contains { del.contains($0.id) }, "삭제된 단어가 대본에서 사라짐 (\(tw.count)→\(tw2.count))")
+        let silence = p.silenceRanges(minGap: 0.8, keep: 0.15)
+        print("  무음 구간: " + silence.map { String(format: "%.2f~%.2f", $0.lowerBound, $0.upperBound) }.joined(separator: ", "))
+        p.captions = p.generatedCaptions()
+        check(!p.captions.isEmpty, "자막 자동 생성 \(p.captions.count)개: \(p.captions.first?.text ?? "")")
+        let srt = SRT.make(p.captions)
+        check(SRT.parse(srt).count == p.captions.count, "SRT 저장/읽기 왕복")
+
+        print("5) 합성 + 내보내기 (20배속 구간, 이미지, 텍스트, 자막 포함)")
+        // 두 번째 클립에 이어 원본을 한 번 더 붙이고 20배속
+        let id2 = p.insert(asset: va, track: 0, at: p.trackEnd(0))
+        p.setSpeed(clip: id2, 20)
+        let imgID = p.insert(asset: im, track: 1, at: 0.5, imageDuration: 3)
+        if let loc = p.locate(clip: imgID) {
+            p.tracks[loc.track].clips[loc.index].scale = 0.25
+            p.tracks[loc.track].clips[loc.index].offsetX = 0.35
+            p.tracks[loc.track].clips[loc.index].offsetY = -0.33
+            p.tracks[loc.track].clips[loc.index].fadeIn = 0.5
+        }
+        p.insertText("EasyCut 테스트", track: 2, at: 0, duration: 2.5)
+        p.insert(asset: a, track: 2, at: p.trackEnd(2) + 0.5)
+        p.normalize()
+        let expected = p.duration
+        let out = dir.appendingPathComponent("export_test.mp4")
+        let t0 = Date()
+        try await Exporter.export(project: p, format: .mp4H264, size: CGSize(width: 1280, height: 720), burnCaptions: true, to: out, cancel: Exporter.Box()) { _ in }
+        let outAsset = AVURLAsset(url: out)
+        let outDur = try await outAsset.load(.duration).seconds
+        let outV = try await outAsset.loadTracks(withMediaType: .video)
+        let outA = try await outAsset.loadTracks(withMediaType: .audio)
+        check(abs(outDur - expected) < 0.15, String(format: "내보내기 길이 %.2f초 (예상 %.2f초), %.1f초 소요", outDur, expected, Date().timeIntervalSince(t0)))
+        check(!outV.isEmpty && !outA.isEmpty, "내보낸 파일에 영상·오디오 트랙 존재")
+        if let vt = outV.first {
+            let size = try await vt.load(.naturalSize)
+            check(size == CGSize(width: 1280, height: 720), "출력 해상도 \(Int(size.width))x\(Int(size.height))")
+        }
+        // 확인용 프레임 추출
+        let gen = AVAssetImageGenerator(asset: outAsset)
+        gen.requestedTimeToleranceBefore = .zero
+        gen.requestedTimeToleranceAfter = .zero
+        for t in [1.5, max(0.1, p.captions.first.map { ($0.start + $0.end) / 2 } ?? 1)] {
+            let (cg, _) = try await gen.image(at: CMTime(seconds: t, preferredTimescale: 600))
+            let png = dir.appendingPathComponent(String(format: "frame_%.1f.png", t))
+            if let d = CGImageDestinationCreateWithURL(png as CFURL, "public.png" as CFString, 1, nil) {
+                CGImageDestinationAddImage(d, cg, nil); CGImageDestinationFinalize(d)
+            }
+            print("  프레임 저장: \(png.lastPathComponent)")
+        }
+        let m4a = dir.appendingPathComponent("export_test.m4a")
+        try await Exporter.export(project: p, format: .m4a, size: .zero, burnCaptions: false, to: m4a, cancel: Exporter.Box()) { _ in }
+        let m4aDur = try await AVURLAsset(url: m4a).load(.duration).seconds
+        check(abs(m4aDur - expected) < 0.3, String(format: "오디오만 내보내기 %.2f초", m4aDur))
+
+        print("6) 프로젝트 저장/열기")
+        let data = try JSONEncoder().encode(p)
+        let back = try JSONDecoder().decode(Project.self, from: data)
+        check(back == p, "프로젝트 JSON 왕복 (\(data.count / 1024)KB)")
+
+        print("7) 20배속 재생")
+        let built = try await CompositionBuilder.build(project: p, renderSize: CGSize(width: 640, height: 360))
+        let player = await AVPlayer()
+        let item = await AVPlayerItem(asset: built.composition)
+        await MainActor.run {
+            item.videoComposition = built.videoComposition
+            item.audioMix = built.audioMix
+            item.audioTimePitchAlgorithm = .spectral
+            player.replaceCurrentItem(with: item)
+        }
+        for _ in 0..<50 where await item.status != .readyToPlay { try await Task.sleep(nanoseconds: 100_000_000) }
+        let ff = await item.canPlayFastForward
+        await MainActor.run { player.rate = 20 }
+        let r0 = await player.currentTime().seconds
+        try await Task.sleep(nanoseconds: 400_000_000)
+        let rate = await player.rate
+        let r1 = await player.currentTime().seconds
+        await MainActor.run { player.pause() }
+        print(String(format: "  canPlayFastForward=%@ rate=%.1f, 0.4초 동안 %.2f초 진행", ff ? "예" : "아니오", rate, r1 - r0))
+        check((r1 - r0) > 3.0 || !ff, "20배속 재생 진행 (터보 모드 대체 가능)")
+    }
+
+    static func testTimelineOps() {
+        var p = Project()
+        let a = MediaAsset(path: "/tmp/x.mp4", name: "x", kind: .video, duration: 10, width: 1920, height: 1080, hasAudio: true)
+        p.assets = [a]
+        let id = p.insert(asset: a, track: 0, at: 0)
+        check(p.duration == 10, "클립 추가: 10초")
+        let right = p.split(clip: id, at: 4)
+        check(p.tracks[0].clips.count == 2 && p.clip(right!)!.sourceIn == 4, "분할: 4초에서 둘로")
+        p.delete(clips: [id], ripple: true)
+        check(abs(p.duration - 6) < 1e-9 && p.tracks[0].clips[0].start == 0, "리플 삭제: 뒤 클립이 당겨짐")
+        p.setSpeed(clip: right!, 2)
+        check(abs(p.duration - 3) < 1e-9, "2배속: 6초 → 3초")
+        p.setSpeed(clip: right!, 20)
+        check(abs(p.duration - 0.3) < 1e-9, "20배속: 6초 → 0.3초")
+        p.setSpeed(clip: right!, 1)
+        p.rippleDelete(from: 1, to: 2)
+        check(abs(p.duration - 5) < 1e-9 && p.tracks[0].clips.count == 2, "구간 리플 삭제 1~2초")
+        let second = p.tracks[0].clips[1]
+        check(abs(second.start - 1) < 1e-9 && abs(second.sourceIn - 6) < 1e-9, "구간 삭제 후 원본 위치 유지")
+        p.trimEnd(clip: second.id, to: 3, maxSource: 10)
+        check(abs(p.duration - 3) < 1e-9, "끝 트림")
+        let b = p.insert(asset: a, track: 0, at: 1.5)
+        check(p.clip(b)!.start >= 1.5 && p.tracks[0].clips.count == 3, "겹침 해결: 겹친 클립 밀어내기")
+        var q = Project()
+        q.captions = [Caption(start: 0, end: 2, text: "a"), Caption(start: 3, end: 5, text: "b"), Caption(start: 6, end: 8, text: "c")]
+        q.rippleDelete(from: 4, to: 7)
+        check(q.captions.count == 3 && abs(q.captions[1].end - 4) < 1e-9 && abs(q.captions[2].start - 4) < 1e-9 && abs(q.captions[2].end - 5) < 1e-9, "자막도 함께 잘림")
+    }
+
+    static func makeTestImage(to url: URL) throws {
+        let w = 400, h = 400
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0.8, blue: 0.1, alpha: 1))
+        ctx.fillEllipse(in: CGRect(x: 20, y: 20, width: 360, height: 360))
+        ctx.setFillColor(CGColor(srgbRed: 0.1, green: 0.1, blue: 0.1, alpha: 1))
+        ctx.fillEllipse(in: CGRect(x: 120, y: 220, width: 50, height: 70))
+        ctx.fillEllipse(in: CGRect(x: 230, y: 220, width: 50, height: 70))
+        ctx.fill(CGRect(x: 120, y: 110, width: 160, height: 30))
+        let img = ctx.makeImage()!
+        let d = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(d, img, nil)
+        CGImageDestinationFinalize(d)
+    }
+
+    /// 프레임 번호가 찍힌 테스트 영상 + 음성
+    static func makeTestVideo(audio: URL, to url: URL) async throws {
+        let audioAsset = AVURLAsset(url: audio)
+        let dur = try await audioAsset.load(.duration).seconds
+        let silent = AppPaths.temp.appendingPathComponent("silent_\(UUID().uuidString).mov")
+        let writer = try AVAssetWriter(outputURL: silent, fileType: .mov)
+        let w = 1280, h = 720
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h])
+        writer.add(input)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+        let frames = Int(dur * 30) + 1
+        for i in 0..<frames {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
+            var pb: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pb)
+            guard let pb else { continue }
+            CVPixelBufferLockBaseAddress(pb, [])
+            let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb), width: w, height: h, bitsPerComponent: 8,
+                                bytesPerRow: CVPixelBufferGetBytesPerRow(pb), space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+            let hue = CGFloat(i % 300) / 300
+            ctx.setFillColor(NSColor(hue: hue, saturation: 0.5, brightness: 0.45, alpha: 1).cgColor)
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.setFillColor(NSColor.white.withAlphaComponent(0.25).cgColor)
+            ctx.fill(CGRect(x: CGFloat(i * 8 % w), y: 0, width: 40, height: CGFloat(h)))
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            let s = String(format: "%.2f초", Double(i) / 30) as NSString
+            s.draw(at: NSPoint(x: 60, y: 300), withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 110, weight: .bold), .foregroundColor: NSColor.white])
+            NSGraphicsContext.current = nil
+            CVPixelBufferUnlockBaseAddress(pb, [])
+            adaptor.append(pb, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: 30))
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+
+        let comp = AVMutableComposition()
+        let vAsset = AVURLAsset(url: silent)
+        let vSrc = try await vAsset.loadTracks(withMediaType: .video)[0]
+        let aSrc = try await audioAsset.loadTracks(withMediaType: .audio)[0]
+        let range = CMTimeRange(start: .zero, duration: CMTime(seconds: dur, preferredTimescale: 600))
+        try comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)!.insertTimeRange(range, of: vSrc, at: .zero)
+        try comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!.insertTimeRange(range, of: aSrc, at: .zero)
+        let ex = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetHighestQuality)!
+        ex.outputURL = url
+        ex.outputFileType = .mp4
+        await withCheckedContinuation { c in ex.exportAsynchronously { c.resume() } }
+        try? FileManager.default.removeItem(at: silent)
+        if ex.status != .completed { throw MediaError.failed("테스트 영상 생성 실패: \(ex.error?.localizedDescription ?? "")") }
+    }
+}
