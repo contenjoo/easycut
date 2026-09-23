@@ -2,18 +2,22 @@
 
 캠타시아처럼 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 macOS 설치형 영상 편집기입니다.
 
-## 설치
+## 설치 (배포용)
+
+`dist/EasyCut-1.1.0.dmg` 를 나눠 주면 됩니다. **M1 이상 Apple Silicon Mac, macOS 14 이상** 전용입니다.
+Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다.
+사용자용 설치 안내는 DMG 안의 `설치 방법.txt`에 있습니다.
+
+- App Store 밖 배포라 처음 열 때 한 번: 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
+- Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]** 한 번으로 받음
+- 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받음
+
+만들기:
 
 ```bash
-./scripts/build_app.sh --dmg
+./scripts/build_deps.sh      # Whisper·ffmpeg를 소스에서 빌드해 vendor/bin 에 (처음 한 번, 10분 내외)
+./scripts/build_app.sh --dmg # 앱 번들 + DMG
 ```
-
-- `dist/EasyCut.app` : 앱 (응용 프로그램 폴더로 옮겨 사용)
-- `dist/EasyCut.dmg` : 배포용 디스크 이미지
-- 처음 열 때 "확인되지 않은 개발자" 경고가 나오면: Finder에서 앱을 **우클릭 › 열기**.
-- 처음 음성 인식을 할 때 macOS가 **음성 인식 권한**을 물어봅니다 → 허용.
-
-요구 사항: macOS 14 이상, Apple Silicon 권장.
 
 ## 주요 기능
 
@@ -30,7 +34,8 @@
 | 자막 | 대본으로 자동 생성, 직접 추가/수정, 타임라인에서 끌어 조정, 스타일(글꼴·색·배경·외곽선·위치), SRT 가져오기/내보내기, 영상에 입히기 |
 | 텍스트(제목) | 화면 위 텍스트 클립, 위치·크기·색 조절 |
 | 화면 배치 | 크기·위치·불투명도, PIP(화면 속 화면), 페이드 인/아웃 |
-| AI 편집 | "무음 다 잘라줘", "3분~5분 2배속" 처럼 말로 편집 (Claude Pro/Max 플랜 로그인 또는 API 키) |
+| Vrew 방식 편집 | 자막 한 줄을 지우면 그 구간 영상도 삭제, 자막 목록에서 끌어 순서를 바꾸면 영상도 함께 이동, 트랙 1 클립은 끌어서 끼워 넣기(⌥+끌기 = 자유 이동) |
+| AI 편집 | "무음 다 잘라줘", "3분~5분 2배속" 처럼 말로 편집 (Claude Pro/Max 플랜 로그인 또는 API 키). 모델(Fable 5.1·Opus 5.5·Opus 5·Sonnet 5·Haiku 4.5)·추론 강도·생각 과정 보기 선택 |
 | Claude 연결(MCP) | Claude Code / Claude 데스크톱에서 앱을 직접 조작 |
 | 내보내기 | MP4(H.264/HEVC), MOV(ProRes), 오디오(M4A), 4K/1080p/720p/480p, SRT 동시 저장, 장면 PNG 저장 |
 | 프로젝트 | `.easycut` 파일 저장/열기, 무제한에 가까운 실행 취소(300단계) |
@@ -89,6 +94,7 @@ MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁�
 
 ## AI 편집 / Claude 연결
 
+- **Claude 연결 도우미** (AI 탭 또는 도구 › Claude 연결…): Claude Code 설치 → 로그인 → Claude 데스크톱/Claude Code 연결을 버튼으로 진행
 - **앱 안에서 — Claude 플랜(기본, API 키 불필요)**: Claude Code를 설치하고 터미널에서 `claude` → `/login`으로 Pro/Max 계정에 한 번 로그인해 두면, 왼쪽 **AI** 탭에서 "말 없는 부분 다 잘라줘"처럼 입력하는 것만으로 구독 플랜 사용량으로 편집합니다. (앱이 내부적으로 로그인된 Claude Code를 실행해 편집 도구만 쓰게 합니다.)
 - **앱 안에서 — API 키**: AI 탭 ⚙︎ › 연결 방식 › API 키 → 키 입력(키체인 저장). 모델은 `claude-opus-5`.
 - **Claude Code에서**: 앱을 켠 상태로 한 번만 등록
