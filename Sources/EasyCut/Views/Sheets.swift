@@ -165,7 +165,7 @@ struct STTSettingsSheet: View {
                         Image(systemName: Transcriber.whisperBinary != nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .foregroundStyle(Transcriber.whisperBinary != nil ? .green : .orange)
                         if let b = Transcriber.whisperBinary {
-                            Text("whisper-cli 설치됨 (\(b))").font(.callout)
+                            Text(b.contains(".app/") ? "Whisper 엔진 내장됨" : "Whisper 엔진: \(b)").font(.callout)
                         } else {
                             VStack(alignment: .leading) {
                                 Text("whisper-cli가 필요합니다. 터미널에서 실행:").font(.callout)
@@ -261,6 +261,8 @@ enum Shortcuts {
             .init(keys: "대본에서 ⌘F", desc: "대본 검색"),
             .init(keys: "⇧⌘C", desc: "대본으로 자막 만들기"),
             .init(keys: "C", desc: "재생헤드에 자막 추가"),
+            .init(keys: "자막 탭에서 끌기", desc: "자막과 영상 구간째 순서 바꾸기"),
+            .init(keys: "트랙 1 클립 끌기", desc: "끼워 넣어 순서 바꾸기 (⌥+끌기 = 자유 이동)"),
             .init(keys: "T", desc: "재생헤드에 텍스트(제목) 추가"),
         ]),
         ("타임라인 · 파일", [
@@ -324,6 +326,8 @@ struct LinkSheet: View {
     @State private var partOnly = false
     @State private var from = ""
     @State private var to = ""
+    @State private var toolBusy = false
+    @State private var toolMsg = ""
 
     var quality: LinkImporter.Quality { LinkImporter.Quality(rawValue: qualityRaw) ?? .p1080 }
     var valid: Bool { LinkImporter.isLink(link) }
@@ -354,8 +358,22 @@ struct LinkSheet: View {
             .formStyle(.grouped)
             Label("본인 영상이나 저작권자에게 이용 허락을 받은 영상만 내려받아 편집하세요.", systemImage: "exclamationmark.shield")
                 .font(.caption).foregroundStyle(.orange)
-            if LinkImporter.ytdlp == nil {
-                Text("yt-dlp가 필요합니다: 터미널에서  brew install yt-dlp").font(.caption.monospaced()).foregroundStyle(.red)
+            HStack(spacing: 8) {
+                Image(systemName: LinkImporter.ytdlp == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(LinkImporter.ytdlp == nil ? .orange : .green)
+                Text(LinkImporter.ytdlp == nil ? "유튜브 도구(yt-dlp)가 필요합니다" : "유튜브 도구 준비됨 \(toolMsg)").font(.caption)
+                Spacer()
+                if toolBusy { ProgressView().controlSize(.small) }
+                Button(LinkImporter.ytdlp == nil ? "유튜브 도구 설치" : "업데이트") {
+                    toolBusy = true
+                    Task {
+                        do { toolMsg = "(\(try await Tools.installYtdlp { _ in }))" } catch { toolMsg = "설치 실패: \(error.localizedDescription)" }
+                        toolBusy = false
+                    }
+                }
+                .controlSize(.small)
+                .disabled(toolBusy)
+                .help("github.com/yt-dlp 공식 배포본(약 35MB)을 받아 앱 전용 폴더에 설치합니다")
             }
             HStack {
                 Button("클립보드에서 붙여넣기") {

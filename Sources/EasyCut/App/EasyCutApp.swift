@@ -55,6 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 인터넷에서 받은 설치 파일이면 내장 도구에 붙은 격리 표시를 풀어 바로 실행되게 한다
+        if let dir = Tools.bundledDir, let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
+            for f in files { removexattr(dir.appendingPathComponent(f).path, "com.apple.quarantine", 0) }
+        }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -191,6 +195,7 @@ struct AppCommands: Commands {
             Divider()
             Button("자막 추가  (C)") { store.addCaption() }
             Button("음성 인식 설정…") { store.showSTTSettings = true }.keyboardShortcut(",", modifiers: [.command, .shift])
+            Button("Claude 연결…") { store.showClaudeSheet = true }
         }
         CommandGroup(replacing: .help) {
             Button("단축키 보기") { store.showShortcuts = true }.keyboardShortcut("/")

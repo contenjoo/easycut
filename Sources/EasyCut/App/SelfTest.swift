@@ -190,14 +190,15 @@ enum SelfTest {
             let srt = dir.appendingPathComponent("embed.srt")
             try "1\n00:00:00,500 --> 00:00:02,000\n<i>내장 자막</i> 테스트\n\n2\n00:00:06,000 --> 00:00:08,000\n두 번째 자막\n".write(to: srt, atomically: true, encoding: .utf8)
             let mkv = dir.appendingPathComponent("sample.mkv")
-            let webm = dir.appendingPathComponent("sample.webm")
+            let webm = dir.appendingPathComponent("sample.avi")
             func ffrun(_ a: [String]) throws {
                 let p = Process(); p.executableURL = URL(fileURLWithPath: ff); p.arguments = ["-y", "-loglevel", "error"] + a
                 try p.run(); p.waitUntilExit()
                 if p.terminationStatus != 0 { throw MediaError.failed("테스트 파일 생성 실패") }
             }
-            try ffrun(["-i", video.path, "-i", srt.path, "-map", "0:v", "-map", "0:a", "-map", "1:s", "-c:v", "copy", "-c:a", "libopus", "-c:s", "srt", mkv.path])
-            try ffrun(["-i", video.path, "-t", "4", "-c:v", "libvpx-vp9", "-b:v", "1M", "-deadline", "realtime", "-cpu-used", "8", "-c:a", "libopus", webm.path])
+            try ffrun(["-i", video.path, "-i", srt.path, "-map", "0:v", "-map", "0:a", "-map", "1:s", "-c:v", "copy", "-c:a", "flac", "-c:s", "srt", mkv.path])
+            // 재인코딩 경로 검사용: MPEG-4 Part 2 + AC-3 (H.264가 아니므로 변환 필요)
+            try ffrun(["-i", video.path, "-t", "4", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "ac3", webm.path])
             for f in [mkv, webm] {
                 try? FileManager.default.removeItem(at: MediaConverter.cachedURL(for: f))
                 let t0 = Date()
@@ -278,6 +279,33 @@ enum SelfTest {
         q.captions = [Caption(start: 0, end: 2, text: "a"), Caption(start: 3, end: 5, text: "b"), Caption(start: 6, end: 8, text: "c")]
         q.rippleDelete(from: 4, to: 7)
         check(q.captions.count == 3 && abs(q.captions[1].end - 4) < 1e-9 && abs(q.captions[2].start - 4) < 1e-9 && abs(q.captions[2].end - 5) < 1e-9, "자막도 함께 잘림")
+
+        // Vrew 방식: 자막 구간째 순서 바꾸기 / 삭제
+        var v = Project()
+        v.assets = [a]
+        v.insert(asset: a, track: 0, at: 0)
+        v.captions = [Caption(start: 0, end: 2, text: "A"), Caption(start: 2.2, end: 5, text: "B"), Caption(start: 5.5, end: 9, text: "C")]
+        let cID = v.captions[2].id
+        if let sp = v.span(ofCaption: cID) { v.moveRange(from: sp.lowerBound, to: sp.upperBound, insertAt: 0) }
+        check(v.captions.map(\.text) == ["C", "A", "B"] && abs(v.duration - 10) < 1e-6 && abs(v.tracks[0].clips[0].sourceIn - 5.5) < 1e-6,
+              "자막 C를 맨 앞으로 → 영상도 C 구간(5.5초~)부터 시작, 길이 그대로")
+        var w = Project()
+        w.assets = [a]
+        w.insert(asset: a, track: 0, at: 0)
+        w.captions = [Caption(start: 0, end: 2, text: "A"), Caption(start: 2.2, end: 5, text: "B"), Caption(start: 5.5, end: 9, text: "C")]
+        let bSpan = w.span(ofCaption: w.captions[1].id)!
+        w.captions.removeAll { $0.text == "B" }
+        w.rippleDelete(ranges: [bSpan])
+        check(abs(w.duration - (10 - 3.3)) < 1e-6 && w.captions.map(\.text) == ["A", "C"] && abs(w.captions[1].start - 2.2) < 1e-6,
+              "자막 B 삭제 → 영상 3.3초 함께 삭제, 뒤 자막 당겨짐")
+        var r = Project()
+        r.assets = [a]
+        let r1 = r.insert(asset: a, track: 0, at: 0)
+        _ = r.split(clip: r1, at: 4)
+        let first = r.tracks[0].clips[0].id
+        r.reorder(clip: first, pointer: 9)
+        check(abs(r.tracks[0].clips[0].sourceIn - 4) < 1e-6 && abs(r.tracks[0].clips[1].start - 6) < 1e-6 && abs(r.duration - 10) < 1e-6,
+              "트랙 1 클립 끌어서 순서 바꾸기 (앞 조각을 뒤로)")
     }
 
     static func makeTestImage(to url: URL) throws {

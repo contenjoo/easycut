@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 APP="$ROOT/dist/EasyCut.app"
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 echo "▶ 릴리스 빌드"
 swift build -c release --arch arm64 2>&1 | grep -E "error|Compiling|Build complete" || true
@@ -16,6 +16,16 @@ echo "▶ 앱 번들 구성"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/EasyCut"
+
+echo "▶ 내장 도구 (Whisper·ffmpeg)"
+if [ -x "$ROOT/vendor/bin/whisper-cli" ] && [ -x "$ROOT/vendor/bin/ffmpeg" ]; then
+  mkdir -p "$APP/Contents/Resources/bin" "$APP/Contents/Resources/licenses"
+  cp "$ROOT/vendor/bin/"* "$APP/Contents/Resources/bin/"
+  cp "$ROOT/vendor/licenses/"* "$APP/Contents/Resources/licenses/" 2>/dev/null || true
+  for b in "$APP/Contents/Resources/bin/"*; do codesign --force --sign - --timestamp=none "$b"; done
+else
+  echo "  (vendor/bin 없음 — ./scripts/build_deps.sh 를 먼저 실행하면 Whisper·ffmpeg가 내장됩니다)"
+fi
 
 echo "▶ 아이콘 생성"
 ICONSET="$ROOT/.build/EasyCut.iconset"
@@ -43,6 +53,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleDevelopmentRegion</key><string>ko</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSArchitecturePriority</key><array><string>arm64</string></array>
+  <key>LSRequiresNativeExecution</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -92,8 +104,9 @@ if [ "${1:-}" = "--dmg" ]; then
   rm -rf "$STAGE"; mkdir -p "$STAGE"
   cp -R "$APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
-  rm -f "$ROOT/dist/EasyCut.dmg"
-  hdiutil create -volname "EasyCut" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/EasyCut.dmg" >/dev/null
-  echo "  → dist/EasyCut.dmg"
+  cp "$ROOT/scripts/설치 방법.txt" "$STAGE/설치 방법.txt"
+  rm -f "$ROOT/dist/EasyCut.dmg" "$ROOT/dist/EasyCut-$VERSION.dmg"
+  hdiutil create -volname "EasyCut $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/EasyCut-$VERSION.dmg" >/dev/null
+  echo "  → dist/EasyCut-$VERSION.dmg ($(du -h "$ROOT/dist/EasyCut-$VERSION.dmg" | cut -f1))"
 fi
 echo "✅ 완료: $APP"

@@ -25,10 +25,44 @@ enum Keychain {
 }
 
 struct ChatItem: Identifiable, Equatable {
-    enum Role { case user, assistant, tool, error }
+    enum Role { case user, assistant, tool, error, thinking }
     let id = UUID()
     let role: Role
     var text: String
+}
+
+/// 고를 수 있는 Claude 모델
+struct AIModel: Identifiable, Hashable {
+    let id: String      // 모델 ID ("" = 계정 기본값, 플랜 방식에서만)
+    let name: String
+    let note: String
+    var supportsEffort: Bool { id != "claude-haiku-4-5" }
+    /// 거절 시 서버 자동 대체(fallbacks)를 쓰는 모델
+    var usesFallback: Bool { ["claude-opus-5", "claude-opus-5-5", "claude-fable-5-1"].contains(id) }
+
+    static let planDefault = AIModel(id: "", name: "계정 기본값", note: "Claude Code에 설정된 모델")
+    static let all: [AIModel] = [
+        .init(id: "claude-fable-5-1", name: "Claude Fable 5.1", note: "가장 뛰어남 · 느리고 사용량 많음"),
+        .init(id: "claude-opus-5-5", name: "Claude Opus 5.5", note: "최신 Opus"),
+        .init(id: "claude-opus-5", name: "Claude Opus 5", note: "균형 · 추천"),
+        .init(id: "claude-sonnet-5", name: "Claude Sonnet 5", note: "빠름 · 사용량 적음"),
+        .init(id: "claude-haiku-4-5", name: "Claude Haiku 4.5", note: "가장 빠름 · 간단한 편집"),
+    ]
+}
+
+enum AIEffort: String, CaseIterable, Identifiable {
+    case auto = "", low, medium, high, xhigh, max
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .auto: return "자동 (모델 기본)"
+        case .low: return "낮음 · 빠름"
+        case .medium: return "보통"
+        case .high: return "높음"
+        case .xhigh: return "매우 높음"
+        case .max: return "최대 · 가장 깊게"
+        }
+    }
 }
 
 enum AIBackend: String, CaseIterable, Identifiable {
@@ -49,12 +83,30 @@ final class AIAssistant: ObservableObject {
         didSet { UserDefaults.standard.set(backend.rawValue, forKey: "aiBackend"); reset() }
     }
 
-    static let model = "claude-opus-5"
+    /// 선택한 모델 ("" = 플랜 기본값)
+    @Published var modelID: String = UserDefaults.standard.string(forKey: "aiModel") ?? "" {
+        didSet { UserDefaults.standard.set(modelID, forKey: "aiModel"); if oldValue != modelID { reset() } }
+    }
+    @Published var effort: AIEffort = AIEffort(rawValue: UserDefaults.standard.string(forKey: "aiEffort") ?? "") ?? .auto {
+        didSet { UserDefaults.standard.set(effort.rawValue, forKey: "aiEffort") }
+    }
+    /// Claude가 어떻게 생각했는지 요약을 대화에 보여 준다
+    @Published var showThinking: Bool = UserDefaults.standard.bool(forKey: "aiShowThinking") {
+        didSet { UserDefaults.standard.set(showThinking, forKey: "aiShowThinking") }
+    }
+
+    /// API 방식에서 실제로 쓸 모델
+    var apiModel: AIModel { AIModel.all.first { $0.id == modelID } ?? AIModel.all[2] }
+    var currentModelName: String {
+        if backend == .plan && modelID.isEmpty { return "계정 기본 모델" }
+        return (AIModel.all.first { $0.id == modelID } ?? AIModel.all[2]).name
+    }
+
     private var process: Process?
     private var planSession: String?
 
     /// 설치된 Claude Code CLI (플랜 로그인으로 동작)
-    static var claudeBinary: String? {
+    nonisolated static var claudeBinary: String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = ["\(home)/.local/bin/claude", "\(home)/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
@@ -151,6 +203,8 @@ final class AIAssistant: ObservableObject {
                     "--strict-mcp-config", "--mcp-config", mcpFile.path,
                     "--allowedTools", "mcp__easycut",
                     "--append-system-prompt-file", sysFile.path]
+        if !modelID.isEmpty { args += ["--model", modelID] }
+        if effort != .auto, (AIModel.all.first { $0.id == modelID }?.supportsEffort ?? true) { args += ["--effort", effort.rawValue] }
         if let sid = planSession { args += ["--resume", sid] }
 
         let p = Process()
@@ -232,6 +286,9 @@ final class AIAssistant: ObservableObject {
             let content = (e["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
             for b in content {
                 switch b["type"] as? String {
+                case "thinking":
+                    let t = (b["thinking"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if showThinking && !t.isEmpty { items.append(ChatItem(role: .thinking, text: t)) }
                 case "text":
                     let t = (b["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !t.isEmpty else { continue }
@@ -263,7 +320,7 @@ final class AIAssistant: ObservableObject {
         }
     }
 
-    static func isAuthError(_ t: String) -> Bool {
+    nonisolated static func isAuthError(_ t: String) -> Bool {
         let l = t.lowercased()
         return l.contains("authenticate") || l.contains("oauth") || l.contains("/login") || l.contains("not logged in") || l.contains("invalid api key")
     }
@@ -303,9 +360,17 @@ final class AIAssistant: ObservableObject {
             }
             // 사고 블록 포함 응답 전체를 그대로 대화에 이어 붙인다
             messages.append(["role": "assistant", "content": content])
-            for block in content where (block["type"] as? String) == "text" {
-                if let t = block["text"] as? String, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    items.append(ChatItem(role: .assistant, text: t))
+            for block in content {
+                switch block["type"] as? String {
+                case "thinking":
+                    if showThinking, let t = block["thinking"] as? String, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        items.append(ChatItem(role: .thinking, text: t))
+                    }
+                case "text":
+                    if let t = block["text"] as? String, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        items.append(ChatItem(role: .assistant, text: t))
+                    }
+                default: break
                 }
             }
             let uses = content.filter { ($0["type"] as? String) == "tool_use" }
@@ -353,18 +418,27 @@ final class AIAssistant: ObservableObject {
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.setValue(key, forHTTPHeaderField: "x-api-key")
         req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        // 안전 분류기가 거절하면 서버가 권장 모델로 자동 재시도
-        req.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
-        let body: [String: Any] = [
-            "model": Self.model,
+        let m = apiModel
+        var body: [String: Any] = [
+            "model": m.id,
             "max_tokens": 16000,
-            "thinking": ["type": "adaptive"],
-            "fallbacks": "default",
             "cache_control": ["type": "ephemeral"],
             "system": Self.system,
             "tools": AITools.definitions,
             "messages": messages,
         ]
+        if m.supportsEffort {
+            // 적응형 사고 (생각 과정 요약을 보려면 summarized)
+            body["thinking"] = showThinking ? ["type": "adaptive", "display": "summarized"] : ["type": "adaptive"]
+            if effort != .auto { body["output_config"] = ["effort": effort.rawValue] }
+        } else if showThinking {
+            body["thinking"] = ["type": "enabled", "budget_tokens": 4000]
+        }
+        if m.usesFallback {
+            // 안전 분류기가 거절하면 서버가 권장 모델로 자동 재시도
+            req.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
+            body["fallbacks"] = "default"
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0

@@ -37,6 +37,7 @@ final class EditorStore: ObservableObject {
     @Published var showSTTSettings = false
     @Published var showSilenceSheet = false
     @Published var showLinkSheet = false
+    @Published var showClaudeSheet = false
     @Published var snapping = true
     @Published var followPlayhead = true
     @Published var timelineVersion = 0
@@ -48,6 +49,8 @@ final class EditorStore: ObservableObject {
     @AppStorage("sttEngine") var sttEngineRaw: String = STTEngine.apple.rawValue
     @AppStorage("sttLanguage") var sttLanguageID: String = "ko-KR"
     @AppStorage("whisperModel") var whisperModelID: String = WhisperModel.all[0].id
+    /// Vrew 방식: 자막을 지우면 그 구간 영상도 함께 잘라낸다
+    @AppStorage("captionCutsVideo") var captionCutsVideo = true
 
     let player = PlayerController()
     let media = MediaCache()
@@ -428,7 +431,7 @@ final class EditorStore: ObservableObject {
             return
         }
         if selection.isEmpty, let cid = selectedCaption {
-            apply { $0.captions.removeAll { $0.id == cid } }
+            deleteCaptions([cid])
             return
         }
         guard !selection.isEmpty else { return }
@@ -588,8 +591,39 @@ final class EditorStore: ObservableObject {
         targets.forEach { transcribe($0.id) }
     }
 
+    /// Whisper 모델을 받고(필요하면) 기본 엔진으로 설정. 받은 뒤 이어서 할 일을 실행
+    func prepareWhisper(then next: (() -> Void)? = nil) {
+        guard Transcriber.whisperBinary != nil else {
+            alert = "Whisper 엔진을 찾을 수 없습니다. 최신 EasyCut을 다시 설치해 주세요."
+            return
+        }
+        if Transcriber.whisperReady {
+            sttEngine = .whisper
+            next?()
+            return
+        }
+        let model = WhisperModel.all[0]
+        leftTab = .transcript
+        Task {
+            await downloader.download(model)
+            if model.isInstalled {
+                whisperModelID = model.id
+                sttEngine = .whisper
+                showToast("Whisper 준비 완료")
+                next?()
+            } else if let e = downloader.error {
+                alert = e
+            }
+        }
+    }
+
     func transcribe(_ assetID: UUID) {
         guard let asset = project.asset(assetID), transcribeTasks[assetID] == nil else { return }
+        // Whisper를 골랐는데 모델이 없으면 먼저 받고 이어서 인식
+        if sttEngine == .whisper && !Transcriber.whisperReady {
+            if downloader.downloading == nil { prepareWhisper { [weak self] in self?.transcribe(assetID) } }
+            return
+        }
         guard asset.hasAudio else { alert = "\(asset.name)에는 오디오가 없습니다."; return }
         let engine = sttEngine, lang = sttLanguage, model = whisperModel
         transcribing[assetID] = JobProgress(value: 0, message: "준비 중…")
@@ -711,6 +745,39 @@ final class EditorStore: ObservableObject {
         apply { $0.captions.append(c) }
         selectedCaption = c.id
         leftTab = .captions
+    }
+
+    /// 자막 삭제. Vrew 방식이 켜져 있으면 그 말이 나오는 영상 구간도 함께 잘라낸다.
+    func deleteCaptions(_ ids: Set<UUID>, withVideo: Bool? = nil) {
+        guard !ids.isEmpty else { return }
+        if withVideo ?? captionCutsVideo {
+            let ranges = ids.compactMap { project.span(ofCaption: $0) }
+            let total = Project.merge(ranges).map { $0.upperBound - $0.lowerBound }.reduce(0, +)
+            apply { p in
+                p.captions.removeAll { ids.contains($0.id) }
+                p.rippleDelete(ranges: ranges)
+            }
+            showToast(String(format: "자막 %d개와 영상 %.1f초 삭제", ids.count, total))
+        } else {
+            apply { $0.captions.removeAll { ids.contains($0.id) } }
+            showToast("자막 \(ids.count)개 삭제 (영상 유지)")
+        }
+        selectedCaption = nil
+    }
+
+    /// 자막 순서 바꾸기: 자막과 그 구간 영상을 함께 옮긴다
+    func moveCaptions(from source: IndexSet, to destination: Int) {
+        let sorted = project.captions.sorted { $0.start < $1.start }
+        guard let si = source.first, sorted.indices.contains(si), destination != si, destination != si + 1,
+              let span = project.span(ofCaption: sorted[si].id) else { return }
+        let target: Double
+        if destination >= sorted.count {
+            target = project.span(ofCaption: sorted[sorted.count - 1].id)?.upperBound ?? project.duration
+        } else {
+            target = sorted[destination].start
+        }
+        apply { $0.moveRange(from: span.lowerBound, to: span.upperBound, insertAt: target) }
+        showToast("순서를 바꿨습니다")
     }
 
     func updateCaption(_ id: UUID, key: String = "caption", _ f: (inout Caption) -> Void) {

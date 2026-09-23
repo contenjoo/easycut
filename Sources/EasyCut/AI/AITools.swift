@@ -55,6 +55,10 @@ enum AITools {
              ["add": ["type": "array", "items": ["type": "object", "properties": ["start": num, "end": num, "text": ["type": "string"]], "required": ["start", "end", "text"]] as [String: Any]] as [String: Any],
               "update": ["type": "array", "items": ["type": "object", "properties": ["index": ["type": "integer"], "text": ["type": "string"], "start": num, "end": num], "required": ["index"]] as [String: Any]] as [String: Any],
               "delete": ["type": "array", "items": ["type": "integer"]] as [String: Any]]),
+        tool("cut_captions", "자막 번호들을 자막과 그 말이 나오는 영상 구간째 삭제한다(Vrew 방식).",
+             ["indices": ["type": "array", "items": ["type": "integer"]] as [String: Any]], required: ["indices"]),
+        tool("move_caption", "자막 한 줄을 그 영상 구간째 다른 자막 앞으로 옮겨 순서를 바꾼다. to_index가 자막 개수면 맨 끝으로.",
+             ["index": ["type": "integer"], "to_index": ["type": "integer"]], required: ["index", "to_index"]),
         tool("set_caption_style", "전체 자막 스타일 변경.",
              ["font_size": num("1080p 기준 글자 크기"), "text_color": str("#RRGGBB"), "background_color": str("#RRGGBB"),
               "background_opacity": num("0~1 (0이면 배경 없음)"), "outline": ["type": "boolean"], "outline_color": str("외곽선 색 #RRGGBB"),
@@ -239,6 +243,18 @@ enum AITools {
                 }
             }
             return ("자막 추가 \(added) · 수정 \(updated) · 삭제 \(deleted)", false)
+
+        case "cut_captions":
+            let sorted = store.project.captions.sorted { $0.start < $1.start }
+            let ids = Set((input["indices"] as? [NSNumber] ?? []).map(\.intValue).filter { sorted.indices.contains($0) }.map { sorted[$0].id })
+            guard !ids.isEmpty else { return ("유효한 자막 번호가 없습니다", true) }
+            store.deleteCaptions(ids, withVideo: true)
+            return changed("자막 \(ids.count)개와 영상 구간 삭제")
+
+        case "move_caption":
+            guard let from = i("index"), let to = i("to_index") else { return ("index, to_index가 필요합니다", true) }
+            store.moveCaptions(from: IndexSet(integer: from), to: to)
+            return ("자막 \(from)번을 \(to)번 자리로 옮김", false)
 
         case "set_caption_style":
             store.apply { p in

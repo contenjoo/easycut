@@ -25,9 +25,7 @@ enum LinkImporter {
         let subtitles: [Caption]
     }
 
-    static var ytdlp: String? {
-        ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp"].first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    static var ytdlp: String? { Tools.find("yt-dlp") }
 
     static var downloadDir: URL {
         let base = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
@@ -55,7 +53,7 @@ enum LinkImporter {
 
     static func download(_ link: String, options: Options, progress: @escaping (Double, String) -> Void) async throws -> Result {
         guard let bin = ytdlp else {
-            throw MediaError.failed("링크로 가져오려면 yt-dlp가 필요합니다.\n터미널에서 'brew install yt-dlp'를 실행한 뒤 다시 시도하세요.")
+            throw MediaError.failed("링크로 가져오려면 유튜브 도구(yt-dlp)가 필요합니다.\n링크 가져오기 창에서 [유튜브 도구 설치]를 눌러 주세요.")
         }
         let work = AppPaths.temp.appendingPathComponent("dl-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
@@ -171,7 +169,7 @@ enum LinkImporter {
     static func friendlyError(_ tail: String) -> String {
         let l = tail.lowercased()
         if l.contains("403") || l.contains("forbidden") || l.contains("sign in to confirm you") && l.contains("bot") {
-            return "사이트가 다운로드를 막았습니다. yt-dlp가 오래됐을 수 있어요. 터미널에서 'brew upgrade yt-dlp' 후 다시 시도하세요."
+            return "사이트가 다운로드를 막았습니다. 유튜브 도구가 오래됐을 수 있어요. 링크 가져오기 창에서 [유튜브 도구 업데이트]를 눌러 주세요."
         }
         if l.contains("private video") { return "비공개 영상입니다." }
         if l.contains("sign in to confirm your age") || l.contains("age-restricted") { return "연령 제한 영상이라 받을 수 없습니다." }

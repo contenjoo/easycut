@@ -149,6 +149,16 @@ struct CaptionsPanel: View {
                 Text("\(store.project.captions.count)개").font(.caption).foregroundStyle(.secondary)
             }
             .padding(10)
+            HStack(spacing: 6) {
+                Toggle(isOn: $store.captionCutsVideo) {
+                    Text("자막을 지우면 영상도 함께 삭제 (Vrew 방식)").font(.caption)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                Spacer()
+            }
+            .padding(.horizontal, 10).padding(.bottom, 6)
+            .help("켜면 자막 한 줄을 지울 때 그 말이 나오는 영상 구간도 잘려 나갑니다. 목록에서 줄을 끌어 순서를 바꾸면 영상도 함께 옮겨집니다.")
             Divider()
             if store.project.captions.isEmpty {
                 VStack(spacing: 8) {
@@ -164,6 +174,8 @@ struct CaptionsPanel: View {
                         ForEach(store.project.captions) { c in
                             CaptionRow(store: store, caption: c).tag(c.id).id(c.id)
                         }
+                        // 끌어서 순서 바꾸기 → 영상 구간도 함께 이동
+                        .onMove { src, dst in store.moveCaptions(from: src, to: dst) }
                     }
                     .listStyle(.plain)
                     .onChange(of: store.selectedCaption) { _, id in
@@ -199,10 +211,12 @@ struct CaptionRow: View {
                 .focused($focused)
                 .onSubmit(commit)
                 .onChange(of: focused) { _, f in if !f { commit() } }
-            Button { store.apply { $0.captions.removeAll { $0.id == caption.id } } } label: {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+            Button { store.deleteCaptions([caption.id]) } label: {
+                Image(systemName: store.captionCutsVideo ? "scissors.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(store.captionCutsVideo ? Color.red.opacity(0.8) : .secondary)
             }
             .buttonStyle(.borderless)
+            .help(store.captionCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제")
         }
         .padding(.vertical, 2)
         .onAppear { text = caption.text }

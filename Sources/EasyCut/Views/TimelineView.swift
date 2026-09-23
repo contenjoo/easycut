@@ -197,6 +197,12 @@ final class TimelineNSView: NSView {
             }
         }
 
+        // 기본 트랙에서 끌면 끼워 넣을 위치를 노란 선으로 보여 준다
+        if let (tIns, ti) = reorderTarget() {
+            Theme.handle.setFill()
+            NSRect(x: x(tIns) - 1.5, y: rowY(track: ti) - 2, width: 3, height: trackH + 4).fill()
+        }
+
         if let d = dropIndicator {
             Theme.accent.setFill()
             NSRect(x: x(d.time) - 1, y: rowY(track: d.track), width: 3, height: trackH).fill()
@@ -210,6 +216,18 @@ final class TimelineNSView: NSView {
         drawRuler(vis)
         drawHeaders(p, vis)
         drawPlayhead(vis)
+    }
+
+    /// 기본 트랙(트랙 1) 클립을 ⌥ 없이 끄는 중이면 순서 바꾸기(끼워 넣기) 위치
+    private var freeMove = false
+    private var lastPointerT: Double = 0
+
+    private func reorderTarget() -> (Double, Int)? {
+        guard case .move(let id, _, _, let origTrack, _, let dTrack) = drag, origTrack == 0, dTrack == 0, !freeMove,
+              store.selection.count <= 1, let c = project.clip(id) else { return nil }
+        guard let t = project.insertionPoint(track: 0, excluding: id, pointer: lastPointerT),
+              t < c.start - Project.eps || t > c.end + Project.eps else { return nil }
+        return (t, 0)
     }
 
     private func drawRuler(_ vis: NSRect) {
@@ -576,6 +594,8 @@ final class TimelineNSView: NSView {
             store.seek(t(max(pt.x, visibleRect.minX + headerW)))
         case .move(let id, let grab, let orig, let origTrack, _, _):
             guard let c = project.clip(id) else { return }
+            lastPointerT = t(pt.x)
+            freeMove = event.modifierFlags.contains(.option)
             var newStart = max(0, t(pt.x) - grab)
             // 시작/끝 모두 스냅 후보로
             let s1 = snap(newStart, excluding: id)
@@ -620,6 +640,13 @@ final class TimelineNSView: NSView {
         switch d {
         case .move(let id, _, _, let origTrack, let dt, let dTrack):
             guard abs(dt) > 0.0001 || dTrack != 0 else { return }
+            // 기본 트랙: Vrew처럼 순서 바꾸기 (⌥를 누르면 자유 이동)
+            if reorderTarget() != nil {
+                let pointer = lastPointerT
+                store.apply { $0.reorder(clip: id, pointer: pointer) }
+                store.showToast("순서를 바꿨습니다 (⌥를 누른 채 끌면 자유 이동)")
+                return
+            }
             let ids = store.selection.contains(id) ? store.selection : [id]
             store.apply { p in
                 // 선택된 클립을 함께 이동
@@ -693,7 +720,8 @@ final class TimelineNSView: NSView {
         } else if let (c, _) = captionHit(pt) {
             store.selectedCaption = c.id
             menu.addItem(MenuAction.item("자막 편집") { [weak store] in store?.leftTab = .captions })
-            menu.addItem(MenuAction.item("자막 삭제") { [weak store] in store?.apply { $0.captions.removeAll { $0.id == c.id } } })
+            menu.addItem(MenuAction.item("자막과 영상 함께 삭제") { [weak store] in store?.deleteCaptions([c.id], withVideo: true) })
+            menu.addItem(MenuAction.item("자막만 삭제 (영상 유지)") { [weak store] in store?.deleteCaptions([c.id], withVideo: false) })
         } else {
             let tt = t(pt.x)
             menu.addItem(MenuAction.item("여기에 텍스트 추가") { [weak store] in store?.seek(tt); store?.addTextClip() })

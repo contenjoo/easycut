@@ -9,9 +9,7 @@ enum MediaConverter {
     static var ffmpeg: String? { tool("ffmpeg") }
     static var ffprobe: String? { tool("ffprobe") }
 
-    private static func tool(_ name: String) -> String? {
-        ["/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)"].first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    private static func tool(_ name: String) -> String? { Tools.find(name) }
 
     static var cacheDir: URL {
         let d = AppPaths.support.appendingPathComponent("converted", isDirectory: true)

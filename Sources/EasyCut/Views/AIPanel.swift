@@ -25,15 +25,37 @@ struct AIPanel: View {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(.purple)
                 Text("AI 편집").font(.headline)
-                Text(ai.backend == .plan ? "Claude 플랜" : "Claude API").font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                Menu {
+                    Section("모델") {
+                        if ai.backend == .plan {
+                            Button { ai.modelID = "" } label: { check(ai.modelID.isEmpty, "계정 기본값") }
+                        }
+                        ForEach(AIModel.all) { m in
+                            Button { ai.modelID = m.id } label: { check(ai.modelID == m.id || (ai.backend == .api && ai.modelID.isEmpty && m.id == "claude-opus-5"), "\(m.name) — \(m.note)") }
+                        }
+                    }
+                    Section("추론 강도") {
+                        ForEach(AIEffort.allCases) { e in
+                            Button { ai.effort = e } label: { check(ai.effort == e, e.label) }
+                        }
+                    }
+                    Divider()
+                    Toggle("생각 과정 보기", isOn: $ai.showThinking)
+                } label: {
+                    Text("\(ai.currentModelName)\(ai.effort == .auto ? "" : " · \(ai.effort.label.components(separatedBy: " ").first ?? "")")")
+                        .font(.caption)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Claude 모델과 추론 강도 선택 (\(ai.backend == .plan ? "플랜 로그인" : "API 키"))")
                 Menu {
                     Picker("연결 방식", selection: $ai.backend) {
                         ForEach(AIBackend.allCases) { Text($0.rawValue).tag($0) }
                     }
                     Divider()
                     Button("API 키 설정…") { showKey = true }
-                    Button("Claude Code / 데스크톱에 연결…") { showConnect = true }
+                    Button("Claude 연결 도우미…") { showConnect = true }
                     Divider()
                     Button("대화 지우기") { ai.reset() }
                 } label: { Image(systemName: "gearshape") }
@@ -47,7 +69,7 @@ struct AIPanel: View {
                     Text("Claude 플랜으로 쓰려면 Claude Code가 필요합니다.").font(.callout.weight(.semibold))
                     Text("Claude Code를 설치하고 터미널에서 claude 실행 → /login 으로 Pro/Max 계정에 로그인하면, API 키 없이 구독 플랜으로 AI 편집을 쓸 수 있습니다.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Claude Code 설치 안내 열기") { NSWorkspace.shared.open(URL(string: "https://claude.com/claude-code")!) }
+                    Button("Claude 연결 도우미 열기") { showConnect = true }.buttonStyle(.borderedProminent)
                     Button("API 키 방식으로 바꾸기") { ai.backend = .api }.controlSize(.small)
                     Spacer()
                 }
@@ -110,7 +132,7 @@ struct AIPanel: View {
                         Image(systemName: "person.badge.key.fill").foregroundStyle(.orange)
                         Text("터미널에서  claude  →  /login").font(.system(.caption, design: .monospaced))
                         Spacer()
-                        Button("터미널 열기") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")) }
+                        Button("로그인하기") { showConnect = true }
                             .controlSize(.small)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
@@ -138,6 +160,11 @@ struct AIPanel: View {
         .sheet(isPresented: $showConnect) { ConnectSheet() }
     }
 
+    @ViewBuilder
+    func check(_ on: Bool, _ title: String) -> some View {
+        if on { Label(title, systemImage: "checkmark") } else { Text(title) }
+    }
+
     func submit() {
         let t = input
         input = ""
@@ -155,6 +182,12 @@ struct AIPanel: View {
             Label(item.text, systemImage: "wand.and.stars").font(.caption).foregroundStyle(.purple)
         case .error:
             Label(item.text, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+        case .thinking:
+            DisclosureGroup {
+                Text(item.text).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            } label: {
+                Label("생각 과정", systemImage: "brain").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -181,52 +214,110 @@ struct KeySheet: View {
     }
 }
 
+/// Claude 연결 도우미: 설치·로그인·Claude Code/데스크톱 연결을 버튼으로
 struct ConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
-
-    var appBinary: String {
-        Bundle.main.executableURL?.path ?? "/Applications/EasyCut.app/Contents/MacOS/EasyCut"
-    }
-
-    var claudeCodeCommand: String { "claude mcp add easycut -- \"\(appBinary)\" --mcp" }
-
-    var desktopJSON: String {
-        """
-        "easycut": {
-          "command": "\(appBinary)",
-          "args": ["--mcp"]
-        }
-        """
-    }
+    @State private var codeInstalled = AIAssistant.claudeBinary != nil
+    @State private var loggedIn: Bool?
+    @State private var checking = false
+    @State private var codeLinked = ClaudeLink.codeConnected
+    @State private var desktopLinked = ClaudeLink.desktopConnected
+    @State private var message = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Claude에서 EasyCut 조작하기").font(.title2.bold())
-            Text("EasyCut을 켜 둔 상태에서 Claude Code나 Claude 데스크톱이 편집 도구(무음 제거, 말 삭제, 속도, 자막…)를 직접 쓸 수 있습니다. 연결은 이 Mac 안(127.0.0.1)에서만 이뤄집니다.")
+            HStack {
+                Image(systemName: "sparkles").foregroundStyle(.purple).font(.title2)
+                Text("Claude 연결").font(.title2.bold())
+            }
+            Text("Claude Pro/Max 구독이 있으면 API 키 없이 AI 편집을 쓸 수 있습니다. 아래 순서대로 한 번만 설정하세요.")
                 .font(.callout).foregroundStyle(.secondary)
-            GroupBox("Claude Code — 터미널에서 한 번 실행") {
-                copyRow(claudeCodeCommand)
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    step(1, "Claude Code 설치", done: codeInstalled) {
+                        Button(codeInstalled ? "다시 설치" : "설치하기") {
+                            Tools.runInTerminal("""
+                            echo "Claude Code를 설치합니다 (공식 설치 스크립트: claude.ai/install.sh)"
+                            curl -fsSL https://claude.ai/install.sh | bash
+                            echo ""
+                            echo "설치가 끝났습니다. 이 창을 닫고 EasyCut에서 [2. 로그인]을 누르세요."
+                            """, name: "Claude Code 설치")
+                        }
+                        Button("확인") { codeInstalled = AIAssistant.claudeBinary != nil }
+                    }
+                    step(2, "Claude 계정 로그인 (Pro/Max)", done: loggedIn == true) {
+                        Button("로그인 창 열기") {
+                            let bin = AIAssistant.claudeBinary ?? "claude"
+                            Tools.runInTerminal("""
+                            echo "잠시 후 Claude Code가 열리면  /login  을 입력하고 Enter → 'Claude 계정'을 고르세요."
+                            echo "브라우저에서 로그인을 마친 뒤, 이 창은 닫아도 됩니다."
+                            echo ""
+                            "\(bin)"
+                            """, name: "Claude 로그인")
+                        }
+                        .disabled(!codeInstalled)
+                        Button(checking ? "확인 중…" : "로그인 확인") {
+                            checking = true
+                            Task { loggedIn = await ClaudeLink.checkLogin(); checking = false }
+                        }
+                        .disabled(!codeInstalled || checking)
+                    }
+                    if loggedIn == false {
+                        Text("아직 로그인되지 않았습니다. [로그인 창 열기]로 로그인해 주세요.").font(.caption).foregroundStyle(.orange)
+                    } else if loggedIn == true {
+                        Text("연결 완료! 이제 AI 탭에서 말로 편집할 수 있습니다.").font(.caption).foregroundStyle(.green)
+                    }
+                }
+                .padding(6)
+            } label: { Text("앱 안에서 AI 편집 (AI 탭)").font(.headline) }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    step(nil, "Claude 데스크톱 앱에서 EasyCut 조작", done: desktopLinked) {
+                        Button(desktopLinked ? "다시 연결" : "연결하기") {
+                            do {
+                                try ClaudeLink.connectDesktop()
+                                desktopLinked = ClaudeLink.desktopConnected
+                                message = "Claude 데스크톱을 완전히 종료(⌘Q) 후 다시 열면 EasyCut 도구가 보입니다."
+                            } catch { message = error.localizedDescription }
+                        }
+                    }
+                    step(nil, "Claude Code(터미널)에서 EasyCut 조작", done: codeLinked) {
+                        Button(codeLinked ? "다시 연결" : "연결하기") {
+                            Task {
+                                do { try await ClaudeLink.connectCode(); codeLinked = ClaudeLink.codeConnected; message = "Claude Code에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다." }
+                                catch { message = error.localizedDescription }
+                            }
+                        }
+                        .disabled(!codeInstalled)
+                    }
+                    Text("EasyCut을 켜 둔 상태에서 Claude에게 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(6)
+            } label: { Text("Claude 앱에서 EasyCut 조작 (선택)").font(.headline) }
+
+            if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.blue) }
+            HStack {
+                Text("API 키로 쓰려면 AI 탭 ⚙︎ › 연결 방식 › API 키").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("닫기") { dismiss() }.keyboardShortcut(.defaultAction)
             }
-            GroupBox("Claude 데스크톱 — 설정 › 개발자 › 구성 편집의 mcpServers 안에 추가") {
-                copyRow(desktopJSON)
-            }
-            Text("예) \"EasyCut에서 무음 다 자르고 자막 만들어줘\"").font(.caption).foregroundStyle(.secondary)
-            HStack { Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.defaultAction) }
         }
         .padding(22)
-        .frame(width: 600)
+        .frame(width: 580)
     }
 
-    func copyRow(_ text: String) -> some View {
-        HStack(alignment: .top) {
-            Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("복사") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-            }
-            .controlSize(.small)
+    @ViewBuilder
+    func step<B: View>(_ n: Int?, _ title: String, done: Bool, @ViewBuilder buttons: () -> B) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: done ? "checkmark.circle.fill" : (n.map { "\($0).circle" } ?? "circle"))
+                .foregroundStyle(done ? .green : .secondary)
+                .font(.title3)
+            Text(title)
+            Spacer()
+            buttons().controlSize(.small)
         }
-        .padding(4)
     }
 }

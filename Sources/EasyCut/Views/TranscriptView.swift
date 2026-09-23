@@ -43,6 +43,7 @@ struct TranscriptPanel: View {
                 }
             }
 
+            WhisperBanner(store: store, downloader: store.downloader)
             if store.sttEngine == .apple && Transcriber.whisperReady {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill").foregroundStyle(.yellow)
@@ -99,6 +100,47 @@ struct TranscriptPanel: View {
                 .controlSize(.small)
                 .padding(8)
             }
+        }
+    }
+}
+
+/// Whisper 모델이 없을 때 한 번에 받게 하는 안내
+struct WhisperBanner: View {
+    @ObservedObject var store: EditorStore
+    @ObservedObject var downloader: ModelDownloader
+
+    var body: some View {
+        if let m = downloader.downloading {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Whisper 모델 받는 중… \(Int(downloader.progress * 100))% (\(m.sizeMB)MB)").font(.caption.weight(.semibold))
+                    Spacer()
+                    Button("취소") { downloader.cancel() }.controlSize(.small)
+                }
+                ProgressView(value: downloader.progress)
+                Text("다 받으면 자동으로 음성 인식을 이어서 합니다. 한 번만 받으면 됩니다.").font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .background(Color.blue.opacity(0.1))
+        } else if Transcriber.whisperBinary != nil && !Transcriber.whisperReady {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.badge.checkmark.fill").foregroundStyle(.blue)
+                    Text("더 정확하고 빠른 Whisper 음성 인식").font(.caption.weight(.semibold))
+                }
+                Text("한국어 정확도가 높고 긴 영상도 빠릅니다 (2시간 ≈ 9분). 인식 모델을 한 번만 받으면 인터넷 없이 이 Mac에서 처리됩니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    store.prepareWhisper()
+                } label: {
+                    Label("Whisper 켜기 (모델 \(WhisperModel.all[0].sizeMB)MB 받기)", systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.blue.opacity(0.08))
         }
     }
 }

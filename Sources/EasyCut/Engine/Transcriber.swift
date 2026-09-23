@@ -279,10 +279,7 @@ enum Transcriber {
 
     // MARK: Whisper
 
-    static var whisperBinary: String? {
-        let candidates = ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", "/opt/homebrew/bin/whisper-cpp", "/usr/local/bin/whisper-cpp"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    static var whisperBinary: String? { Tools.find("whisper-cli") ?? Tools.find("whisper-cpp") }
 
     static func transcribeWhisper(samples: [Int16], language: STTLanguage, model: WhisperModel, partial: (([Word]) -> Void)? = nil,
                                   progress: @escaping (Double, String) -> Void) async throws -> [Word] {

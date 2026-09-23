@@ -157,6 +157,82 @@ extension Project {
         return out
     }
 
+    // MARK: 구간째 옮기기 (Vrew 방식 순서 바꾸기)
+
+    /// 타임라인 [a, b) 구간을 모든 트랙·자막째 떼어 내 t 지점(현재 타임라인 기준)에 끼워 넣는다.
+    mutating func moveRange(from a: Double, to b: Double, insertAt t: Double) {
+        let len = b - a
+        guard len > Project.eps, t < a - Project.eps || t > b + Project.eps else { return }
+        splitAll(at: a)
+        splitAll(at: b)
+        var moved: [(Int, Clip)] = []
+        for ti in tracks.indices {
+            for c in tracks[ti].clips where c.start >= a - Project.eps && c.end <= b + Project.eps {
+                var n = c
+                n.start -= a
+                moved.append((ti, n))
+            }
+        }
+        let movedCaps = captions.filter { $0.start >= a - Project.eps && $0.end <= b + Project.eps }
+            .map { c -> Caption in var n = c; n.start -= a; n.end -= a; return n }
+        rippleDelete(from: a, to: b)
+        let ins = t > b ? t - len : t
+        splitAll(at: ins)
+        for ti in tracks.indices {
+            for ci in tracks[ti].clips.indices where tracks[ti].clips[ci].start >= ins - Project.eps {
+                tracks[ti].clips[ci].start += len
+            }
+        }
+        for i in captions.indices {
+            if captions[i].start >= ins - Project.eps {
+                captions[i].start += len; captions[i].end += len
+            } else if captions[i].end > ins {
+                captions[i].end += len // 끼워 넣는 지점에 걸친 자막은 늘려 준다
+            }
+        }
+        for (ti, c) in moved {
+            var n = c
+            n.start += ins
+            tracks[ti].clips.append(n)
+        }
+        captions += movedCaps.map { c -> Caption in var n = c; n.start += ins; n.end += ins; return n }
+        normalize()
+    }
+
+    /// 자막 하나가 차지하는 영상 구간 (다음 자막 직전까지 포함해 어색한 공백을 남기지 않는다)
+    func span(ofCaption id: UUID) -> ClosedRange<Double>? {
+        let sorted = captions.sorted { $0.start < $1.start }
+        guard let i = sorted.firstIndex(where: { $0.id == id }) else { return nil }
+        let c = sorted[i]
+        var end = c.end
+        if i + 1 < sorted.count {
+            let next = sorted[i + 1].start
+            if next - c.end < 1.5 { end = max(c.end, next) }
+        }
+        end = min(end, max(duration, c.end))
+        return c.start...max(end, c.start + 0.05)
+    }
+
+    /// 기본 트랙 클립을 떨어뜨린 위치(포인터 시각)에 맞춰 순서를 바꾼다
+    mutating func reorder(clip id: UUID, pointer t: Double) {
+        guard let loc = locate(clip: id) else { return }
+        let c = tracks[loc.track].clips[loc.index]
+        let others = tracks[loc.track].clips.filter { $0.id != id }
+        guard let target = insertionPoint(track: loc.track, excluding: id, pointer: t), !others.isEmpty else { return }
+        moveRange(from: c.start, to: c.end, insertAt: target)
+    }
+
+    /// 포인터 아래 클립의 앞/뒤 경계 (앞쪽 절반이면 앞, 뒤쪽 절반이면 뒤)
+    func insertionPoint(track ti: Int, excluding id: UUID, pointer t: Double) -> Double? {
+        let others = tracks[ti].clips.filter { $0.id != id }
+        if let under = others.first(where: { t >= $0.start && t < $0.end }) {
+            return t < (under.start + under.end) / 2 ? under.start : under.end
+        }
+        var bounds: [Double] = [0]
+        for o in others { bounds += [o.start, o.end] }
+        return bounds.min { abs($0 - t) < abs($1 - t) }
+    }
+
     // MARK: 이동 / 트림
 
     mutating func move(clip id: UUID, toTrack newTrack: Int, start: Double) {
