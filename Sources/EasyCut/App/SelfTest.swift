@@ -102,7 +102,7 @@ enum SelfTest {
         bc.add([("정말", 13.47, 0.45), ("편리하죠", 13.92, 0.81)])
         check(bc.all.map(\.text) == ["안녕하세요.", "오늘은", "음성을", "텍스트로", "바꾸고", "정말", "편리하죠"], "Apple 인식 배치 합치기: \(bc.all.map(\.text).joined(separator: " "))")
 
-        // 소리 크기 기준 무음 검출 (Recut 방식)
+        // 소리 크기 기준 무음 검출 
         let db = try await SilenceDetector.loudness(url: video)
         let th = SilenceDetector.autoThreshold(db)
         let sil = SilenceDetector.silences(db, threshold: th, minSilence: 0.8, padding: 0.1)
@@ -280,7 +280,7 @@ enum SelfTest {
         q.rippleDelete(from: 4, to: 7)
         check(q.captions.count == 3 && abs(q.captions[1].end - 4) < 1e-9 && abs(q.captions[2].start - 4) < 1e-9 && abs(q.captions[2].end - 5) < 1e-9, "자막도 함께 잘림")
 
-        // Vrew 방식: 자막 구간째 순서 바꾸기 / 삭제
+        // 자막 구간째 순서 바꾸기 / 삭제
         var v = Project()
         v.assets = [a]
         v.insert(asset: a, track: 0, at: 0)

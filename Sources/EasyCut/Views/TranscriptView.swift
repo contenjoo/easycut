@@ -439,7 +439,7 @@ enum SilenceMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Recut 스타일 원클릭 무음 컷: 잘릴 곳을 타임라인에 미리 보여주고 한 번에 적용
+/// 원클릭 무음 컷: 잘릴 곳을 타임라인에 미리 보여주고 한 번에 적용
 struct SilenceSheet: View {
     @ObservedObject var store: EditorStore
     @Environment(\.dismiss) private var dismiss

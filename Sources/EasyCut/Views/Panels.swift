@@ -151,7 +151,7 @@ struct CaptionsPanel: View {
             .padding(10)
             HStack(spacing: 6) {
                 Toggle(isOn: $store.captionCutsVideo) {
-                    Text("자막을 지우면 영상도 함께 삭제 (Vrew 방식)").font(.caption)
+                    Text("자막을 지우면 영상도 함께 삭제").font(.caption)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.mini)

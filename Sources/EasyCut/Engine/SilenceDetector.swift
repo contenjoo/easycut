@@ -1,6 +1,6 @@
 import AVFoundation
 
-/// Recut 방식: 음성 인식 없이 오디오 음량(파형)만으로 무음 구간을 찾는다.
+/// 음성 인식 없이 오디오 음량(파형)만으로 무음 구간을 찾는다.
 enum SilenceDetector {
     /// 10ms 단위 음량(dBFS)
     static let hop: Double = 0.01

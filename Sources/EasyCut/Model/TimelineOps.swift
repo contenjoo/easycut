@@ -157,7 +157,7 @@ extension Project {
         return out
     }
 
-    // MARK: 구간째 옮기기 (Vrew 방식 순서 바꾸기)
+    // MARK: 구간째 옮기기 (자막 단위 순서 바꾸기)
 
     /// 타임라인 [a, b) 구간을 모든 트랙·자막째 떼어 내 t 지점(현재 타임라인 기준)에 끼워 넣는다.
     mutating func moveRange(from a: Double, to b: Double, insertAt t: Double) {

@@ -57,7 +57,7 @@ enum AITools {
              ["add": ["type": "array", "items": ["type": "object", "properties": ["start": num, "end": num, "text": ["type": "string"]], "required": ["start", "end", "text"]] as [String: Any]] as [String: Any],
               "update": ["type": "array", "items": ["type": "object", "properties": ["index": ["type": "integer"], "text": ["type": "string"], "start": num, "end": num], "required": ["index"]] as [String: Any]] as [String: Any],
               "delete": ["type": "array", "items": ["type": "integer"]] as [String: Any]]),
-        tool("cut_captions", "자막 번호들을 자막과 그 말이 나오는 영상 구간째 삭제한다(Vrew 방식).",
+        tool("cut_captions", "자막 번호들을 자막과 그 말이 나오는 영상 구간째 삭제한다.",
              ["indices": ["type": "array", "items": ["type": "integer"]] as [String: Any]], required: ["indices"]),
         tool("move_caption", "자막 한 줄을 그 영상 구간째 다른 자막 앞으로 옮겨 순서를 바꾼다. to_index가 자막 개수면 맨 끝으로.",
              ["index": ["type": "integer"], "to_index": ["type": "integer"]], required: ["index", "to_index"]),

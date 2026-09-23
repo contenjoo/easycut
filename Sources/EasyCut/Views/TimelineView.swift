@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 
-/// 캠타시아 스타일 멀티 트랙 타임라인 (AppKit 커스텀 뷰: 긴 영상도 보이는 부분만 그린다)
+/// 멀티 트랙 타임라인 (AppKit 커스텀 뷰: 긴 영상도 보이는 부분만 그린다)
 struct TimelineContainer: NSViewRepresentable {
     @ObservedObject var store: EditorStore
 
@@ -640,7 +640,7 @@ final class TimelineNSView: NSView {
         switch d {
         case .move(let id, _, _, let origTrack, let dt, let dTrack):
             guard abs(dt) > 0.0001 || dTrack != 0 else { return }
-            // 기본 트랙: Vrew처럼 순서 바꾸기 (⌥를 누르면 자유 이동)
+            // 기본 트랙: 끼워 넣어 순서 바꾸기 (⌥를 누르면 자유 이동)
             if reorderTarget() != nil {
                 let pointer = lastPointerT
                 store.apply { $0.reorder(clip: id, pointer: pointer) }

@@ -49,7 +49,7 @@ final class EditorStore: ObservableObject {
     @AppStorage("sttEngine") var sttEngineRaw: String = STTEngine.apple.rawValue
     @AppStorage("sttLanguage") var sttLanguageID: String = "ko-KR"
     @AppStorage("whisperModel") var whisperModelID: String = WhisperModel.all[0].id
-    /// Vrew 방식: 자막을 지우면 그 구간 영상도 함께 잘라낸다
+    /// 자막을 지우면 그 구간 영상도 함께 잘라낸다
     @AppStorage("captionCutsVideo") var captionCutsVideo = true
 
     let player = PlayerController()
@@ -681,7 +681,7 @@ final class EditorStore: ObservableObject {
         showToast(String(format: "무음 %d곳 삭제 (%.1f초 단축)", ranges.count, total))
     }
 
-    /// 기본 트랙에 쓰인 소리 있는 미디어의 음량 분석 (Recut 방식 무음 컷용)
+    /// 기본 트랙에 쓰인 소리 있는 미디어의 음량 분석 (무음 컷용)
     func ensureLoudness() async -> Bool {
         let used = Set(project.tracks.first?.clips.compactMap(\.assetID) ?? [])
         let targets = project.assets.filter { used.contains($0.id) && $0.hasAudio && loudness[$0.id] == nil && !$0.isMissing }
@@ -747,7 +747,7 @@ final class EditorStore: ObservableObject {
         leftTab = .captions
     }
 
-    /// 자막 삭제. Vrew 방식이 켜져 있으면 그 말이 나오는 영상 구간도 함께 잘라낸다.
+    /// 자막 삭제. '영상도 함께 삭제'가 켜져 있으면 그 말이 나오는 영상 구간도 함께 잘라낸다.
     func deleteCaptions(_ ids: Set<UUID>, withVideo: Bool? = nil) {
         guard !ids.isEmpty else { return }
         if withVideo ?? captionCutsVideo {
