@@ -19,8 +19,10 @@ enum MediaError: LocalizedError {
 
 enum MediaProbe {
     static let importTypes: [UTType] = [.movie, .video, .audio, .image, .mpeg4Movie, .quickTimeMovie, .mp3, .wav, .aiff, .png, .jpeg, .heic, .gif, .tiff]
+        + MediaConverter.convertibleExtensions.sorted().compactMap { UTType(filenameExtension: $0) }
 
     static func kind(of url: URL) -> MediaKind? {
+        if MediaConverter.needsConversion(url) { return .video }
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return nil }
         if type.conforms(to: .image) { return .image }
         if type.conforms(to: .audio) { return .audio }

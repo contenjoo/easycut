@@ -28,6 +28,8 @@ final class EditorStore: ObservableObject {
     @Published var toast: String?
     @Published var alert: String?
     @Published var transcribing: [UUID: JobProgress] = [:]
+    /// MKV 등 변환 중인 파일 (파일 이름 → 진행률)
+    @Published var converting: [String: JobProgress] = [:]
     @Published var leftTab: LeftTab = .media
     @Published var zoom: Double = 40 // px / 초
     @Published var showExport = false
@@ -173,9 +175,26 @@ final class EditorStore: ObservableObject {
         Task {
             var added: [MediaAsset] = []
             var failed: [String] = []
+            var embeddedSubs: [Caption] = []
             for url in urls {
-                if let existing = project.assets.first(where: { $0.path == url.path }) { added.append(existing); continue }
-                do { added.append(try await MediaProbe.probe(url)) } catch { failed.append(error.localizedDescription) }
+                if let existing = project.assets.first(where: { $0.path == url.path || $0.originalPath == url.path }) { added.append(existing); continue }
+                do {
+                    if MediaConverter.needsConversion(url) {
+                        let name = url.lastPathComponent
+                        converting[name] = JobProgress(value: 0, message: "준비 중…")
+                        defer { converting[name] = nil }
+                        let r = try await MediaConverter.convert(url) { v, m in
+                            Task { @MainActor [weak self] in if self?.converting[name] != nil { self?.converting[name] = JobProgress(value: v, message: m) } }
+                        }
+                        var a = try await MediaProbe.probe(r.video)
+                        a.name = name
+                        a.originalPath = url.path
+                        added.append(a)
+                        if embeddedSubs.isEmpty { embeddedSubs = r.subtitles }
+                    } else {
+                        added.append(try await MediaProbe.probe(url))
+                    }
+                } catch { failed.append(error.localizedDescription) }
             }
             if !failed.isEmpty { alert = failed.joined(separator: "\n") }
             guard !added.isEmpty else { return }
@@ -199,8 +218,12 @@ final class EditorStore: ObservableObject {
                     for a in added { Self.autoPlace(a, in: &p, at: nil) }
                 }
             }
+            // 빈 프로젝트에 자막 트랙이 든 MKV를 가져오면 자막도 함께
+            if wasEmpty && place == nil && project.captions.isEmpty && !embeddedSubs.isEmpty {
+                apply { $0.captions = embeddedSubs; $0.showCaptions = true }
+            }
             for a in added { media.prepare(a) }
-            showToast("\(added.count)개 파일을 가져왔습니다")
+            showToast("\(added.count)개 파일을 가져왔습니다" + (embeddedSubs.isEmpty ? "" : " (내장 자막 \(embeddedSubs.count)개)"))
         }
     }
 
@@ -277,9 +300,27 @@ final class EditorStore: ObservableObject {
             timelineVersion += 1
             for a in p.assets { media.prepare(a) }
             scheduleRebuild(immediate: true)
+            restoreConvertedAssets()
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
             alert = "프로젝트를 열 수 없습니다: \(error.localizedDescription)"
+        }
+    }
+
+    /// 변환 캐시가 지워졌으면 원본(MKV 등)에서 다시 변환
+    func restoreConvertedAssets() {
+        let targets = project.assets.filter { $0.isMissing && $0.originalPath.map { FileManager.default.fileExists(atPath: $0) } == true }
+        guard !targets.isEmpty else { return }
+        Task {
+            for a in targets {
+                guard let orig = a.originalPath else { continue }
+                converting[a.name] = JobProgress(value: 0, message: "다시 변환 중…")
+                if let r = try? await MediaConverter.convert(URL(fileURLWithPath: orig), progress: { _, _ in }) {
+                    apply { p in if let i = p.assets.firstIndex(where: { $0.id == a.id }) { p.assets[i].path = r.video.path } }
+                    if let fixed = project.asset(a.id) { media.prepare(fixed) }
+                }
+                converting[a.name] = nil
+            }
         }
     }
 

@@ -50,6 +50,8 @@ struct MediaAsset: Codable, Identifiable, Hashable {
     var height: Double
     var hasAudio: Bool
     var words: [Word]?
+    /// MKV 등 변환해서 가져온 경우 원본 파일 경로
+    var originalPath: String?
 
     var url: URL { URL(fileURLWithPath: path) }
     var isMissing: Bool { !FileManager.default.fileExists(atPath: path) }

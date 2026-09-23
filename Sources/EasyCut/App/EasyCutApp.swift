@@ -25,7 +25,11 @@ enum Main {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    weak var store: EditorStore?
+    /// 창이 뜨기 전에 들어온 파일은 모아 뒀다가 연결되면 연다
+    private var pending: [URL] = []
+    weak var store: EditorStore? {
+        didSet { if store != nil, !pending.isEmpty { let u = pending; pending = []; openURLs(u) } }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -41,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard store != nil else { pending += urls; return }
+        openURLs(urls)
+    }
+
+    private func openURLs(_ urls: [URL]) {
         guard let store else { return }
         MainActor.assumeIsolated {
             let projects = urls.filter { $0.pathExtension.lowercased() == "easycut" }

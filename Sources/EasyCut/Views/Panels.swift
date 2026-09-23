@@ -21,13 +21,23 @@ struct MediaBinPanel: View {
                 Text("\(store.project.assets.count)개").font(.caption).foregroundStyle(.secondary)
             }
             .padding(10)
+            ForEach(store.converting.keys.sorted(), id: \.self) { name in
+                if let job = store.converting[name] {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(name) 가져오는 중").font(.caption.weight(.semibold)).lineLimit(1)
+                        ProgressView(value: job.value)
+                        Text(job.message).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10).padding(.bottom, 8)
+                }
+            }
             Divider()
             ScrollView {
                 if store.project.assets.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "tray.and.arrow.down").font(.system(size: 34)).foregroundStyle(.secondary)
                         Text("파일을 여기로 끌어다 놓으세요").font(.headline)
-                        Text("MP4 · MOV · M4V · MP3 · WAV · M4A · AAC\nPNG · JPG · HEIC · GIF · TIFF")
+                        Text("MP4 · MOV · M4V · MKV · WEBM · AVI\nMP3 · WAV · M4A · AAC · PNG · JPG · HEIC · GIF")
                             .font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -106,7 +116,7 @@ struct AssetTile: View {
                 Button(asset.words == nil ? "음성 인식 (STT)" : "음성 다시 인식") { store.transcribe(asset.id) }
             }
             Divider()
-            Button("Finder에서 보기") { NSWorkspace.shared.activateFileViewerSelecting([asset.url]) }
+            Button("Finder에서 보기") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: asset.originalPath ?? asset.path)]) }
             Button("프로젝트에서 제거", role: .destructive) { store.removeAsset(asset.id) }
         }
         .help(asset.path)

@@ -164,6 +164,38 @@ enum SelfTest {
         let m4aDur = try await AVURLAsset(url: m4a).load(.duration).seconds
         check(abs(m4aDur - expected) < 0.3, String(format: "오디오만 내보내기 %.2f초", m4aDur))
 
+        print("5-2) MKV·WebM 가져오기 (ffmpeg 변환)")
+        if let ff = MediaConverter.ffmpeg {
+            let srt = dir.appendingPathComponent("embed.srt")
+            try "1\n00:00:00,500 --> 00:00:02,000\n<i>내장 자막</i> 테스트\n\n2\n00:00:06,000 --> 00:00:08,000\n두 번째 자막\n".write(to: srt, atomically: true, encoding: .utf8)
+            let mkv = dir.appendingPathComponent("sample.mkv")
+            let webm = dir.appendingPathComponent("sample.webm")
+            func ffrun(_ a: [String]) throws {
+                let p = Process(); p.executableURL = URL(fileURLWithPath: ff); p.arguments = ["-y", "-loglevel", "error"] + a
+                try p.run(); p.waitUntilExit()
+                if p.terminationStatus != 0 { throw MediaError.failed("테스트 파일 생성 실패") }
+            }
+            try ffrun(["-i", video.path, "-i", srt.path, "-map", "0:v", "-map", "0:a", "-map", "1:s", "-c:v", "copy", "-c:a", "libopus", "-c:s", "srt", mkv.path])
+            try ffrun(["-i", video.path, "-t", "4", "-c:v", "libvpx-vp9", "-b:v", "1M", "-deadline", "realtime", "-cpu-used", "8", "-c:a", "libopus", webm.path])
+            for f in [mkv, webm] {
+                try? FileManager.default.removeItem(at: MediaConverter.cachedURL(for: f))
+                let t0 = Date()
+                let r = try await MediaConverter.convert(f) { _, _ in }
+                let a = try await MediaProbe.probe(r.video)
+                let expectDur = f == mkv ? v.duration : 4.0
+                check(a.kind == .video && a.hasAudio && abs(a.duration - expectDur) < 0.2,
+                      String(format: "%@ → MP4 %.1f초 (%d×%d, 오디오 %@), %.1f초 걸림", f.lastPathComponent, a.duration, Int(a.width), Int(a.height), a.hasAudio ? "있음" : "없음", Date().timeIntervalSince(t0)))
+                if f == mkv {
+                    check(r.subtitles.count == 2 && r.subtitles[0].text == "내장 자막 테스트", "MKV 내장 자막 \(r.subtitles.count)개 추출: \(r.subtitles.first?.text ?? "")")
+                    let again = Date()
+                    _ = try await MediaConverter.convert(f) { _, _ in }
+                    check(Date().timeIntervalSince(again) < 1.0, "같은 파일 다시 가져오면 변환 결과 재사용")
+                }
+            }
+        } else {
+            print("  (ffmpeg 미설치 — 건너뜀)")
+        }
+
         print("6) 프로젝트 저장/열기")
         let data = try JSONEncoder().encode(p)
         let back = try JSONDecoder().decode(Project.self, from: data)

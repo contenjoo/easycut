@@ -57,6 +57,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>CFBundleTypeIconFile</key><string>AppIcon</string>
     </dict>
     <dict>
+      <key>CFBundleTypeName</key><string>기타 영상 (MKV 등)</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>CFBundleTypeExtensions</key><array><string>mkv</string><string>webm</string><string>avi</string><string>flv</string><string>wmv</string><string>ts</string><string>mts</string><string>m2ts</string><string>mpg</string><string>mpeg</string></array>
+    </dict>
+    <dict>
       <key>CFBundleTypeName</key><string>미디어</string>
       <key>CFBundleTypeRole</key><string>Viewer</string>
       <key>LSHandlerRank</key><string>Alternate</string>
