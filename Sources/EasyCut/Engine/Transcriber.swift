@@ -292,45 +292,57 @@ enum Transcriber {
         let dir = AppPaths.temp.appendingPathComponent("whisper-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let wav = dir.appendingPathComponent("audio.wav")
-        try writeWAV(samples[...], to: wav)
-        let outBase = dir.appendingPathComponent("out").path
-        progress(0.02, "Whisper 인식 중…")
+        // 긴 녹화는 무음 지점에서 약 10분 단위로 나눠, 조각이 끝날 때마다 대본을 보여 준다
+        let parts = chunks(samples, minLen: 420, maxLen: 600)
+        var words: [Word] = []
+        let started = Date()
+        for (i, r) in parts.enumerated() {
+            try Task.checkCancellation()
+            let slice = samples[r]
+            let offset = Double(r.lowerBound) / Double(sampleRate)
+            let base = Double(i) / Double(parts.count), span = 1 / Double(parts.count)
+            var eta = ""
+            if i >= 1 {
+                let per = Date().timeIntervalSince(started) / Double(i)
+                eta = " · 남은 시간 약 \(TimeFormat.short(per * Double(parts.count - i)))"
+            }
+            let label = parts.count > 1 ? "Whisper 인식 중 (\(i + 1)/\(parts.count))\(eta)" : "Whisper 인식 중…"
+            progress(base, label)
+            if rms(slice) < 60 { continue }
+            let wav = dir.appendingPathComponent("c\(i).wav")
+            try writeWAV(slice, to: wav)
+            let outBase = dir.appendingPathComponent("c\(i)").path
+            try await runWhisper(bin: bin, model: model, language: language, wav: wav, outBase: outBase) { v in
+                progress(base + span * v, label)
+            }
+            let data = try Data(contentsOf: URL(fileURLWithPath: outBase + ".json"))
+            words += parseWhisperFull(data).map { Word(text: $0.text, start: $0.start + offset, end: $0.end + offset) }
+            partial?(fixOverlaps(words))
+        }
+        progress(1, "완료")
+        return fixOverlaps(words)
+    }
 
+    private static func runWhisper(bin: String, model: WhisperModel, language: STTLanguage, wav: URL, outBase: String,
+                                   progress: @escaping (Double) -> Void) async throws {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = ["-m", model.localURL.path, "-f", wav.path, "-l", language.whisperCode,
-                       "-ojf", "--dtw", model.dtw, "-nfa", "-of", outBase, "-pp",
+                       "-ojf", "--dtw", model.dtw, "-nfa", "-of", outBase, "-pp", "-np",
                        // 이전 문장을 문맥으로 쓰지 않아 긴 녹화에서 같은 문장이 반복되는 현상을 막는다
                        "-mc", "0",
                        "-t", "\(max(2, ProcessInfo.processInfo.activeProcessorCount - 2))"]
         let err = Pipe()
         p.standardError = err
-        // 진행 중 출력되는 문장("[00:00:01.000 --> 00:00:04.000]  내용")으로 대본을 미리 보여 준다
-        let outPipe = Pipe()
-        p.standardOutput = outPipe
-        final class Live: @unchecked Sendable { var buf = Data(); var words: [Word] = [] }
-        let live = Live()
-        outPipe.fileHandleForReading.readabilityHandler = { h in
-            live.buf.append(h.availableData)
-            var changed = false
-            while let nl = live.buf.firstIndex(of: 0x0A) {
-                let line = String(decoding: live.buf[..<nl], as: UTF8.self)
-                live.buf.removeSubrange(...nl)
-                guard let seg = parseWhisperLine(line) else { continue }
-                live.words += seg
-                changed = true
-            }
-            if changed { partial?(live.words) }
-        }
+        p.standardOutput = FileHandle.nullDevice
+        p.standardInput = FileHandle.nullDevice
         final class Tail: @unchecked Sendable { var text = "" }
         let tailBox = Tail()
         err.fileHandleForReading.readabilityHandler = { h in
             guard let s = String(data: h.availableData, encoding: .utf8), !s.isEmpty else { return }
             tailBox.text = String((tailBox.text + s).suffix(2000))
-            if let r = s.range(of: #"progress =\s*(\d+)%"#, options: .regularExpression) {
-                let num = s[r].filter(\.isNumber)
-                if let v = Double(num) { progress(min(0.99, v / 100), "Whisper 인식 중… \(Int(v))%") }
+            if let r = s.range(of: #"progress =\s*(\d+)%"#, options: .regularExpression), let v = Double(s[r].filter(\.isNumber)) {
+                progress(min(0.99, v / 100))
             }
         }
         try p.run()
@@ -342,14 +354,10 @@ enum Transcriber {
             p.terminate()
         }
         err.fileHandleForReading.readabilityHandler = nil
-        outPipe.fileHandleForReading.readabilityHandler = nil
         try Task.checkCancellation()
         guard p.terminationStatus == 0 else {
             throw MediaError.failed("Whisper 실행 실패 (코드 \(p.terminationStatus))\n\(tailBox.text.suffix(400))")
         }
-        let data = try Data(contentsOf: URL(fileURLWithPath: outBase + ".json"))
-        progress(1, "완료")
-        return fixOverlaps(parseWhisperFull(data))
     }
 
     /// "[00:01:02.300 --> 00:01:05.100]  문장" → 글자 수 비율로 나눈 단어들

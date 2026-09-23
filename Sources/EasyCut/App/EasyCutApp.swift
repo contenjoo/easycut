@@ -252,7 +252,12 @@ enum STTTest {
         Task.detached {
             var log = ""
             do {
-                let words = try await Transcriber.transcribe(url: url, engine: .apple, language: STTLanguage.all[0], whisperModel: nil) { _, _ in }
+                let engine: STTEngine = CommandLine.arguments.contains("--whisper") ? .whisper : .apple
+                var partials = 0
+                let t0 = Date()
+                let words = try await Transcriber.transcribe(url: url, engine: engine, language: STTLanguage.all[0], whisperModel: nil,
+                                                             partial: { _ in partials += 1 }) { _, _ in }
+                print(String(format: "엔진 %@ · %.1f초 · 단어 %d개 · 중간 표시 %d회", engine == .whisper ? "Whisper" : "Apple", Date().timeIntervalSince(t0), words.count, partials))
                 log = words.map { String(format: "%.2f-%.2f %@", $0.start, $0.end, $0.text) }.joined(separator: "\n")
             } catch {
                 log = "오류: \(error.localizedDescription)"
