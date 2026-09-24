@@ -41,8 +41,8 @@ jobs:
           $ff = Get-ChildItem ffmpeg -Directory | Select-Object -First 1
           Copy-Item "$($ff.FullName)/bin/ffmpeg.exe", "$($ff.FullName)/bin/ffprobe.exe" $bin
           Copy-Item "$($ff.FullName)/LICENSE" windows/app/src-tauri/resources/licenses/FFmpeg-LICENSE.txt
-          # whisper.cpp (CPU build)
-          gh release download --repo ggml-org/whisper.cpp --pattern whisper-bin-x64.zip --output whisper.zip
+          # whisper.cpp v1.9.4 (CPU build, published on build tag b5130)
+          gh release download b5130 --repo ggml-org/whisper.cpp --pattern whisper-bin-x64.zip --output whisper.zip
           Expand-Archive whisper.zip -DestinationPath whisper
           Get-ChildItem whisper -Recurse -Include whisper-cli.exe, *.dll | Copy-Item -Destination $bin
           Copy-Item vendor/licenses/whisper.cpp-MIT.txt windows/app/src-tauri/resources/licenses/
