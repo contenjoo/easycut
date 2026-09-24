@@ -46,6 +46,7 @@ final class TimelineNSView: NSView {
         case captionMove(id: UUID, dt: Double)
         case captionTrim(id: UUID, left: Bool, dt: Double)
         case marquee(from: NSPoint, to: NSPoint)
+        case range(from: Double)
     }
     private var drag: Drag?
     private var mouseDownPoint: NSPoint = .zero
@@ -518,10 +519,14 @@ final class TimelineNSView: NSView {
         mouseDownPoint = pt
         let vis = visibleRect
 
-        // 눈금자: 재생헤드 이동
+        // 눈금자: 재생헤드를 잡으면 이동, 다른 곳을 끌면 구간 선택
         if pt.y - vis.minY < rulerH {
-            drag = .scrub
             store.player.pause()
+            if abs(pt.x - x(store.time)) <= 8 {
+                drag = .scrub
+            } else {
+                drag = .range(from: snap(t(max(pt.x, vis.minX + headerW)), excluding: nil))
+            }
             store.seek(t(max(pt.x, vis.minX + headerW)))
             return
         }
@@ -544,6 +549,7 @@ final class TimelineNSView: NSView {
             } else {
                 store.selectedCaption = nil
                 store.seek(t(pt.x))
+                drag = .range(from: snap(t(pt.x), excluding: nil))
             }
             return
         }
@@ -567,11 +573,12 @@ final class TimelineNSView: NSView {
             needsDisplay = true
             return
         }
-        // 빈 곳: 선택 해제 + 재생헤드 이동, 드래그하면 범위 선택
-        if !event.modifierFlags.contains(.shift) { store.selection = [] }
+        // 빈 곳: 선택 해제 + 재생헤드 이동. 끌면 시간 구간 선택 (⌘/⇧+끌기 = 클립 여러 개 선택)
+        let multi = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        if !multi { store.selection = [] }
         store.selectedCaption = nil
         store.seek(t(pt.x))
-        drag = .marquee(from: pt, to: pt)
+        drag = multi ? .marquee(from: pt, to: pt) : .range(from: snap(t(pt.x), excluding: nil))
     }
 
     private func snap(_ time: Double, excluding id: UUID?) -> Double {
@@ -617,6 +624,13 @@ final class TimelineNSView: NSView {
             guard let c = project.captions.first(where: { $0.id == id }) else { return }
             let tt = snap(t(pt.x), excluding: nil)
             drag = .captionTrim(id: id, left: left, dt: tt - (left ? c.start : c.end))
+        case .range(let from):
+            // 4px 이상 끌어야 구간으로 본다 (그냥 클릭은 재생헤드 이동만)
+            guard abs(pt.x - x(from)) > 4 else { return }
+            let to = snap(t(max(pt.x, visibleRect.minX + headerW)), excluding: nil)
+            store.markIn = min(from, to)
+            store.markOut = max(from, to)
+            store.seek(to)
         case .marquee(let from, _):
             drag = .marquee(from: from, to: pt)
             let r = NSRect(x: min(from.x, pt.x), y: min(from.y, pt.y), width: abs(from.x - pt.x), height: abs(from.y - pt.y))
@@ -677,6 +691,10 @@ final class TimelineNSView: NSView {
             guard abs(dt) > 0.0001 else { return }
             store.updateCaption(id, key: "captrim") { c in
                 if left { c.start = min(c.end - 0.1, max(0, c.start + dt)) } else { c.end = max(c.start + 0.1, c.end + dt) }
+            }
+        case .range:
+            if let r = store.markRange {
+                store.showToast("구간 \(TimeFormat.clock(r.lowerBound)) – \(TimeFormat.clock(r.upperBound)) · ⌫ 잘라내기, X 해제")
             }
         default:
             break

@@ -51,6 +51,8 @@ final class EditorStore: ObservableObject {
     @AppStorage("whisperModel") var whisperModelID: String = WhisperModel.all[0].id
     /// 자막을 지우면 그 구간 영상도 함께 잘라낸다
     @AppStorage("captionCutsVideo") var captionCutsVideo = true
+    /// 바뀔 때마다 자동 저장 (저장한 적 없는 프로젝트는 복구용 파일에 보관)
+    @AppStorage("autosave") var autosaveEnabled = true
 
     let player = PlayerController()
     let media = MediaCache()
@@ -131,6 +133,7 @@ final class EditorStore: ObservableObject {
     private func setProject(_ p: Project) {
         project = p
         dirty = true
+        scheduleAutosave()
         let ids = Set(p.tracks.flatMap(\.clips).map(\.id))
         selection = selection.intersection(ids)
         if let c = selectedCaption, !p.captions.contains(where: { $0.id == c }) { selectedCaption = nil }
@@ -313,6 +316,7 @@ final class EditorStore: ObservableObject {
         dirty = false
         selection = []
         timelineVersion += 1
+        clearRecovery()
     }
 
     func confirmDiscard() -> Bool {
@@ -325,7 +329,7 @@ final class EditorStore: ObservableObject {
         a.addButton(withTitle: "취소")
         switch a.runModal() {
         case .alertFirstButtonReturn: return save()
-        case .alertSecondButtonReturn: return true
+        case .alertSecondButtonReturn: clearRecovery(); return true
         default: return false
         }
     }
@@ -348,6 +352,7 @@ final class EditorStore: ObservableObject {
             dirty = false
             selection = []
             timelineVersion += 1
+            clearRecovery()
             for a in p.assets { media.prepare(a) }
             scheduleRebuild(immediate: true)
             restoreConvertedAssets()
@@ -391,6 +396,8 @@ final class EditorStore: ObservableObject {
             try enc.encode(project).write(to: url, options: .atomic)
             projectURL = url
             dirty = false
+            autosaveTask?.cancel()
+            clearRecovery()
             showToast("저장했습니다")
             return true
         } catch {
@@ -834,6 +841,73 @@ final class EditorStore: ObservableObject {
             return (a.name as NSString).deletingPathExtension
         }
         return "EasyCut"
+    }
+
+    // MARK: 자동 저장
+
+    private var autosaveTask: Task<Void, Never>?
+
+    /// 저장한 적 없는 프로젝트를 보관하는 복구용 파일
+    nonisolated static var recoveryURL: URL { AppPaths.support.appendingPathComponent("복구용 프로젝트.easycut") }
+
+    /// 편집이 멈추고 1.5초 뒤 저장 (연속 조작은 한 번만 저장)
+    private func scheduleAutosave() {
+        guard autosaveEnabled else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            self?.autosaveNow()
+        }
+    }
+
+    /// 지금 바로 자동 저장. 파일이 있으면 그 파일에, 없으면 복구용 파일에 쓴다.
+    func autosaveNow() {
+        autosaveTask?.cancel()
+        guard autosaveEnabled, dirty else { return }
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        guard let data = try? enc.encode(project) else { return }
+        if let url = projectURL {
+            do {
+                try data.write(to: url, options: .atomic)
+                dirty = false
+            } catch {
+                showToast("자동 저장 실패: \(error.localizedDescription)")
+            }
+        } else if !project.assets.isEmpty {
+            // 새 프로젝트는 '저장' 전까지 복구용 파일에 보관 (창 제목의 '편집됨'은 유지)
+            try? data.write(to: Self.recoveryURL, options: .atomic)
+        }
+    }
+
+    func clearRecovery() {
+        try? FileManager.default.removeItem(at: Self.recoveryURL)
+    }
+
+    /// 지난번에 저장하지 않고 끝난 프로젝트가 있으면 복구할지 묻는다
+    func offerRecovery() {
+        let url = Self.recoveryURL
+        guard FileManager.default.fileExists(atPath: url.path), projectURL == nil, project.assets.isEmpty,
+              let data = try? Data(contentsOf: url), let p = try? JSONDecoder().decode(Project.self, from: data) else { return }
+        let a = NSAlert()
+        a.messageText = "저장하지 않은 프로젝트가 있습니다"
+        let when = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            .map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) } ?? ""
+        a.informativeText = "\(when)에 자동으로 보관된 작업(미디어 \(p.assets.count)개, 길이 \(TimeFormat.clock(p.duration)))을 다시 열까요?"
+        a.addButton(withTitle: "복구")
+        a.addButton(withTitle: "버리기")
+        guard a.runModal() == .alertFirstButtonReturn else { clearRecovery(); return }
+        undoStack.removeAll(); redoStack.removeAll()
+        project = p
+        projectURL = nil
+        dirty = true
+        selection = []
+        timelineVersion += 1
+        for a in p.assets { media.prepare(a) }
+        scheduleRebuild(immediate: true)
+        restoreConvertedAssets()
+        showToast("복구했습니다. ⌘S로 저장하세요")
     }
 
     var windowTitle: String {

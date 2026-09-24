@@ -134,10 +134,10 @@ struct TimelineToolbar: View {
             Toggle(isOn: $store.followPlayhead) { Image(systemName: "arrow.right.to.line") }.toggleStyle(.button).help("재생 시 타임라인 따라가기")
             Button { store.addTrack() } label: { Image(systemName: "plus.rectangle.on.rectangle") }.help("트랙 추가")
             Spacer()
-            Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
+            Button { store.zoom = max(0.5, store.zoom / 1.5) } label: { Image(systemName: "minus.magnifyingglass").frame(width: 22, height: 20).contentShape(Rectangle()) }.help("축소 (⌘-)")
             Slider(value: Binding(get: { log(store.zoom) }, set: { store.zoom = exp($0) }), in: log(0.5)...log(800))
                 .frame(width: 140)
-            Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
+            Button { store.zoom = min(800, store.zoom * 1.5) } label: { Image(systemName: "plus.magnifyingglass").frame(width: 22, height: 20).contentShape(Rectangle()) }.help("확대 (⌘=)")
             Button("전체") { store.zoomToFit() }.help("전체 보기 (⇧Z)")
         }
         .buttonStyle(.borderless)

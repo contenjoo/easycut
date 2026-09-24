@@ -58,6 +58,9 @@ enum SelfTest {
     static func runAsync(_ dir: URL) async throws {
         print("1) 모델 연산")
         testTimelineOps()
+        check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
+              && !Updater.isNewer("1.2.0", than: "1.2.0") && !Updater.isNewer("1.2", than: "1.2.0") && Updater.isNewer("2.0", than: "1.99.1"),
+              "업데이트 버전 비교")
 
         print("2) 테스트 미디어 생성 (\(dir.path))")
         let speech = dir.appendingPathComponent("speech.aiff")

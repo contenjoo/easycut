@@ -51,7 +51,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 창이 뜨기 전에 들어온 파일은 모아 뒀다가 연결되면 연다
     private var pending: [URL] = []
     weak var store: EditorStore? {
-        didSet { if store != nil, !pending.isEmpty { let u = pending; pending = []; openURLs(u) } }
+        didSet {
+            guard let store, oldValue == nil else { return }
+            if !pending.isEmpty { let u = pending; pending = []; openURLs(u) }
+            // 파일을 열며 시작한 게 아니면 지난 작업 복구 제안, 그다음 업데이트 확인
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                MainActor.assumeIsolated {
+                    store.offerRecovery()
+                    Updater.checkInBackground(store: store)
+                }
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -68,7 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let store else { return .terminateNow }
-        return MainActor.assumeIsolated { store.confirmDiscard() } ? .terminateNow : .terminateCancel
+        return MainActor.assumeIsolated {
+            store.autosaveNow()
+            return Updater.installing || store.confirmDiscard()
+        } ? .terminateNow : .terminateCancel
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -124,6 +137,9 @@ struct AppCommands: Commands {
     }
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("업데이트 확인…") { Updater.check(store: store, userInitiated: true) }
+        }
         CommandGroup(replacing: .newItem) {
             Button("새 프로젝트") { store.newProject() }.keyboardShortcut("n")
             Button("프로젝트 열기…") { store.openPanel() }.keyboardShortcut("o")
@@ -134,6 +150,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button("저장") { store.save() }.keyboardShortcut("s")
             Button("다른 이름으로 저장…") { store.save(as: true) }.keyboardShortcut("s", modifiers: [.command, .shift])
+            Toggle("자동 저장", isOn: $store.autosaveEnabled)
             Divider()
             Button("영상 내보내기…") { store.showExport = true }.keyboardShortcut("e")
             Button("SRT 자막 내보내기…") { store.exportSRT() }
