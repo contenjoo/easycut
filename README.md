@@ -2,21 +2,26 @@
 
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 macOS 설치형 영상 편집기입니다.
 
-## 설치 (배포용)
+**[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
 
-`dist/EasyCut-1.2.0.dmg` 를 나눠 주면 됩니다. **M1 이상 Apple Silicon Mac, macOS 14 이상** 전용입니다.
+## 설치
+
+**M1 이상 Apple Silicon Mac, macOS 14 이상** 전용입니다.
+
+1. [Releases](https://github.com/contenjoo/easycut/releases/latest)에서 `EasyCut-x.y.z.dmg`를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
+2. 처음 열 때 한 번: 서명·공증되지 않은 앱이라 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
+3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
+
 Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다.
-사용자용 설치 안내는 DMG 안의 `설치 방법.txt`에 있습니다.
+AI 편집은 선택 기능입니다. Claude Pro/Max 플랜 로그인(Claude Code) 또는 본인 API 키로 쓰며, API 키는 macOS 키체인에만 저장됩니다.
 
-- App Store 밖 배포라 처음 열 때 한 번: 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
-- Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]** 한 번으로 받음
-- 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받음
+## 소스에서 빌드
 
-만들기:
+필요: Xcode Command Line Tools(Swift 5.10+), `cmake`(`brew install cmake`), `git`
 
 ```bash
 ./scripts/build_deps.sh      # Whisper·ffmpeg를 소스에서 빌드해 vendor/bin 에 (처음 한 번, 10분 내외)
-./scripts/build_app.sh --dmg # 앱 번들 + DMG
+./scripts/build_app.sh --dmg # 앱 번들 + DMG (dist/)
 ```
 
 ## 주요 기능
@@ -68,7 +73,7 @@ Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있�
 
 ## 링크로 가져오기 (유튜브 등)
 
-미디어 탭 **[링크]** 또는 파일 › 링크로 가져오기(⇧⌘I). 주소를 붙여 넣으면 편집하기 좋은 H.264 MP4로 받아 바로 타임라인에 올립니다 (yt-dlp 필요: `brew install yt-dlp`, 막히면 `brew upgrade yt-dlp`).
+미디어 탭 **[링크]** 또는 파일 › 링크로 가져오기(⇧⌘I). 주소를 붙여 넣으면 편집하기 좋은 H.264 MP4로 받아 바로 타임라인에 올립니다 (처음 한 번 링크 창의 [유튜브 도구 설치], 막히면 [유튜브 도구 업데이트]).
 
 - 화질 720p/1080p/최고/소리만, **일부 구간만 받기**(예: 1:30~5:00), 업로더가 올린 한국어·영어 자막 함께 받기
 - 받은 파일은 `~/Movies/EasyCut 다운로드`에 저장
@@ -77,7 +82,7 @@ Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있�
 
 ## MKV 등 기타 영상
 
-MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁니다 (ffmpeg 필요: `brew install ffmpeg`).
+MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁니다 (ffmpeg는 앱에 내장).
 
 - H.264/HEVC 영상은 다시 압축하지 않고 포장만 바꿔 몇 초 안에 끝나며 화질 손실이 없습니다.
 - VP9·AV1 등은 Mac 하드웨어 인코더로 H.264로 변환합니다.
@@ -89,8 +94,7 @@ MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁�
 - **Apple 내장(기본)**: 추가 설치 없이 이 Mac 안에서 처리. 긴 영상은 무음 지점에서 25~45초 단위로 나눠 인식합니다.
 - **Whisper(설치되어 있으면 기본)**: 한국어 정확도가 더 높고 훨씬 빠릅니다 (2시간 녹화 약 5분, Apple 엔진은 수십 분). 긴 녹화에서 같은 문장이 반복되는 현상을 막는 설정이 적용되어 있습니다.
 - 두 엔진 모두 인식되는 대로 대본이 바로바로 나타납니다.
-  1. 터미널에서 `brew install whisper-cpp`
-  2. 앱의 대본 탭 › 엔진 설정 › Whisper 선택 › 모델 **내려받기** (Large v3 Turbo 권장, 약 574MB)
+  - 대본 탭의 **[Whisper 켜기]** 또는 엔진 설정 › Whisper › 모델 **내려받기** (Large v3 Turbo 권장, 약 574MB)
 
 ## AI 편집 / Claude 연결
 
@@ -126,3 +130,7 @@ swift build                                  # 디버그 빌드
 - `Sources/EasyCut/App` — 편집 상태, 재생 제어(20배속), 단축키, 자체 검사
 - `Sources/EasyCut/Views` — 타임라인(AppKit), 대본 편집기, 패널, 시트
 - `Sources/EasyCut/AI` — 편집 도구 정의, Claude API 대화, MCP 제어 서버
+
+## 라이선스
+
+[MIT](LICENSE). 배포판에 포함된 FFmpeg(LGPL-2.1)와 whisper.cpp(MIT)의 라이선스는 [`vendor/licenses/`](vendor/licenses)에 있습니다.
