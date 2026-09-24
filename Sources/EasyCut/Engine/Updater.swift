@@ -82,7 +82,7 @@ enum Updater {
         a.addButton(withTitle: "업데이트")
         a.addButton(withTitle: "나중에")
         a.addButton(withTitle: "이 버전 건너뛰기")
-        switch a.runModal() {
+        switch a.localized().runModal() {
         case .alertFirstButtonReturn:
             Task { await install(rel, store: store) }
         case .alertThirdButtonReturn:

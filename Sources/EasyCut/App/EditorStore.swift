@@ -188,7 +188,7 @@ final class EditorStore: ObservableObject {
     }
 
     func showToast(_ s: String) {
-        toast = s
+        toast = L(s)
         toastTask?.cancel()
         toastTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_200_000_000)
@@ -338,7 +338,7 @@ final class EditorStore: ObservableObject {
         a.addButton(withTitle: "저장")
         a.addButton(withTitle: "저장 안 함")
         a.addButton(withTitle: "취소")
-        switch a.runModal() {
+        switch a.localized().runModal() {
         case .alertFirstButtonReturn: return save()
         case .alertSecondButtonReturn: clearRecovery(); return true
         default: return false
@@ -396,7 +396,7 @@ final class EditorStore: ObservableObject {
         if url == nil || `as` {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [UTType(filenameExtension: "easycut") ?? .json]
-            panel.nameFieldStringValue = "새 프로젝트.easycut"
+            panel.nameFieldStringValue = L("새 프로젝트.easycut")
             guard panel.runModal() == .OK, let u = panel.url else { return false }
             url = u
         }
@@ -636,7 +636,7 @@ final class EditorStore: ObservableObject {
                 a.messageText = "이미 인식이 끝났습니다. 다시 인식할까요?"
                 a.informativeText = "기존 대본 수정 내용은 사라집니다."
                 a.addButton(withTitle: "다시 인식"); a.addButton(withTitle: "취소")
-                if a.runModal() == .alertFirstButtonReturn { any.forEach { transcribe($0.id) } }
+                if a.localized().runModal() == .alertFirstButtonReturn { any.forEach { transcribe($0.id) } }
             }
             return
         }
@@ -783,7 +783,7 @@ final class EditorStore: ObservableObject {
             a.messageText = "기존 자막을 대본으로 다시 만들까요?"
             a.informativeText = "직접 수정한 자막 내용은 사라집니다."
             a.addButton(withTitle: "다시 만들기"); a.addButton(withTitle: "취소")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
+            guard a.localized().runModal() == .alertFirstButtonReturn else { return }
         }
         apply { $0.captions = caps; $0.showCaptions = true }
         showToast("자막 \(caps.count)개 생성")
@@ -947,7 +947,7 @@ final class EditorStore: ObservableObject {
         a.informativeText = "\(when)에 자동으로 보관된 작업(미디어 \(p.assets.count)개, 길이 \(TimeFormat.clock(p.duration)))을 다시 열까요?"
         a.addButton(withTitle: "복구")
         a.addButton(withTitle: "버리기")
-        guard a.runModal() == .alertFirstButtonReturn else { clearRecovery(); return }
+        guard a.localized().runModal() == .alertFirstButtonReturn else { clearRecovery(); return }
         undoStack.removeAll(); redoStack.removeAll()
         project = p
         projectURL = nil
@@ -961,6 +961,6 @@ final class EditorStore: ObservableObject {
     }
 
     var windowTitle: String {
-        "\(projectURL?.deletingPathExtension().lastPathComponent ?? "새 프로젝트")\(dirty ? " — 편집됨" : "")"
+        "\(projectURL?.deletingPathExtension().lastPathComponent ?? L("새 프로젝트"))\(dirty ? L(" — 편집됨") : "")"
     }
 }

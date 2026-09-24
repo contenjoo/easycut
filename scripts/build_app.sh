@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 APP="$ROOT/dist/EasyCut.app"
-VERSION="1.6.0"
+VERSION="1.7.0"
 
 # 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
 SIGN_ID="${EASYCUT_SIGN_ID:-EasyCut Self-Signed}"
@@ -24,6 +24,17 @@ BIN="$ROOT/.build/arm64-apple-macosx/release/EasyCut"
 echo "▶ 앱 번들 구성"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# 언어: 한국어(원문) + 영어 (앱 문구는 LocTable, 권한 안내문은 InfoPlist.strings)
+mkdir -p "$APP/Contents/Resources/ko.lproj" "$APP/Contents/Resources/en.lproj"
+: > "$APP/Contents/Resources/ko.lproj/InfoPlist.strings"
+# 한국어는 원문 그대로(키 = 한국어), 영어 문구표는 scripts/gen_strings.py 로 만든다
+echo '"EasyCut" = "EasyCut";' > "$APP/Contents/Resources/ko.lproj/Localizable.strings"
+python3 "$ROOT/scripts/gen_strings.py" >/dev/null && cp "$ROOT/Resources/en.lproj/Localizable.strings" "$APP/Contents/Resources/en.lproj/"
+cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
+"NSCameraUsageDescription" = "EasyCut uses the camera to record your face along with the screen.";
+"NSMicrophoneUsageDescription" = "EasyCut uses the microphone to record your voice.";
+"NSSpeechRecognitionUsageDescription" = "EasyCut uses speech recognition to turn speech in your videos into text (transcripts and captions). Recognition runs on this Mac.";
+STRINGS
 cp "$BIN" "$APP/Contents/MacOS/EasyCut"
 
 echo "▶ 내장 도구 (Whisper·ffmpeg)"
@@ -59,8 +70,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>8</string>
-  <key>CFBundleDevelopmentRegion</key><string>ko</string>
+  <key>CFBundleVersion</key><string>9</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSArchitecturePriority</key><array><string>arm64</string></array>
   <key>LSRequiresNativeExecution</key><true/>
@@ -116,6 +128,7 @@ if [ "${1:-}" = "--dmg" ]; then
   cp -R "$APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
   cp "$ROOT/scripts/설치 방법.txt" "$STAGE/설치 방법.txt"
+  cp "$ROOT/scripts/How to Install.txt" "$STAGE/How to Install.txt"
   rm -f "$ROOT/dist/EasyCut.dmg" "$ROOT/dist/EasyCut-$VERSION.dmg"
   hdiutil create -volname "EasyCut $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/EasyCut-$VERSION.dmg" >/dev/null
   echo "  → dist/EasyCut-$VERSION.dmg ($(du -h "$ROOT/dist/EasyCut-$VERSION.dmg" | cut -f1))"

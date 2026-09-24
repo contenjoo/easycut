@@ -278,6 +278,12 @@ enum SelfTest {
         check(abs(p.duration - 3) < 1e-9, "끝 트림")
         let b = p.insert(asset: a, track: 0, at: 1.5)
         check(p.clip(b)!.start >= 1.5 && p.tracks[0].clips.count == 3, "겹침 해결: 겹친 클립 밀어내기")
+        // 영어 번역
+        check(Loc.translate("3개 파일을 가져왔습니다", force: true) == "Imported 3 file(s)", "영어: 값이 든 문장")
+        check(Loc.translate("음성 인식 중… (2/5) · 남은 시간 약 1:20", force: true) == "Recognizing speech… (2/5) · about 1:20 left", "영어: 겹친 문장")
+        check(Loc.translateKey("%lld개 클립 선택됨") == "%lld clips selected", "영어: SwiftUI 키")
+        check(Loc.translate("트랙 2", force: true) == "Track 2" && Loc.translate("무음 제거", force: true) == "Remove silences", "영어: 트랙 이름·도구")
+        check(Loc.translate("영상이름.mp4", force: true) == "영상이름.mp4", "영어: 모르는 문장은 그대로")
         // 화면 효과
         let base = CIImage(color: CIColor(red: 0.2, green: 0.5, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
         let circ = Effects.shape(base, .circle)

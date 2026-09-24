@@ -283,13 +283,13 @@ final class TimelineNSView: NSView {
 
         let title: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.labelColor]
         let dim: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
-        ("자막" as NSString).draw(at: NSPoint(x: vis.minX + 10, y: rulerH + 8), withAttributes: title)
+        (L("자막") as NSString).draw(at: NSPoint(x: vis.minX + 10, y: rulerH + 8), withAttributes: title)
         let capToggle = store.project.showCaptions ? "표시" : "숨김"
-        (capToggle as NSString).draw(at: NSPoint(x: vis.minX + headerW - 38, y: rulerH + 8), withAttributes: dim)
+        (L(capToggle) as NSString).draw(at: NSPoint(x: vis.minX + headerW - 38, y: rulerH + 8), withAttributes: dim)
 
         for (ti, tr) in p.tracks.enumerated() {
             let y = rowY(track: ti)
-            (tr.name as NSString).draw(at: NSPoint(x: vis.minX + 10, y: compactHeader ? y + (trackH - 14) / 2 : y + 8), withAttributes: title)
+            (L(tr.name) as NSString).draw(at: NSPoint(x: vis.minX + 10, y: compactHeader ? y + (trackH - 14) / 2 : y + 8), withAttributes: title)
             let m = iconOrigin(track: ti, mute: true), h = iconOrigin(track: ti, mute: false)
             drawIcon(tr.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", at: NSPoint(x: vis.minX + m.x, y: m.y), on: !tr.muted)
             drawIcon(tr.hidden ? "eye.slash.fill" : "eye.fill", at: NSPoint(x: vis.minX + h.x, y: h.y), on: !tr.hidden)
@@ -427,7 +427,7 @@ final class TimelineNSView: NSView {
                 // 제목 띠
                 NSColor.black.withAlphaComponent(0.28).setFill()
                 NSRect(x: r.minX, y: r.minY, width: r.width, height: 16).fill()
-                var label = c.kind == .text ? "T  \(c.text)" : (asset?.name ?? "(없음)")
+                var label = c.kind == .text ? "T  \(c.text)" : (asset?.name ?? L("(없음)"))
                 if abs(c.speed - 1) > 0.001 { label = "⏩\(Self.speedLabel(c.speed))  " + label }
                 if asset?.words != nil { label = "💬 " + label }
                 if c.groupID != nil { label = "🔗 " + label }
@@ -758,7 +758,7 @@ final class TimelineNSView: NSView {
                 menu.addItem(MenuAction.item("그룹 해제  (⇧⌘G)") { [weak store] in store?.ungroupSelection() })
             }
             menu.addItem(.separator())
-            let speed = NSMenuItem(title: "속도", action: nil, keyEquivalent: "")
+            let speed = NSMenuItem(title: L("속도"), action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for s in [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8, 12, 16, 20] {
                 let it = MenuAction.item(Self.speedLabel(s)) { [weak store] in store?.setSpeed(s) }
@@ -832,7 +832,7 @@ final class MenuAction: NSObject {
 
     static func item(_ title: String, _ a: @escaping () -> Void) -> NSMenuItem {
         let target = MenuAction(a)
-        let it = NSMenuItem(title: title, action: #selector(run), keyEquivalent: "")
+        let it = NSMenuItem(title: L(title), action: #selector(run), keyEquivalent: "")
         it.target = target
         it.representedObject = target // 유지
         return it

@@ -15,7 +15,7 @@ struct RecordSheet: View {
 
             Form {
                 Picker("녹화 범위", selection: Binding(get: { rec.target }, set: { rec.target = $0 })) {
-                    ForEach(RecordController.TargetKind.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(RecordController.TargetKind.allCases) { Text(L($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 if rec.target == .window {
@@ -36,7 +36,7 @@ struct RecordSheet: View {
                             Text("아직 고르지 않음").foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(rec.area == nil ? "영역 고르기…" : "다시 고르기…") { Task { await rec.pickArea() } }
+                        Button(L(rec.area == nil ? "영역 고르기…" : "다시 고르기…")) { Task { await rec.pickArea() } }
                     }
                 }
                 if rec.displays.count > 1 && rec.target != .window {
@@ -119,13 +119,13 @@ struct RecordPanelView: View {
                 case .recording, .paused:
                     let paused = controller.phase == .paused
                     Circle().fill(paused ? .orange : .red).frame(width: 10, height: 10)
-                    Text(paused ? "일시정지" : String(TimeFormat.clock(controller.elapsed).prefix(8)))
+                    Text(L(paused ? "일시정지" : String(TimeFormat.clock(controller.elapsed).prefix(8))))
                         .font(.body.monospacedDigit()).foregroundStyle(.white)
                     Spacer()
                     Button { controller.togglePause() } label: {
                         Image(systemName: paused ? "record.circle" : "pause.fill")
                     }
-                    .help(paused ? "계속 녹화 (⌥⌘P)" : "일시정지 (⌥⌘P)")
+                    .help(L(paused ? "계속 녹화 (⌥⌘P)" : "일시정지 (⌥⌘P)"))
                     Button {
                         Task { await controller.stop() }
                     } label: { Label("정지", systemImage: "stop.fill") }

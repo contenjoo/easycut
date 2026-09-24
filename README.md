@@ -1,5 +1,7 @@
 # EasyCut — 쉬운 Mac 영상 편집기
 
+**한국어** | [English](README.en.md)
+
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 macOS 설치형 영상 편집기입니다.
 
 **[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
@@ -51,6 +53,7 @@ AI 편집은 선택 기능입니다. Claude Pro/Max 플랜 로그인(Claude Code
 | Claude 연결(MCP) | Claude Code / Claude 데스크톱에서 앱을 직접 조작 |
 | 내보내기 | MP4(H.264/HEVC), MOV(ProRes), 오디오(M4A), 4K/1080p/720p/480p, SRT 동시 저장, 장면 PNG 저장 |
 | 프로젝트 | `.easycut` 파일 저장/열기, 무제한에 가까운 실행 취소(300단계), **실시간 자동 저장**(저장 전 새 프로젝트는 복구용으로 보관 → 다음 실행 때 복구) |
+| 영어 지원 | macOS 언어가 한국어가 아니면 영어로 표시. EasyCut › 언어 / Language에서 바꿀 수 있음(다시 시작하면 적용) |
 | 자동 업데이트 | 켤 때 GitHub에 새 버전이 있으면 알려 주고, [업데이트]를 누르면 받아서 바꾼 뒤 다시 실행 (EasyCut › 업데이트 확인…) |
 
 ## 단축키 (앱에서 ⌘/ 로도 볼 수 있음)

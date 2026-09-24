@@ -26,7 +26,7 @@ struct ContentView: View {
         .navigationTitle(store.windowTitle)
         .overlay(alignment: .top) {
             if let t = store.toast {
-                Text(t)
+                Text(L(t))
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(.ultraThickMaterial, in: Capsule())
@@ -47,7 +47,7 @@ struct ContentView: View {
         .alert("알림", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } })) {
             Button("확인") { store.alert = nil }
         } message: {
-            Text(store.alert ?? "")
+            Text(L(store.alert ?? ""))
         }
         .onAppear {
             if keyMonitor == nil { keyMonitor = KeyMonitor(store: store) }
@@ -63,7 +63,7 @@ struct LeftPanel: View {
         VStack(spacing: 0) {
             Picker("", selection: $store.leftTab) {
                 ForEach(LeftTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(L(tab.rawValue)).tag(tab)
                 }
             }
             .pickerStyle(.segmented)

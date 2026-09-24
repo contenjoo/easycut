@@ -148,6 +148,12 @@ struct AppCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("업데이트 확인…") { Updater.check(store: store, userInitiated: true) }
+            Menu("언어 / Language") {
+                ForEach(Loc.Choice.allCases, id: \.self) { c in
+                    let name = ["auto": "자동 (시스템 언어) / Automatic", "ko": "한국어", "en": "English"][c.rawValue] ?? c.rawValue
+                    Button(Loc.choice == c ? "✓ " + name : "   " + name) { LanguageSwitch.set(c) }
+                }
+            }
         }
         CommandGroup(replacing: .newItem) {
             Button("새 프로젝트") { store.newProject() }.keyboardShortcut("n")

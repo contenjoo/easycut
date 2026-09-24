@@ -84,7 +84,7 @@ final class RecordController: ObservableObject {
             a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › 화면 및 시스템 오디오 녹음에서 EasyCut을 켠 뒤, EasyCut을 다시 시작해 주세요."
             a.addButton(withTitle: "시스템 설정 열기")
             a.addButton(withTitle: "닫기")
-            if a.runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings("Privacy_ScreenCapture") }
+            if a.localized().runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings("Privacy_ScreenCapture") }
             return
         }
         Task {
@@ -287,7 +287,7 @@ final class RecordController: ObservableObject {
         a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › \(what)에서 EasyCut을 켜 주세요. \(what) 없이 녹화하려면 녹화 설정에서 \(what)를 끄세요."
         a.addButton(withTitle: "시스템 설정 열기")
         a.addButton(withTitle: "닫기")
-        if a.runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings(pane) }
+        if a.localized().runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings(pane) }
     }
 
     /// 녹화 중 화면 아래쪽에 떠 있는 작은 창 (녹화에는 찍히지 않음)
