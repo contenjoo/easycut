@@ -4,6 +4,12 @@
 
 **[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
 
+![대본 편집 — 음성 인식된 대본, 자막, 타임라인](docs/screenshots/transcript.jpg)
+
+| 원클릭 무음 컷 | 자막 스타일 | AI 편집 |
+|---|---|---|
+| ![무음 컷](docs/screenshots/silence.jpg) | ![자막](docs/screenshots/captions.jpg) | ![AI 편집](docs/screenshots/ai.jpg) |
+
 ## 설치
 
 **M1 이상 Apple Silicon Mac, macOS 14 이상** 전용입니다.
