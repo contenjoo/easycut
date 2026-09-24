@@ -45,6 +45,20 @@ export class Player {
     return out;
   }
 
+  /// 트랙마다 곧 시작할 다음 클립 (재생 중 미리 불러 둔다)
+  upcoming(t) {
+    const out = [];
+    const ahead = 1.5 * Math.max(1, this.rate);
+    S.project?.tracks.forEach((tr, ti) => {
+      let next = null;
+      for (const c of tr.clips) {
+        if (c.start > t && c.start - t < ahead && (!next || c.start < next.start)) next = c;
+      }
+      if (next) out.push({ c: next, ti, tr, a: U.asset(next.assetID) });
+    });
+    return out;
+  }
+
   seek(t) {
     this.update(true, t);
   }
@@ -94,31 +108,55 @@ export class Player {
     this.setRate([...RATES].reverse().find((r) => r < this.rate) ?? 0.5);
   }
 
+  element(c, a) {
+    let el = this.els.get(c.id);
+    if (!el) {
+      el = document.createElement(a.kind === "image" ? "img" : a.kind === "audio" ? "audio" : "video");
+      el.src = src(a.path);
+      if (el.tagName !== "IMG") { el.preload = "auto"; el.playsInline = true; }
+      el.style.position = "absolute";
+      this.box.insertBefore(el, this.overlay);
+      this.els.set(c.id, el);
+    }
+    return el;
+  }
+
   /// 걸린 클립 요소를 만들고 위치·시간을 맞춘다. hard=true면 무조건 시간 맞춤
   update(hard, t = S.time) {
     const p = S.project;
     if (!p) return;
     const act = this.active(t);
-    const keep = new Set(act.map((x) => x.c.id));
+    // 무음 컷처럼 클립이 촘촘히 이어지면 경계마다 새 <video>가 처음부터 불러와 검은 화면이 깜박인다.
+    // 재생 중엔 다음 클립 요소를 미리 만들어 첫 프레임까지 준비해 둔다
+    const soon = this.playing ? this.upcoming(t).filter((x) => x.c.kind !== "text" && x.a && x.a.kind !== "image") : [];
+    const keep = new Set([...act, ...soon].map((x) => x.c.id));
     for (const [id, el] of this.els) {
-      if (!keep.has(id)) { el.pause?.(); el.remove(); this.els.delete(id); }
+      if (!keep.has(id)) {
+        el.pause?.();
+        el.remove();
+        if (el.tagName !== "IMG") { el.removeAttribute("src"); el.load(); }
+        this.els.delete(id);
+      }
     }
-    let cap = "";
+    for (const { c, ti, a } of soon) {
+      if (act.some((x) => x.c.id === c.id)) continue;
+      const el = this.element(c, a);
+      el.muted = true;
+      if (!el.paused) el.pause();
+      el.style.zIndex = String(1 + ti);
+      el.style.opacity = "0";
+      if (Math.abs(el.currentTime - c.sourceIn) > 0.05) {
+        try { el.currentTime = c.sourceIn; } catch (_) {}
+      }
+    }
     for (const { c, ti, tr, a } of act) {
       if (c.kind === "text") continue;
       if (!a) continue;
-      let el = this.els.get(c.id);
+      const el = this.element(c, a);
       const visual = a.kind !== "audio" && !tr.hidden;
-      if (!el) {
-        el = document.createElement(a.kind === "image" ? "img" : a.kind === "audio" ? "audio" : "video");
-        el.src = src(a.path);
-        if (el.tagName !== "IMG") { el.preload = "auto"; el.playsInline = true; }
-        el.style.position = "absolute";
-        this.box.insertBefore(el, this.overlay);
-        this.els.set(c.id, el);
-      }
       el.style.display = visual || a.kind === "audio" ? "" : "none";
       el.style.zIndex = String(1 + ti);
+      el.style.opacity = "";
       if (visual && a.width && a.height) this.place(el, c, a);
       if (el.tagName !== "IMG") {
         const want = c.sourceIn + (t - c.start) * c.speed;

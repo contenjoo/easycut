@@ -11,6 +11,10 @@ export class Timeline {
     this.ctx = canvas.getContext("2d");
     this.drag = null;
     this.pending = false;
+    // 스크롤 폭은 이 빈 칸이 정한다. 캔버스 CSS 폭을 실제 픽셀 폭과 같게 두어야 글자가 가로로 늘어나지 않는다
+    this.spacer = document.createElement("div");
+    this.spacer.style.cssText = "position:absolute;left:0;top:0;height:1px;pointer-events:none";
+    scroller.appendChild(this.spacer);
     canvas.addEventListener("mousedown", (e) => this.down(e));
     window.addEventListener("mousemove", (e) => this.move(e));
     window.addEventListener("mouseup", (e) => this.up(e));
@@ -59,14 +63,16 @@ export class Timeline {
     const w = Math.max(this.sc.clientWidth, this.x(U.duration() + 30) + 200);
     const h = Math.max(this.sc.clientHeight, RULER + CAPH + S.project.tracks.length * TRACKH + TRACKH);
     const dpr = window.devicePixelRatio || 1;
-    // 너무 큰 캔버스는 보이는 부분만 그린다
-    const vw = Math.min(w, 16000);
-    if (this.cv.width !== vw * dpr || this.cv.height !== h * dpr) {
-      this.cv.width = vw * dpr;
-      this.cv.height = h * dpr;
-      this.cv.style.width = w + "px";
-      this.cv.style.height = h + "px";
+    // 너무 큰 캔버스는 보이는 폭만큼만 만들어 스크롤 위치로 옮겨 그린다
+    // (옮긴 캔버스가 내용 끝을 넘으면 스크롤 폭이 계속 늘어나므로 화면 폭을 넘지 않게)
+    const vw = w > 16000 ? this.sc.clientWidth : w;
+    if (this.cv.width !== Math.round(vw * dpr) || this.cv.height !== Math.round(h * dpr)) {
+      this.cv.width = Math.round(vw * dpr);
+      this.cv.height = Math.round(h * dpr);
     }
+    this.cv.style.width = vw + "px";
+    this.cv.style.height = h + "px";
+    this.spacer.style.width = w + "px";
     this.fullW = w;
     this.drawSoon();
   }
@@ -319,13 +325,13 @@ export class Timeline {
     if (!S.project || e.button !== 0) return;
     const { x, y } = this.pos(e);
     const sl = this.sc.scrollLeft;
-    // 구간이 있을 때 다른 곳을 누르면 푼다 (재생헤드 잡기는 예외)
-    const onHead = y < RULER && Math.abs(x - this.x(S.time)) <= 8;
-    if (U.markRange() && !onHead) { S.markIn = S.markOut = null; }
+    // 구간이 있을 때 다른 곳을 누르면 푼다 (모르고 Delete 눌러 지워지는 일 방지)
+    if (U.markRange()) { S.markIn = S.markOut = null; }
+    // 눈금자: 끌면 언제나 구간 선택, Alt를 누른 채 끌면 재생헤드만 이동
     if (y < RULER) {
-      if (onHead) this.drag = { type: "scrub" };
-      else this.drag = { type: "range", from: this.snap(this.t(Math.max(x, sl + HEADER))), sx: x };
-      seek(this.t(Math.max(x, sl + HEADER)));
+      const tx = this.t(Math.max(x, sl + HEADER));
+      this.drag = e.altKey ? { type: "scrub" } : { type: "range", from: this.snap(tx), sx: x };
+      seek(tx);
       return;
     }
     if (x - sl < HEADER) {

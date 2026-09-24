@@ -547,18 +547,14 @@ final class TimelineNSView: NSView {
 
         // 구간(시작~끝)이 잡혀 있을 때 다른 곳을 누르면 구간을 푼다 → 모르고 ⌫ 눌러 그 구간이 지워지는 일 방지
         // (I만 찍은 상태는 그대로 두어 I → 이동 → O 흐름은 유지)
-        if store.markRange != nil, !(pt.y - vis.minY < rulerH && abs(pt.x - x(store.time)) <= 8) {
-            store.clearMarks()
-        }
-        // 눈금자: 재생헤드를 잡으면 이동, 다른 곳을 끌면 구간 선택
+        if store.markRange != nil { store.clearMarks() }
+        // 눈금자: 끌면 언제나 구간 선택, ⌥를 누른 채 끌면 재생헤드만 이동
+        // (클릭하면 재생헤드가 그 자리로 오므로, 재생헤드 위를 누르면 이동으로 보던 예전 방식은 두 번째 끌기가 구간이 안 됐다)
         if pt.y - vis.minY < rulerH {
             store.player.pause()
-            if abs(pt.x - x(store.time)) <= 8 {
-                drag = .scrub
-            } else {
-                drag = .range(from: snap(t(max(pt.x, vis.minX + headerW)), excluding: nil))
-            }
-            store.seek(t(max(pt.x, vis.minX + headerW)))
+            let tx = t(max(pt.x, vis.minX + headerW))
+            drag = event.modifierFlags.contains(.option) ? .scrub : .range(from: snap(tx, excluding: nil))
+            store.seek(tx)
             return
         }
         // 트랙 헤더
@@ -661,7 +657,7 @@ final class TimelineNSView: NSView {
             drag = .captionTrim(id: id, left: left, dt: tt - (left ? c.start : c.end))
         case .range(let from):
             // 4px 이상 끌어야 구간으로 본다 (그냥 클릭은 재생헤드 이동만)
-            guard abs(pt.x - x(from)) > 4 else { return }
+            guard abs(pt.x - mouseDownPoint.x) > 4 else { return }
             let to = snap(t(max(pt.x, visibleRect.minX + headerW)), excluding: nil)
             // 구간을 잡으면 클립 선택은 풀어 ⌫가 구간에만 적용되게
             if !store.selection.isEmpty { store.selection = [] }
