@@ -239,6 +239,7 @@ final class TimelineNSView: NSView {
 
     /// 기본 트랙(트랙 1) 클립을 ⌥ 없이 끄는 중이면 순서 바꾸기(끼워 넣기) 위치
     private var freeMove = false
+    private var marqueeBase: Set<UUID> = []
     private var lastPointerT: Double = 0
 
     private func reorderTarget() -> (Double, Int)? {
@@ -429,6 +430,7 @@ final class TimelineNSView: NSView {
                 var label = c.kind == .text ? "T  \(c.text)" : (asset?.name ?? "(없음)")
                 if abs(c.speed - 1) > 0.001 { label = "⏩\(Self.speedLabel(c.speed))  " + label }
                 if asset?.words != nil { label = "💬 " + label }
+                if c.groupID != nil { label = "🔗 " + label }
                 let labelX = max(r.minX + 5, min(visibleRect.minX + headerW + 5, r.maxX - 60))
                 (label as NSString).draw(with: NSRect(x: labelX, y: r.minY + 1, width: max(0, r.maxX - labelX - 4), height: 14),
                                          options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: nameAttrs)
@@ -446,6 +448,11 @@ final class TimelineNSView: NSView {
                 } else {
                     NSColor.black.withAlphaComponent(0.4).setStroke()
                     NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).stroke()
+                }
+                // 그룹: 아래쪽 청록 띠
+                if c.groupID != nil {
+                    NSColor.systemTeal.setFill()
+                    NSRect(x: r.minX + 2, y: r.maxY - 4, width: max(0, r.width - 4), height: 3).fill()
                 }
             }
         }
@@ -582,7 +589,9 @@ final class TimelineNSView: NSView {
             } else if !store.selection.contains(hit.clip.id) {
                 store.selection = [hit.clip.id]
             }
-            if hit.edge != 0 {
+            // 그룹이면 동료 클립도 함께 선택
+            store.selection = project.groupMembers(of: store.selection)
+            if hit.edge != 0 && hit.clip.groupID == nil {
                 store.selection = [hit.clip.id]
                 drag = .trim(id: hit.clip.id, left: hit.edge < 0, dt: 0)
             } else {
@@ -592,12 +601,14 @@ final class TimelineNSView: NSView {
             needsDisplay = true
             return
         }
-        // 빈 곳: 선택 해제 + 재생헤드 이동. 끌면 시간 구간 선택 (⌘/⇧+끌기 = 클립 여러 개 선택)
-        let multi = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
-        if !multi { store.selection = [] }
+        // 빈 곳: 선택 해제 + 재생헤드 이동. 끌면 클립 여러 개 선택 (⇧/⌘ = 기존 선택에 더하기)
+        // 시간 구간 선택은 눈금자를 끈다
+        let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        marqueeBase = additive ? store.selection : []
+        if !additive { store.selection = [] }
         store.selectedCaption = nil
         store.seek(t(pt.x))
-        drag = multi ? .marquee(from: pt, to: pt) : .range(from: snap(t(pt.x), excluding: nil))
+        drag = .marquee(from: pt, to: pt)
     }
 
     private func snap(_ time: Double, excluding id: UUID?) -> Double {
@@ -654,14 +665,14 @@ final class TimelineNSView: NSView {
             drag = .marquee(from: from, to: pt)
             let r = NSRect(x: min(from.x, pt.x), y: min(from.y, pt.y), width: abs(from.x - pt.x), height: abs(from.y - pt.y))
             if r.width > 4 || r.height > 4 {
-                var sel = Set<UUID>()
+                var sel = marqueeBase
                 for (ti, tr) in project.tracks.enumerated() {
                     for c in tr.clips {
                         let cr = NSRect(x: x(c.start), y: rowY(track: ti) + 3, width: CGFloat(c.duration) * zoom, height: trackH - 6)
                         if cr.intersects(r) { sel.insert(c.id) }
                     }
                 }
-                store.selection = sel
+                store.selection = project.groupMembers(of: sel)
             }
         }
         needsDisplay = true
@@ -738,6 +749,14 @@ final class TimelineNSView: NSView {
             menu.addItem(MenuAction.item("재생헤드에서 분할  (⌘T / S)") { [weak store] in store?.splitAtPlayhead() })
             menu.addItem(MenuAction.item("복제  (⌘D)") { [weak store] in store?.duplicateSelection() })
             menu.addItem(MenuAction.item("복사  (⌘C)") { [weak store] in store?.copySelection() })
+            menu.addItem(.separator())
+            if store.selection.count >= 2 {
+                menu.addItem(MenuAction.item("그룹으로 묶기  (⌘G)") { [weak store] in store?.groupSelection() })
+                menu.addItem(MenuAction.item("하나로 합치기  (⌘J)") { [weak store] in store?.joinSelection() })
+            }
+            if hit.clip.groupID != nil {
+                menu.addItem(MenuAction.item("그룹 해제  (⇧⌘G)") { [weak store] in store?.ungroupSelection() })
+            }
             menu.addItem(.separator())
             let speed = NSMenuItem(title: "속도", action: nil, keyEquivalent: "")
             let sub = NSMenu()

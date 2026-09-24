@@ -8,19 +8,32 @@ import AppKit
 final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
 
+    /// 녹화 범위
+    enum Target {
+        case display
+        case window(SCWindow)
+        /// 화면 안의 영역 (포인트, 화면 왼쪽 위 기준)
+        case area(CGRect)
+    }
+
     struct Options {
         var display: SCDisplay
+        var target: Target = .display
         var excludeApp: SCRunningApplication?
         var camera: AVCaptureDevice?
         var microphone: AVCaptureDevice?
+        /// 컴퓨터 소리 (별도 파일)
+        var systemAudio = false
         var fps: Int = 30
         var screenURL: URL
         var cameraURL: URL
+        var audioURL: URL
     }
 
     struct Result {
         let screen: URL
         let camera: URL?
+        let systemAudio: URL?
         let duration: Double
     }
 
@@ -38,8 +51,15 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     private var camVideo: AVAssetWriterInput?
     private var startTime: CMTime?
     private var endTime: CMTime?
+    private var sysWriter: AVAssetWriter?
+    private var sysAudio: AVAssetWriterInput?
+    private var sysFrames = 0
     private var screenFrames = 0
     private var failed = false
+    // 일시정지: 멈춘 동안의 버퍼는 버리고, 멈춘 시간만큼 뒤 버퍼를 앞으로 당긴다
+    private var paused = false
+    private var pauseStart: CMTime?
+    private var pauseOffset = CMTime.zero
 
     init(options: Options) {
         self.options = options
@@ -48,20 +68,30 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
 
     static var hostNow: CMTime { CMClockGetTime(CMClockGetHostTimeClock()) }
 
+    static func screen(for display: SCDisplay) -> NSScreen? {
+        NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }
+    }
+
     /// 레티나 화면은 실제 픽셀로, 너무 크면 긴 변 3840으로 줄인다 (H.264 한계 4096)
-    static func captureSize(for display: SCDisplay) -> (Int, Int) {
-        let scale = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }?.backingScaleFactor ?? 2
-        var w = Double(display.width) * scale, h = Double(display.height) * scale
+    static func captureSize(for display: SCDisplay, target: Target) -> (Int, Int) {
+        let scale = screen(for: display)?.backingScaleFactor ?? 2
+        let pts: CGSize
+        switch target {
+        case .display: pts = CGSize(width: display.width, height: display.height)
+        case .window(let w): pts = w.frame.size
+        case .area(let r): pts = r.size
+        }
+        var w = Double(pts.width) * scale, h = Double(pts.height) * scale
         let longSide = max(w, h)
         if longSide > 3840 { w *= 3840 / longSide; h *= 3840 / longSide }
         // 인코더가 짝수 크기를 원한다
-        return (Int(w / 2) * 2, Int(h / 2) * 2)
+        return (max(2, Int(w / 2) * 2), max(2, Int(h / 2) * 2))
     }
 
     // MARK: 시작 / 정지
 
     func start() async throws {
-        let (w, h) = Self.captureSize(for: options.display)
+        let (w, h) = Self.captureSize(for: options.display, target: options.target)
 
         // 화면 파일 (영상 + 마이크)
         try? FileManager.default.removeItem(at: options.screenURL)
@@ -90,15 +120,41 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         screenWriter = sw
         screenVideo = sv
 
+        // 컴퓨터 소리 (별도 m4a)
+        if options.systemAudio {
+            try? FileManager.default.removeItem(at: options.audioURL)
+            let aw = try AVAssetWriter(outputURL: options.audioURL, fileType: .m4a)
+            let ai = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
+            ])
+            ai.expectsMediaDataInRealTime = true
+            aw.add(ai)
+            sysWriter = aw
+            sysAudio = ai
+        }
+
         if !session.isRunning { try startDevices() }
 
         // 화면: EasyCut 창(녹화 중 떠 있는 작은 창 포함)은 녹화에서 뺀다
-        let filter = SCContentFilter(display: options.display,
+        let filter: SCContentFilter
+        let cfg = SCStreamConfiguration()
+        switch options.target {
+        case .window(let win):
+            filter = SCContentFilter(desktopIndependentWindow: win)
+        case .display, .area:
+            filter = SCContentFilter(display: options.display,
                                      excludingApplications: options.excludeApp.map { [$0] } ?? [],
                                      exceptingWindows: [])
-        let cfg = SCStreamConfiguration()
+        }
+        if case .area(let r) = options.target { cfg.sourceRect = r }
         cfg.width = w
         cfg.height = h
+        if options.systemAudio {
+            cfg.capturesAudio = true
+            cfg.excludesCurrentProcessAudio = true
+            cfg.sampleRate = 48000
+            cfg.channelCount = 2
+        }
         cfg.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(options.fps))
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
         cfg.showsCursor = true
@@ -106,6 +162,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         cfg.colorSpaceName = CGColorSpace.sRGB
         let st = SCStream(filter: filter, configuration: cfg, delegate: self)
         try st.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+        if options.systemAudio { try st.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue) }
         stream = st
 
         // 모든 파일의 0초 = 지금
@@ -114,6 +171,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
             startTime = t0
             sw.startWriting()
             sw.startSession(atSourceTime: t0)
+            sysWriter?.startWriting()
+            sysWriter?.startSession(atSourceTime: t0)
         }
         try await st.startCapture()
     }
@@ -149,9 +208,31 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         session.startRunning()
     }
 
+    func pause() {
+        queue.async {
+            guard !self.paused, self.startTime != nil else { return }
+            self.paused = true
+            self.pauseStart = Self.hostNow
+        }
+    }
+
+    func resume() {
+        queue.async {
+            guard self.paused, let ps = self.pauseStart else { return }
+            self.pauseOffset = self.pauseOffset + (Self.hostNow - ps)
+            self.paused = false
+            self.pauseStart = nil
+        }
+    }
+
     func stop() async throws -> Result {
-        let t1 = Self.hostNow
-        queue.sync { endTime = t1 }
+        let now = Self.hostNow
+        // 멈춘 상태에서 끝내면 멈춘 순간이 끝
+        let t1 = queue.sync { () -> CMTime in
+            let raw = paused ? (pauseStart ?? now) : now
+            endTime = raw - pauseOffset
+            return raw - pauseOffset
+        }
         try? await stream?.stopCapture()
         stream = nil
         if session.isRunning { session.stopRunning() }
@@ -172,6 +253,10 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
                 camVideo?.markAsFinished()
                 cw.endSession(atSourceTime: t1)
             }
+            if let aw = sysWriter, aw.status == .writing, sysFrames > 0 {
+                sysAudio?.markAsFinished()
+                aw.endSession(atSourceTime: t1)
+            }
         }
         await sw.finishWriting()
         var camURL: URL?
@@ -179,20 +264,35 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
             await cw.finishWriting()
             if cw.status == .completed { camURL = options.cameraURL }
         }
+        var sysURL: URL?
+        if let aw = sysWriter {
+            if aw.status == .writing, sysFrames > 0 {
+                await aw.finishWriting()
+                if aw.status == .completed { sysURL = options.audioURL }
+            } else {
+                aw.cancelWriting()
+            }
+        }
         guard sw.status == .completed else { throw MediaError.failed("녹화 파일을 저장하지 못했습니다: \(sw.error?.localizedDescription ?? "")") }
-        return Result(screen: options.screenURL, camera: camURL, duration: (t1 - t0).seconds)
+        return Result(screen: options.screenURL, camera: camURL, systemAudio: sysURL, duration: (t1 - t0).seconds)
     }
 
     // MARK: 화면 프레임
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, let t0 = startTime, endTime == nil, sb.isValid,
-              let input = screenVideo, input.isReadyForMoreMediaData else { return }
+        guard let t0 = startTime, endTime == nil, !paused, sb.isValid, sb.presentationTimeStamp >= t0 else { return }
+        if type == .audio {
+            guard let a = sysAudio, a.isReadyForMoreMediaData, sysWriter?.status == .writing,
+                  let buf = shifted(sb, clock: nil) else { return }
+            if a.append(buf) { sysFrames += 1 }
+            return
+        }
+        guard type == .screen, let input = screenVideo, input.isReadyForMoreMediaData else { return }
         // 화면이 바뀐 프레임만 (idle·blank 프레임은 건너뜀)
         guard let atts = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let raw = atts.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete else { return }
-        guard sb.presentationTimeStamp >= t0 else { return }
-        if input.append(sb) { screenFrames += 1 } else { fail(screenWriter?.error) }
+              let raw = atts.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
+              let buf = shifted(sb, clock: nil) else { return }
+        if input.append(buf) { screenFrames += 1 } else { fail(screenWriter?.error) }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -202,7 +302,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     // MARK: 카메라·마이크
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let t0 = startTime, endTime == nil, let buf = retimed(sb), buf.presentationTimeStamp >= t0 else { return }
+        guard let t0 = startTime, endTime == nil, !paused, let buf = shifted(sb, clock: session.synchronizationClock),
+              buf.presentationTimeStamp >= t0 else { return }
         if output is AVCaptureAudioDataOutput {
             guard let a = screenAudio, a.isReadyForMoreMediaData, screenWriter?.status == .writing else { return }
             if !a.append(buf) { fail(screenWriter?.error) }
@@ -232,15 +333,26 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         camVideo = v
     }
 
-    /// 캡처 세션 시계 → 호스트 시계 (보통 같지만 다르면 맞춘다)
-    private func retimed(_ sb: CMSampleBuffer) -> CMSampleBuffer? {
-        guard let clock = session.synchronizationClock else { return sb }
-        let pts = sb.presentationTimeStamp
-        let host = CMSyncConvertTime(pts, from: clock, to: CMClockGetHostTimeClock())
-        if abs((host - pts).seconds) < 0.0005 { return sb }
-        var timing = CMSampleTimingInfo(duration: sb.duration, presentationTimeStamp: host, decodeTimeStamp: .invalid)
+    /// 버퍼 시간을 호스트 시계로 맞추고(카메라·마이크), 일시정지한 시간만큼 앞으로 당긴다
+    private func shifted(_ sb: CMSampleBuffer, clock: CMClock?) -> CMSampleBuffer? {
+        var delta = CMTime.zero
+        if let clock {
+            let pts = sb.presentationTimeStamp
+            let host = CMSyncConvertTime(pts, from: clock, to: CMClockGetHostTimeClock())
+            if abs((host - pts).seconds) >= 0.0005 { delta = host - pts }
+        }
+        delta = delta - pauseOffset
+        if delta == .zero { return sb }
+        guard let timings = try? sb.sampleTimingInfos() else { return nil }
+        var moved = timings.map { t -> CMSampleTimingInfo in
+            var t = t
+            if t.presentationTimeStamp.isValid { t.presentationTimeStamp = t.presentationTimeStamp + delta }
+            if t.decodeTimeStamp.isValid { t.decodeTimeStamp = t.decodeTimeStamp + delta }
+            return t
+        }
         var out: CMSampleBuffer?
-        CMSampleBufferCreateCopyWithNewTiming(allocator: nil, sampleBuffer: sb, sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleBufferOut: &out)
+        CMSampleBufferCreateCopyWithNewTiming(allocator: nil, sampleBuffer: sb, sampleTimingEntryCount: moved.count,
+                                              sampleTimingArray: &moved, sampleBufferOut: &out)
         return out
     }
 

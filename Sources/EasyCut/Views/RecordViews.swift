@@ -14,7 +14,32 @@ struct RecordSheet: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             Form {
-                if rec.displays.count > 1 {
+                Picker("녹화 범위", selection: Binding(get: { rec.target }, set: { rec.target = $0 })) {
+                    ForEach(RecordController.TargetKind.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                if rec.target == .window {
+                    if rec.windows.isEmpty {
+                        Text("녹화할 수 있는 창이 없습니다").foregroundStyle(.secondary)
+                    } else {
+                        Picker("창", selection: $rec.windowID) {
+                            ForEach(rec.windows, id: \.windowID) { Text(RecordController.windowLabel($0)).lineLimit(1).tag($0.windowID) }
+                        }
+                    }
+                    Button("창 목록 새로고침") { Task { await rec.refreshContent() } }
+                }
+                if rec.target == .area {
+                    HStack {
+                        if let a = rec.area {
+                            Text("\(Int(a.width)) × \(Int(a.height)) 영역").monospacedDigit()
+                        } else {
+                            Text("아직 고르지 않음").foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(rec.area == nil ? "영역 고르기…" : "다시 고르기…") { Task { await rec.pickArea() } }
+                    }
+                }
+                if rec.displays.count > 1 && rec.target != .window {
                     Picker("화면", selection: $rec.displayID) {
                         ForEach(rec.displays, id: \.displayID) { d in
                             Text(Self.displayName(d)).tag(d.displayID)
@@ -31,6 +56,10 @@ struct RecordSheet: View {
                         }
                     }
                 }
+                Toggle("컴퓨터 소리 (별도 트랙)", isOn: $rec.systemAudio)
+                if rec.systemAudio && rec.target == .window {
+                    Text("창 녹화에서는 그 창을 띄운 앱의 소리만 녹음됩니다").font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("마이크(목소리)", isOn: $rec.useMic)
                 if rec.useMic {
                     Picker("마이크", selection: $rec.micID) {
@@ -40,7 +69,7 @@ struct RecordSheet: View {
             }
             .formStyle(.grouped)
 
-            Text("시작하면 3초 뒤 녹화됩니다. 녹화 중에는 EasyCut 창이 숨고, 화면 오른쪽 아래 작은 창의 [정지]로 끝냅니다. 작은 창은 녹화에 찍히지 않습니다.\n녹화 파일: 동영상 › EasyCut 녹화")
+            Text("시작하면 3초 뒤 녹화됩니다. 녹화 중에는 EasyCut 창이 숨고, 화면 오른쪽 아래 작은 창이나 단축키로 멈춥니다 (작은 창은 녹화에 찍히지 않음).\n⌥⌘P 일시정지·계속 · ⌥⌘. 정지 (다른 앱을 쓰는 중에도 동작)\n녹화 파일: 동영상 › EasyCut 녹화")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             HStack {
@@ -51,6 +80,7 @@ struct RecordSheet: View {
                 } label: { Label("녹화 시작", systemImage: "record.circle.fill") }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent).tint(.red)
+                .disabled((rec.target == .area && rec.area == nil) || (rec.target == .window && rec.windows.isEmpty))
             }
         }
         .padding(22)
@@ -82,14 +112,21 @@ struct RecordPanelView: View {
                     Text("곧 녹화 시작").foregroundStyle(.white.opacity(0.85))
                     Spacer()
                     Button("취소") { controller.cancelCountdown() }
-                case .recording:
-                    Circle().fill(.red).frame(width: 10, height: 10)
-                    Text(TimeFormat.clock(controller.elapsed).prefix(8)).font(.body.monospacedDigit()).foregroundStyle(.white)
+                case .recording, .paused:
+                    let paused = controller.phase == .paused
+                    Circle().fill(paused ? .orange : .red).frame(width: 10, height: 10)
+                    Text(paused ? "일시정지" : String(TimeFormat.clock(controller.elapsed).prefix(8)))
+                        .font(.body.monospacedDigit()).foregroundStyle(.white)
                     Spacer()
+                    Button { controller.togglePause() } label: {
+                        Image(systemName: paused ? "record.circle" : "pause.fill")
+                    }
+                    .help(paused ? "계속 녹화 (⌥⌘P)" : "일시정지 (⌥⌘P)")
                     Button {
                         Task { await controller.stop() }
                     } label: { Label("정지", systemImage: "stop.fill") }
                     .buttonStyle(.borderedProminent).tint(.red)
+                    .help("정지 (⌥⌘.)")
                 case .saving:
                     ProgressView().controlSize(.small)
                     Text("저장 중…").foregroundStyle(.white)

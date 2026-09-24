@@ -99,6 +99,8 @@ struct Clip: Codable, Identifiable, Hashable {
     var offsetY: Double = 0
     var fadeIn: Double = 0
     var fadeOut: Double = 0
+    /// 같은 값의 클립끼리 한 묶음(그룹)으로 선택·이동된다
+    var groupID: UUID?
 
     var duration: Double { max(0, (sourceOut - sourceIn) / speed) }
     var end: Double { start + duration }

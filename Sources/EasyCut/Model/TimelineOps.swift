@@ -236,6 +236,84 @@ extension Project {
 
     // MARK: 이동 / 트림
 
+    // MARK: 그룹 · 합치기
+
+    /// 선택한 클립에 같은 그룹을 달아 함께 선택·이동되게 한다 (2개 이상)
+    @discardableResult
+    mutating func group(_ ids: Set<UUID>) -> Bool {
+        let all = groupMembers(of: ids)
+        guard all.count >= 2 else { return false }
+        let gid = UUID()
+        for ti in tracks.indices {
+            for ci in tracks[ti].clips.indices where all.contains(tracks[ti].clips[ci].id) { tracks[ti].clips[ci].groupID = gid }
+        }
+        return true
+    }
+
+    mutating func ungroup(_ ids: Set<UUID>) {
+        let all = groupMembers(of: ids)
+        for ti in tracks.indices {
+            for ci in tracks[ti].clips.indices where all.contains(tracks[ti].clips[ci].id) { tracks[ti].clips[ci].groupID = nil }
+        }
+    }
+
+    /// 선택에 그룹 동료를 더한 집합
+    func groupMembers(of ids: Set<UUID>) -> Set<UUID> {
+        let all = tracks.flatMap(\.clips)
+        let groups = Set(all.filter { ids.contains($0.id) }.compactMap(\.groupID))
+        guard !groups.isEmpty else { return ids }
+        return ids.union(all.filter { $0.groupID.map(groups.contains) == true }.map(\.id))
+    }
+
+    /// 선택한 클립을 트랙별로 하나로 합친다.
+    /// 원래 한 클립이던 조각(같은 원본·같은 속도·원본 구간이 이어짐)은 한 클립으로 되돌리고,
+    /// 그렇지 않은 클립은 빈틈 없이 붙인 뒤 그룹으로 묶는다. 사이에 선택 안 한 클립이 있으면 거기서 끊는다.
+    @discardableResult
+    mutating func join(_ ids: Set<UUID>) -> (merged: Int, grouped: Int) {
+        var merged = 0, grouped = 0
+        for ti in tracks.indices {
+            var clips = tracks[ti].clips.sorted { $0.start < $1.start }
+            var i = 0
+            var chains: [[UUID]] = []
+            var chain: [UUID] = []
+            while i < clips.count {
+                guard ids.contains(clips[i].id) else {
+                    if chain.count > 1 { chains.append(chain) }
+                    chain = []
+                    i += 1
+                    continue
+                }
+                if chain.isEmpty { chain = [clips[i].id]; i += 1; continue }
+                let p = i - 1
+                // 빈틈 메우기 (선택한 클립만 왼쪽으로)
+                let gap = clips[i].start - clips[p].end
+                if gap > Project.eps { clips[i].start = clips[p].end }
+                let a = clips[p], b = clips[i]
+                let same = a.kind == .media && b.kind == .media && a.assetID != nil && a.assetID == b.assetID
+                    && abs(a.speed - b.speed) < 0.0001 && abs(a.sourceOut - b.sourceIn) < 0.002
+                    && abs(a.volume - b.volume) < 0.0001 && abs(a.opacity - b.opacity) < 0.0001
+                    && abs(a.scale - b.scale) < 0.0001 && abs(a.offsetX - b.offsetX) < 0.0001 && abs(a.offsetY - b.offsetY) < 0.0001
+                if same {
+                    clips[p].sourceOut = b.sourceOut
+                    clips[p].fadeOut = b.fadeOut
+                    clips.remove(at: i)
+                    merged += 1
+                } else {
+                    chain.append(b.id)
+                    i += 1
+                }
+            }
+            if chain.count > 1 { chains.append(chain) }
+            tracks[ti].clips = clips
+            for c in chains {
+                let gid = UUID()
+                for ci in tracks[ti].clips.indices where c.contains(tracks[ti].clips[ci].id) { tracks[ti].clips[ci].groupID = gid }
+                grouped += c.count
+            }
+        }
+        return (merged, grouped)
+    }
+
     mutating func move(clip id: UUID, toTrack newTrack: Int, start: Double) {
         guard let loc = locate(clip: id) else { return }
         var c = tracks[loc.track].clips.remove(at: loc.index)

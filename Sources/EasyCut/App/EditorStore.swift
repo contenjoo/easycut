@@ -461,11 +461,15 @@ final class EditorStore: ObservableObject {
         }
         guard !clips.isEmpty else { return }
         var newIDs: Set<UUID> = []
+        // 여러 개(그룹)를 복제하면 배치를 유지한 채 통째로 바로 뒤에 놓는다
+        let offset = (clips.map(\.1.end).max() ?? 0) - (clips.map(\.1.start).min() ?? 0)
+        var groupMap: [UUID: UUID] = [:]
         apply { p in
             for (ti, c) in clips {
                 var n = c
                 n.id = UUID()
-                n.start = c.end
+                n.start = c.start + offset
+                n.groupID = c.groupID.map { g in groupMap[g] ?? { let x = UUID(); groupMap[g] = x; return x }() }
                 p.tracks[ti].clips.append(n)
                 p.resolveOverlaps(track: ti, pinned: n.id)
                 newIDs.insert(n.id)
@@ -492,10 +496,12 @@ final class EditorStore: ObservableObject {
         let t = time
         var newIDs: Set<UUID> = []
         let items = clipboard
+        var groupMap: [UUID: UUID] = [:]
         apply { p in
             for (ti, c) in items {
                 var n = c
                 n.id = UUID()
+                n.groupID = c.groupID.map { g in groupMap[g] ?? { let x = UUID(); groupMap[g] = x; return x }() }
                 n.start = t + (c.start - base)
                 while p.tracks.count <= ti { p.tracks.append(Track(name: "트랙 \(p.tracks.count + 1)")) }
                 p.tracks[ti].clips.append(n)
@@ -504,6 +510,39 @@ final class EditorStore: ObservableObject {
             }
         }
         selection = newIDs
+    }
+
+    // MARK: 그룹 · 합치기
+
+    func groupSelection() {
+        guard selection.count >= 2 else { showToast("묶을 클립을 2개 이상 선택하세요 (빈 곳을 끌거나 ⇧/⌘+클릭)"); return }
+        var ok = false
+        let ids = selection
+        apply { ok = $0.group(ids) }
+        selection = project.groupMembers(of: ids)
+        if ok { showToast("\(selection.count)개 클립을 그룹으로 묶었습니다 (⇧⌘G 해제)") }
+    }
+
+    func ungroupSelection() {
+        guard project.tracks.flatMap(\.clips).contains(where: { selection.contains($0.id) && $0.groupID != nil }) else {
+            showToast("그룹으로 묶인 클립을 선택하세요"); return
+        }
+        let ids = selection
+        apply { $0.ungroup(ids) }
+        showToast("그룹을 풀었습니다")
+    }
+
+    func joinSelection() {
+        guard selection.count >= 2 else { showToast("합칠 클립을 2개 이상 선택하세요"); return }
+        let ids = selection
+        var r = (merged: 0, grouped: 0)
+        apply { r = $0.join(ids) }
+        let alive = Set(project.tracks.flatMap(\.clips).map(\.id))
+        selection = project.groupMembers(of: ids.intersection(alive))
+        var parts: [String] = []
+        if r.merged > 0 { parts.append("잘린 조각 \(r.merged)곳을 하나로 합침") }
+        if r.grouped > 0 { parts.append("나머지 \(r.grouped)개는 빈틈 없이 붙여 그룹으로 묶음") }
+        showToast(parts.isEmpty ? "합칠 수 있는 클립이 없습니다 (같은 트랙에서 이웃한 클립을 선택하세요)" : parts.joined(separator: ", "))
     }
 
     func selectAll() {

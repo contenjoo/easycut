@@ -278,6 +278,26 @@ enum SelfTest {
         check(abs(p.duration - 3) < 1e-9, "끝 트림")
         let b = p.insert(asset: a, track: 0, at: 1.5)
         check(p.clip(b)!.start >= 1.5 && p.tracks[0].clips.count == 3, "겹침 해결: 겹친 클립 밀어내기")
+        // 그룹 · 합치기
+        var g = Project()
+        g.assets = [a]
+        let g1 = g.insert(asset: a, track: 0, at: 0)
+        let g2 = g.split(clip: g1, at: 3)!
+        let g3 = g.split(clip: g2, at: 6)!
+        g.move(clip: g3, toTrack: 0, start: 8)            // 6~10초 조각을 8초로 (2초 빈틈)
+        g.join([g1, g2, g3])
+        check(g.tracks[0].clips.count == 1 && abs(g.duration - 10) < 1e-9 && g.tracks[0].clips[0].sourceOut == 10,
+              "합치기: 잘린 조각 3개 → 원래 한 클립 (빈틈 제거)")
+        let b1 = g.insert(asset: a, track: 1, at: 0)
+        let b2 = g.insert(asset: a, track: 1, at: 12)
+        g.setSpeed(clip: b2, 2)
+        g.join([b1, b2])
+        let t1 = g.tracks[1].clips
+        check(t1.count == 2 && abs(t1[1].start - 10) < 1e-9 && t1[0].groupID != nil && t1[0].groupID == t1[1].groupID,
+              "합치기: 다른 클립은 빈틈 없이 붙이고 그룹으로")
+        check(g.groupMembers(of: [b1]) == [b1, b2], "그룹: 하나를 고르면 함께 선택")
+        g.ungroup([b1])
+        check(g.groupMembers(of: [b1]) == [b1], "그룹 해제")
         var q = Project()
         q.captions = [Caption(start: 0, end: 2, text: "a"), Caption(start: 3, end: 5, text: "b"), Caption(start: 6, end: 8, text: "c")]
         q.rippleDelete(from: 4, to: 7)

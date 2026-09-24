@@ -185,6 +185,10 @@ struct AppCommands: Commands {
             Button("삭제 후 빈틈 메우기  (⌘⌫)") { store.deleteSelection(ripple: true) }
             Button("복제  (⌘D)") { store.duplicateSelection() }
             Divider()
+            Button("그룹으로 묶기") { store.groupSelection() }.keyboardShortcut("g")
+            Button("그룹 해제") { store.ungroupSelection() }.keyboardShortcut("g", modifiers: [.command, .shift])
+            Button("하나로 합치기") { store.joinSelection() }.keyboardShortcut("j")
+            Divider()
             Button("구간 시작  (I)") { store.setMarkIn() }
             Button("구간 끝  (O)") { store.setMarkOut() }
             Button("구간 해제  (X)") { store.clearMarks() }
