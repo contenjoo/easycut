@@ -626,7 +626,7 @@ enum LocTable {
         "숨김": "Hidden",
         "(없음)": "(none)",
         "순서를 바꿨습니다 (⌥를 누른 채 끌면 자유 이동)": "Reordered (hold ⌥ while dragging to move freely)",
-        "구간 {} – {} · ⌫ 잘라내기, X 해제": "Range {} – {} · ⌫ to cut, X to clear",
+        "구간 {} – {} · ⌫ 잘라내기 · 해제는 빈 곳 클릭, X, esc": "Range {} – {} · ⌫ to cut · click empty space, X or esc to clear",
         "재생헤드에서 분할  (⌘T / S)": "Split at Playhead  (⌘T / S)",
         "복사  (⌘C)": "Copy  (⌘C)",
         "그룹으로 묶기  (⌘G)": "Group  (⌘G)",

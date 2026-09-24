@@ -437,7 +437,7 @@ final class EditorStore: ObservableObject {
     }
 
     func deleteSelection(ripple: Bool) {
-        if let r = markRange {
+        if let r = markRange, selection.isEmpty {
             apply { $0.rippleDelete(from: r.lowerBound, to: r.upperBound) }
             clearMarks()
             showToast("구간 삭제")
@@ -605,8 +605,8 @@ final class EditorStore: ObservableObject {
         return min(a, b)...max(a, b)
     }
 
-    func setMarkIn() { markIn = time; if let o = markOut, o < time { markOut = nil }; showToast("시작 지점 (I) \(TimeFormat.clock(time))") }
-    func setMarkOut() { markOut = time; if let i = markIn, i > time { markIn = nil }; showToast("끝 지점 (O) \(TimeFormat.clock(time))") }
+    func setMarkIn() { selection = []; markIn = time; if let o = markOut, o < time { markOut = nil }; showToast("시작 지점 (I) \(TimeFormat.clock(time))") }
+    func setMarkOut() { selection = []; markOut = time; if let i = markIn, i > time { markIn = nil }; showToast("끝 지점 (O) \(TimeFormat.clock(time))") }
     func clearMarks() { markIn = nil; markOut = nil }
 
     // MARK: 재생 이동

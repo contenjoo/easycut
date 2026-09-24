@@ -545,6 +545,11 @@ final class TimelineNSView: NSView {
         mouseDownPoint = pt
         let vis = visibleRect
 
+        // 구간(시작~끝)이 잡혀 있을 때 다른 곳을 누르면 구간을 푼다 → 모르고 ⌫ 눌러 그 구간이 지워지는 일 방지
+        // (I만 찍은 상태는 그대로 두어 I → 이동 → O 흐름은 유지)
+        if store.markRange != nil, !(pt.y - vis.minY < rulerH && abs(pt.x - x(store.time)) <= 8) {
+            store.clearMarks()
+        }
         // 눈금자: 재생헤드를 잡으면 이동, 다른 곳을 끌면 구간 선택
         if pt.y - vis.minY < rulerH {
             store.player.pause()
@@ -658,6 +663,8 @@ final class TimelineNSView: NSView {
             // 4px 이상 끌어야 구간으로 본다 (그냥 클릭은 재생헤드 이동만)
             guard abs(pt.x - x(from)) > 4 else { return }
             let to = snap(t(max(pt.x, visibleRect.minX + headerW)), excluding: nil)
+            // 구간을 잡으면 클립 선택은 풀어 ⌫가 구간에만 적용되게
+            if !store.selection.isEmpty { store.selection = [] }
             store.markIn = min(from, to)
             store.markOut = max(from, to)
             store.seek(to)
@@ -724,7 +731,7 @@ final class TimelineNSView: NSView {
             }
         case .range:
             if let r = store.markRange {
-                store.showToast("구간 \(TimeFormat.clock(r.lowerBound)) – \(TimeFormat.clock(r.upperBound)) · ⌫ 잘라내기, X 해제")
+                store.showToast("구간 \(TimeFormat.clock(r.lowerBound)) – \(TimeFormat.clock(r.upperBound)) · ⌫ 잘라내기 · 해제는 빈 곳 클릭, X, esc")
             }
         default:
             break
