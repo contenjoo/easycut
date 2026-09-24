@@ -2,7 +2,7 @@ name: Windows build
 
 on:
   push:
-    branches: [windows-mvp]
+    branches: [main]
     tags: ["win-v*"]
     paths: ["windows/**", ".github/workflows/windows.yml"]
   workflow_dispatch:

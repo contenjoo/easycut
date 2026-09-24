@@ -6,6 +6,8 @@
 
 **[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
 
+윈도우 버전(베타): [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases?q=win-v&expanded=true) · 소스는 [`windows/`](windows)
+
 ![대본 편집 — 음성 인식된 대본, 자막, 타임라인](docs/screenshots/transcript.jpg)
 
 | 원클릭 무음 컷 | 자막 스타일 | AI 편집 |
