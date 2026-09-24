@@ -72,7 +72,11 @@ enum Updater {
     private static func ask(_ rel: Release, store: EditorStore) {
         let a = NSAlert()
         a.messageText = "새 버전이 나왔습니다: EasyCut \(rel.version)"
+        // 릴리스 노트의 마크다운 기호는 빼고 보여 준다
         var notes = rel.notes.replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "## ", with: "")
+            .replacingOccurrences(of: "# ", with: "")
         if notes.count > 700 { notes = String(notes.prefix(700)) + "…" }
         a.informativeText = "지금 쓰는 버전은 \(current)입니다. 지금 업데이트할까요?\n작업 중인 프로젝트는 저장한 뒤 앱이 다시 시작됩니다.\n\n\(notes)"
         a.addButton(withTitle: "업데이트")
@@ -107,6 +111,7 @@ enum Updater {
             let dmg = try await download(rel.dmg)
             store.converting["업데이트 \(rel.version)"] = JobProgress(value: 0.8, message: "설치 준비 중…")
             let staged = try await stage(dmg: dmg)
+            try? FileManager.default.removeItem(at: dmg)
             // 받은 앱이 정말 EasyCut 새 버전인지 확인
             guard let info = NSDictionary(contentsOf: staged.appendingPathComponent("Contents/Info.plist")),
                   info["CFBundleIdentifier"] as? String == Bundle.main.bundleIdentifier,

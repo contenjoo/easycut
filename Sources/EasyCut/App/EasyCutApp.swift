@@ -66,8 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 인터넷에서 받은 설치 파일이면 내장 도구에 붙은 격리 표시를 풀어 바로 실행되게 한다
-        if let dir = Tools.bundledDir, let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
-            for f in files { removexattr(dir.appendingPathComponent(f).path, "com.apple.quarantine", 0) }
+        // (iCloud 동기화 폴더 등에서는 오래 걸릴 수 있어 메인 스레드 밖에서, 표시가 있을 때만)
+        if let dir = Tools.bundledDir {
+            DispatchQueue.global(qos: .utility).async {
+                for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                    let path = dir.appendingPathComponent(f).path
+                    if getxattr(path, "com.apple.quarantine", nil, 0, 0, 0) >= 0 { removexattr(path, "com.apple.quarantine", 0) }
+                }
+            }
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)

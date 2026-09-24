@@ -35,7 +35,14 @@ final class TimelineNSView: NSView {
     let headerW: CGFloat = 116
     let rulerH: CGFloat = 26
     let captionH: CGFloat = 30
-    let trackH: CGFloat = 58
+    var trackH: CGFloat { CGFloat(store.trackHeight) }
+    /// 트랙이 낮으면 이름과 아이콘을 한 줄에 놓는다
+    private var compactHeader: Bool { trackH < 52 }
+    private func iconOrigin(track ti: Int, mute: Bool) -> NSPoint {
+        let y = rowY(track: ti)
+        if compactHeader { return NSPoint(x: mute ? 52 : 76, y: y + (trackH - 16) / 2) }
+        return NSPoint(x: mute ? 10 : 36, y: y + 30)
+    }
     let edgeW: CGFloat = 7
 
     // 드래그 상태
@@ -77,6 +84,17 @@ final class TimelineNSView: NSView {
         store.$zoom
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.zoomChanged() } }
+            .store(in: &bag)
+        store.$trackHeight
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.refreshSize()
+                    self.needsDisplay = true
+                    self.window?.invalidateCursorRects(for: self)
+                }
+            }
             .store(in: &bag)
     }
 
@@ -270,9 +288,10 @@ final class TimelineNSView: NSView {
 
         for (ti, tr) in p.tracks.enumerated() {
             let y = rowY(track: ti)
-            (tr.name as NSString).draw(at: NSPoint(x: vis.minX + 10, y: y + 8), withAttributes: title)
-            drawIcon(tr.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", at: NSPoint(x: vis.minX + 10, y: y + 30), on: !tr.muted)
-            drawIcon(tr.hidden ? "eye.slash.fill" : "eye.fill", at: NSPoint(x: vis.minX + 36, y: y + 30), on: !tr.hidden)
+            (tr.name as NSString).draw(at: NSPoint(x: vis.minX + 10, y: compactHeader ? y + (trackH - 14) / 2 : y + 8), withAttributes: title)
+            let m = iconOrigin(track: ti, mute: true), h = iconOrigin(track: ti, mute: false)
+            drawIcon(tr.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", at: NSPoint(x: vis.minX + m.x, y: m.y), on: !tr.muted)
+            drawIcon(tr.hidden ? "eye.slash.fill" : "eye.fill", at: NSPoint(x: vis.minX + h.x, y: h.y), on: !tr.hidden)
         }
         // 눈금자 왼쪽 모서리
         Theme.ruler.setFill()
@@ -290,11 +309,11 @@ final class TimelineNSView: NSView {
 
     private func headerIconHit(_ pt: NSPoint) -> (track: Int, mute: Bool)? {
         guard let ti = track(atY: pt.y), project.tracks.indices.contains(ti) else { return nil }
-        let y = rowY(track: ti)
         let lx = pt.x - visibleRect.minX
-        guard pt.y >= y + 26, pt.y <= y + 50 else { return nil }
-        if lx >= 6 && lx < 32 { return (ti, true) }
-        if lx >= 32 && lx < 58 { return (ti, false) }
+        for mute in [true, false] {
+            let o = iconOrigin(track: ti, mute: mute)
+            if NSRect(x: o.x - 4, y: o.y - 4, width: 26, height: 24).contains(NSPoint(x: lx, y: pt.y)) { return (ti, mute) }
+        }
         return nil
     }
 

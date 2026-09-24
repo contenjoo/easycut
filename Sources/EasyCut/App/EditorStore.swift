@@ -32,6 +32,15 @@ final class EditorStore: ObservableObject {
     @Published var converting: [String: JobProgress] = [:]
     @Published var leftTab: LeftTab = .media
     @Published var zoom: Double = 40 // px / 초
+    /// 타임라인 트랙 한 줄 높이 (px)
+    @Published var trackHeight: Double = {
+        let v = UserDefaults.standard.double(forKey: "trackHeight")
+        return v > 0 ? v : 58
+    }() { didSet { UserDefaults.standard.set(trackHeight, forKey: "trackHeight") } }
+    static let trackHeightRange: ClosedRange<Double> = 40...160
+    func changeTrackHeight(by f: Double) {
+        trackHeight = min(Self.trackHeightRange.upperBound, max(Self.trackHeightRange.lowerBound, (trackHeight * f).rounded()))
+    }
     @Published var showExport = false
     @Published var showShortcuts = false
     @Published var showSTTSettings = false

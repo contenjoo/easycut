@@ -14,7 +14,7 @@ struct ContentView: View {
                 InspectorPanel(store: store)
                     .frame(minWidth: 240, idealWidth: 280, maxWidth: 380)
             }
-            .frame(minHeight: 320, idealHeight: 520)
+            .frame(minHeight: 260, idealHeight: 520)
             VStack(spacing: 0) {
                 TimelineToolbar(store: store)
                 TimelineContainer(store: store)
@@ -133,6 +133,17 @@ struct TimelineToolbar: View {
             Toggle(isOn: $store.snapping) { Image(systemName: "magnet") }.toggleStyle(.button).help("스냅 (N)")
             Toggle(isOn: $store.followPlayhead) { Image(systemName: "arrow.right.to.line") }.toggleStyle(.button).help("재생 시 타임라인 따라가기")
             Button { store.addTrack() } label: { Image(systemName: "plus.rectangle.on.rectangle") }.help("트랙 추가")
+            Divider().frame(height: 16)
+            Button { store.changeTrackHeight(by: 1 / 1.25) } label: {
+                Image(systemName: "rectangle.compress.vertical").frame(width: 22, height: 20).contentShape(Rectangle())
+            }
+            .help("트랙 낮게")
+            .disabled(store.trackHeight <= EditorStore.trackHeightRange.lowerBound)
+            Button { store.changeTrackHeight(by: 1.25) } label: {
+                Image(systemName: "rectangle.expand.vertical").frame(width: 22, height: 20).contentShape(Rectangle())
+            }
+            .help("트랙 높게")
+            .disabled(store.trackHeight >= EditorStore.trackHeightRange.upperBound)
             Spacer()
             Button { store.zoom = max(0.5, store.zoom / 1.5) } label: { Image(systemName: "minus.magnifyingglass").frame(width: 22, height: 20).contentShape(Rectangle()) }.help("축소 (⌘-)")
             Slider(value: Binding(get: { log(store.zoom) }, set: { store.zoom = exp($0) }), in: log(0.5)...log(800))
