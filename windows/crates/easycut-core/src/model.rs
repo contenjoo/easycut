@@ -23,7 +23,11 @@ impl Id {
 
 impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.hyphenated().encode_upper(&mut Uuid::encode_buffer()))
+        write!(
+            f,
+            "{}",
+            self.0.hyphenated().encode_upper(&mut Uuid::encode_buffer())
+        )
     }
 }
 
@@ -42,7 +46,9 @@ impl Serialize for Id {
 impl<'de> Deserialize<'de> for Id {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        Uuid::parse_str(&s).map(Id).map_err(serde::de::Error::custom)
+        Uuid::parse_str(&s)
+            .map(Id)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -71,11 +77,36 @@ impl Default for Rgba {
 }
 
 impl Rgba {
-    pub const WHITE: Rgba = Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-    pub const BLACK: Rgba = Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const YELLOW: Rgba = Rgba { r: 1.0, g: 0.86, b: 0.2, a: 1.0 };
-    pub const CAPTION_BG: Rgba = Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.6 };
-    pub const CLEAR: Rgba = Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    pub const WHITE: Rgba = Rgba {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const BLACK: Rgba = Rgba {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const YELLOW: Rgba = Rgba {
+        r: 1.0,
+        g: 0.86,
+        b: 0.2,
+        a: 1.0,
+    };
+    pub const CAPTION_BG: Rgba = Rgba {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.6,
+    };
+    pub const CLEAR: Rgba = Rgba {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
 }
 
 /// 한 단어(어절) 단위 인식 결과. 시간은 원본 미디어 기준 초.
@@ -90,13 +121,23 @@ pub struct Word {
 
 impl Default for Word {
     fn default() -> Self {
-        Word { id: Id::new(), text: String::new(), start: 0.0, end: 0.0 }
+        Word {
+            id: Id::new(),
+            text: String::new(),
+            start: 0.0,
+            end: 0.0,
+        }
     }
 }
 
 impl Word {
     pub fn new(text: impl Into<String>, start: f64, end: f64) -> Self {
-        Word { id: Id::new(), text: text.into(), start, end }
+        Word {
+            id: Id::new(),
+            text: text.into(),
+            start,
+            end,
+        }
     }
 }
 
@@ -117,6 +158,9 @@ pub struct MediaAsset {
     /// MKV 등 변환해서 가져온 경우 원본 파일 경로
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_path: Option<String>,
+    /// 이 버전이 모르는 항목(맥 앱의 그룹·모양·클릭 기록 등)도 그대로 보존한다
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for MediaAsset {
@@ -132,6 +176,7 @@ impl Default for MediaAsset {
             has_audio: false,
             words: None,
             original_path: None,
+            extra: Default::default(),
         }
     }
 }
@@ -214,6 +259,9 @@ pub struct Clip {
     pub offset_y: f64,
     pub fade_in: f64,
     pub fade_out: f64,
+    /// 이 버전이 모르는 항목(맥 앱의 그룹·모양·클릭 기록 등)도 그대로 보존한다
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for Clip {
@@ -235,6 +283,7 @@ impl Default for Clip {
             offset_y: 0.0,
             fade_in: 0.0,
             fade_out: 0.0,
+            extra: Default::default(),
         }
     }
 }
@@ -267,6 +316,9 @@ pub struct Track {
     pub clips: Vec<Clip>,
     pub muted: bool,
     pub hidden: bool,
+    /// 이 버전이 모르는 항목(맥 앱의 그룹·모양·클릭 기록 등)도 그대로 보존한다
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for Track {
@@ -277,7 +329,14 @@ impl Default for Track {
 
 impl Track {
     pub fn named(name: impl Into<String>) -> Self {
-        Track { id: Id::new(), name: name.into(), clips: vec![], muted: false, hidden: false }
+        Track {
+            id: Id::new(),
+            name: name.into(),
+            clips: vec![],
+            muted: false,
+            hidden: false,
+            extra: Default::default(),
+        }
     }
 }
 
@@ -288,17 +347,32 @@ pub struct Caption {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    /// 이 버전이 모르는 항목(맥 앱의 그룹·모양·클릭 기록 등)도 그대로 보존한다
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for Caption {
     fn default() -> Self {
-        Caption { id: Id::new(), start: 0.0, end: 0.0, text: String::new() }
+        Caption {
+            id: Id::new(),
+            start: 0.0,
+            end: 0.0,
+            text: String::new(),
+            extra: Default::default(),
+        }
     }
 }
 
 impl Caption {
     pub fn new(start: f64, end: f64, text: impl Into<String>) -> Self {
-        Caption { id: Id::new(), start, end, text: text.into() }
+        Caption {
+            id: Id::new(),
+            start,
+            end,
+            text: text.into(),
+            extra: Default::default(),
+        }
     }
 }
 
@@ -316,6 +390,9 @@ pub struct Project {
     pub canvas_height: f64,
     pub fps: f64,
     pub background: Rgba,
+    /// 이 버전이 모르는 항목(맥 앱의 그룹·모양·클릭 기록 등)도 그대로 보존한다
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for Project {
@@ -323,7 +400,11 @@ impl Default for Project {
         Project {
             version: 1,
             assets: vec![],
-            tracks: vec![Track::named("트랙 1"), Track::named("트랙 2"), Track::named("트랙 3")],
+            tracks: vec![
+                Track::named("트랙 1"),
+                Track::named("트랙 2"),
+                Track::named("트랙 3"),
+            ],
             captions: vec![],
             caption_style: TextStyle::caption(),
             show_captions: true,
@@ -331,6 +412,7 @@ impl Default for Project {
             canvas_height: 1080.0,
             fps: 30.0,
             background: Rgba::BLACK,
+            extra: Default::default(),
         }
     }
 }
@@ -350,9 +432,10 @@ impl Project {
     }
 
     pub fn locate(&self, clip: Id) -> Option<(usize, usize)> {
-        self.tracks.iter().enumerate().find_map(|(ti, t)| {
-            t.clips.iter().position(|c| c.id == clip).map(|ci| (ti, ci))
-        })
+        self.tracks
+            .iter()
+            .enumerate()
+            .find_map(|(ti, t)| t.clips.iter().position(|c| c.id == clip).map(|ci| (ti, ci)))
     }
 
     pub fn clip(&self, id: Id) -> Option<&Clip> {

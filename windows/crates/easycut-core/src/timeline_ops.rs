@@ -28,7 +28,11 @@ impl TimeRange {
 
 /// 가까운 구간 합치기 (gap 이내로 붙은 구간은 하나로)
 pub fn merge(ranges: &[TimeRange], gap: f64) -> Vec<TimeRange> {
-    let mut sorted: Vec<TimeRange> = ranges.iter().copied().filter(|r| r.end - r.start > 0.001).collect();
+    let mut sorted: Vec<TimeRange> = ranges
+        .iter()
+        .copied()
+        .filter(|r| r.end - r.start > 0.001)
+        .collect();
     sorted.sort_by(|a, b| a.start.total_cmp(&b.start));
     let mut out: Vec<TimeRange> = vec![];
     for r in sorted {
@@ -69,13 +73,16 @@ impl Project {
             }
             t.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         }
-        self.captions.retain(|c| c.end - c.start >= 0.05 && !c.text.trim().is_empty());
+        self.captions
+            .retain(|c| c.end - c.start >= 0.05 && !c.text.trim().is_empty());
         self.captions.sort_by(|a, b| a.start.total_cmp(&b.start));
     }
 
     /// 겹치는 클립은 뒤로 밀어서 한 트랙 안에서 겹치지 않도록 한다.
     pub fn resolve_overlaps(&mut self, ti: usize, pinned: Option<Id>) {
-        let Some(track) = self.tracks.get_mut(ti) else { return };
+        let Some(track) = self.tracks.get_mut(ti) else {
+            return;
+        };
         track.clips.sort_by(|a, b| {
             if (a.start - b.start).abs() < EPS {
                 let ap = Some(a.id) == pinned;
@@ -101,7 +108,11 @@ impl Project {
 
     pub fn insert(&mut self, asset: &MediaAsset, ti: usize, time: f64, image_duration: f64) -> Id {
         self.ensure_track(ti);
-        let dur = if asset.kind == MediaKind::Image { image_duration } else { asset.duration };
+        let dur = if asset.kind == MediaKind::Image {
+            image_duration
+        } else {
+            asset.duration
+        };
         let clip = Clip {
             asset_id: Some(asset.id),
             start: time.max(0.0),
@@ -133,7 +144,10 @@ impl Project {
     }
 
     pub fn track_end(&self, ti: usize) -> f64 {
-        self.tracks.get(ti).map(|t| t.clips.iter().map(Clip::end).fold(0.0, f64::max)).unwrap_or(0.0)
+        self.tracks
+            .get(ti)
+            .map(|t| t.clips.iter().map(Clip::end).fold(0.0, f64::max))
+            .unwrap_or(0.0)
     }
 
     // MARK: 분할
@@ -182,7 +196,12 @@ impl Project {
     /// 선택 클립 삭제. ripple이면 같은 트랙의 뒤 클립을 당겨 빈틈을 없앤다.
     pub fn delete_clips(&mut self, ids: &HashSet<Id>, ripple: bool) {
         for t in &mut self.tracks {
-            let mut removed: Vec<Clip> = t.clips.iter().filter(|c| ids.contains(&c.id)).cloned().collect();
+            let mut removed: Vec<Clip> = t
+                .clips
+                .iter()
+                .filter(|c| ids.contains(&c.id))
+                .cloned()
+                .collect();
             if removed.is_empty() {
                 continue;
             }
@@ -211,7 +230,8 @@ impl Project {
         self.split_all(a, None);
         self.split_all(b, None);
         for t in &mut self.tracks {
-            t.clips.retain(|c| !(c.start >= a - EPS && c.end() <= b + EPS));
+            t.clips
+                .retain(|c| !(c.start >= a - EPS && c.end() <= b + EPS));
             for c in &mut t.clips {
                 if c.start >= b - EPS {
                     c.start -= len;
@@ -332,10 +352,14 @@ impl Project {
 
     /// 기본 트랙 클립을 떨어뜨린 위치(포인터 시각)에 맞춰 순서를 바꾼다
     pub fn reorder(&mut self, id: Id, pointer: f64) {
-        let Some((ti, ci)) = self.locate(id) else { return };
+        let Some((ti, ci)) = self.locate(id) else {
+            return;
+        };
         let c = self.tracks[ti].clips[ci].clone();
         let has_others = self.tracks[ti].clips.iter().any(|o| o.id != id);
-        let Some(target) = self.insertion_point(ti, id, pointer) else { return };
+        let Some(target) = self.insertion_point(ti, id, pointer) else {
+            return;
+        };
         if !has_others {
             return;
         }
@@ -344,9 +368,19 @@ impl Project {
 
     /// 포인터 아래 클립의 앞/뒤 경계 (앞쪽 절반이면 앞, 뒤쪽 절반이면 뒤)
     pub fn insertion_point(&self, ti: usize, excluding: Id, t: f64) -> Option<f64> {
-        let others: Vec<&Clip> = self.tracks.get(ti)?.clips.iter().filter(|c| c.id != excluding).collect();
+        let others: Vec<&Clip> = self
+            .tracks
+            .get(ti)?
+            .clips
+            .iter()
+            .filter(|c| c.id != excluding)
+            .collect();
         if let Some(under) = others.iter().find(|c| t >= c.start && t < c.end()) {
-            return Some(if t < (under.start + under.end()) / 2.0 { under.start } else { under.end() });
+            return Some(if t < (under.start + under.end()) / 2.0 {
+                under.start
+            } else {
+                under.end()
+            });
         }
         let mut bounds = vec![0.0];
         for o in &others {
@@ -366,7 +400,9 @@ impl Project {
     // MARK: 이동 / 트림
 
     pub fn move_clip(&mut self, id: Id, new_track: usize, start: f64) {
-        let Some((ti, ci)) = self.locate(id) else { return };
+        let Some((ti, ci)) = self.locate(id) else {
+            return;
+        };
         let mut c = self.tracks[ti].clips.remove(ci);
         c.start = start.max(0.0);
         self.ensure_track(new_track);
@@ -376,7 +412,9 @@ impl Project {
 
     /// 왼쪽 가장자리를 새 타임라인 위치로 트림.
     pub fn trim_start(&mut self, id: Id, new_start: f64, max_source: Option<f64>) {
-        let Some((ti, ci)) = self.locate(id) else { return };
+        let Some((ti, ci)) = self.locate(id) else {
+            return;
+        };
         let mut c = self.tracks[ti].clips[ci].clone();
         let prev_end = self.tracks[ti]
             .clips
@@ -402,7 +440,9 @@ impl Project {
 
     /// 오른쪽 가장자리를 새 타임라인 위치로 트림.
     pub fn trim_end(&mut self, id: Id, new_end: f64, max_source: Option<f64>) {
-        let Some((ti, ci)) = self.locate(id) else { return };
+        let Some((ti, ci)) = self.locate(id) else {
+            return;
+        };
         let mut c = self.tracks[ti].clips[ci].clone();
         let next_start = self.tracks[ti]
             .clips
@@ -420,7 +460,9 @@ impl Project {
 
     /// 속도 변경. 같은 트랙의 뒤 클립은 길이 변화만큼 당기거나 민다.
     pub fn set_speed(&mut self, id: Id, speed: f64) {
-        let Some((ti, ci)) = self.locate(id) else { return };
+        let Some((ti, ci)) = self.locate(id) else {
+            return;
+        };
         let old = self.tracks[ti].clips[ci].clone();
         let mut c = old.clone();
         c.speed = speed.clamp(0.1, 20.0);

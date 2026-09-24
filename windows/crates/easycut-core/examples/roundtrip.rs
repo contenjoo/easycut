@@ -6,5 +6,11 @@ fn main() {
     let data = std::fs::read_to_string(&args[1]).expect("read");
     let p = easycut_core::Project::from_json(&data).expect("decode");
     std::fs::write(&args[2], p.to_json().expect("encode")).expect("write");
-    println!("assets={} clips={} captions={} dur={}", p.assets.len(), p.tracks.iter().map(|t| t.clips.len()).sum::<usize>(), p.captions.len(), p.duration());
+    println!(
+        "assets={} clips={} captions={} dur={}",
+        p.assets.len(),
+        p.tracks.iter().map(|t| t.clips.len()).sum::<usize>(),
+        p.captions.len(),
+        p.duration()
+    );
 }

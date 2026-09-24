@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EasyCut",
+  "version": "0.1.0",
+  "identifier": "com.contenjoo.easycut.windows",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "EasyCut",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 640,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/bin/*",
+      "resources/licenses/*"
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "Korean",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "easycut"
+        ],
+        "name": "EasyCut Project",
+        "role": "Editor"
+      }
+    ],
+    "publisher": "contenjoo",
+    "copyright": "MIT License",
+    "shortDescription": "Easy video editor with speech-to-text editing"
+  }
+}

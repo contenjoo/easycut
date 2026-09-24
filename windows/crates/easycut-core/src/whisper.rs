@@ -12,7 +12,11 @@ pub fn chunks(s: &[i16], min_len: f64, max_len: f64) -> Vec<Range<usize>> {
     let win = SAMPLE_RATE / 10; // 0.1초
     let n_win = s.len() / win;
     if n_win == 0 {
-        return if s.is_empty() { vec![] } else { vec![0..s.len()] };
+        return if s.is_empty() {
+            vec![]
+        } else {
+            vec![0..s.len()]
+        };
     }
     let mut energy = vec![0f32; n_win];
     for (w, e) in energy.iter_mut().enumerate() {
@@ -37,7 +41,9 @@ pub fn chunks(s: &[i16], min_len: f64, max_len: f64) -> Vec<Range<usize>> {
         let mut best = start_win + min_w;
         let mut best_e = f32::MAX;
         for w in (start_win + min_w)..n_win.min(start_win + max_w) {
-            let e = energy[w] + if w + 1 < n_win { energy[w + 1] } else { 0.0 } + if w > 0 { energy[w - 1] } else { 0.0 };
+            let e = energy[w]
+                + if w + 1 < n_win { energy[w + 1] } else { 0.0 }
+                + if w > 0 { energy[w - 1] } else { 0.0 };
             if e < best_e {
                 best_e = e;
                 best = w;
@@ -76,29 +82,45 @@ fn num(v: Option<&Value>) -> Option<f64> {
 pub fn parse_whisper_full(data: &[u8]) -> Vec<Word> {
     // whisper.cpp 출력에 잘못된 UTF-8이 섞일 수 있어 느슨하게 디코딩
     let text = String::from_utf8_lossy(data);
-    let Ok(obj) = serde_json::from_str::<Value>(&text) else { return vec![] };
-    let Some(segs) = obj.get("transcription").and_then(Value::as_array) else { return vec![] };
+    let Ok(obj) = serde_json::from_str::<Value>(&text) else {
+        return vec![];
+    };
+    let Some(segs) = obj.get("transcription").and_then(Value::as_array) else {
+        return vec![];
+    };
     let mut words = vec![];
     for seg in segs {
         let off = seg.get("offsets");
         let seg_from = num(off.and_then(|o| o.get("from"))).unwrap_or(0.0) / 1000.0;
         let seg_to = num(off.and_then(|o| o.get("to"))).unwrap_or(0.0) / 1000.0;
         let seg_text = seg.get("text").and_then(Value::as_str).unwrap_or("").trim();
-        let seg_words: Vec<&str> = seg_text.split_whitespace().filter(|w| !w.starts_with('[')).collect();
+        let seg_words: Vec<&str> = seg_text
+            .split_whitespace()
+            .filter(|w| !w.starts_with('['))
+            .collect();
         if seg_words.is_empty() {
             continue;
         }
         // 토큰을 단어로 묶기 (앞 공백 = 새 단어)
         let mut starts = vec![];
         let mut saw_token = false;
-        for t in seg.get("tokens").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]) {
+        for t in seg
+            .get("tokens")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+        {
             let tt = t.get("text").and_then(Value::as_str).unwrap_or("");
             if tt.starts_with("[_") {
                 continue;
             }
             let dtw = num(t.get("t_dtw")).unwrap_or(-1.0);
             let from = num(t.get("offsets").and_then(|o| o.get("from"))).unwrap_or(-1.0);
-            let time = if dtw >= 0.0 { dtw / 100.0 - 0.15 } else { from / 1000.0 };
+            let time = if dtw >= 0.0 {
+                dtw / 100.0 - 0.15
+            } else {
+                from / 1000.0
+            };
             if tt.starts_with(' ') || !saw_token {
                 if tt.trim().is_empty() {
                     continue;
@@ -124,7 +146,11 @@ pub fn parse_whisper_full(data: &[u8]) -> Vec<Word> {
         };
         for (k, w) in seg_words.iter().enumerate() {
             let st = seg_from.max(times[k]);
-            let en = if k + 1 < times.len() { (st + 0.05).max(times[k + 1]) } else { (st + 0.1).max(seg_to) };
+            let en = if k + 1 < times.len() {
+                (st + 0.05).max(times[k + 1])
+            } else {
+                (st + 0.1).max(seg_to)
+            };
             words.push(Word::new(*w, st, en));
         }
     }
@@ -148,7 +174,11 @@ pub fn fix_overlaps(w: Vec<Word>) -> Vec<Word> {
 /// whisper-cli stderr 한 줄에서 "progress = N%" 읽기
 pub fn parse_progress(line: &str) -> Option<f64> {
     let i = line.find("progress =")?;
-    let digits: String = line[i + 10..].trim_start().chars().take_while(char::is_ascii_digit).collect();
+    let digits: String = line[i + 10..]
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
     digits.parse::<f64>().ok().map(|v| (v / 100.0).min(0.99))
 }
 
@@ -160,9 +190,21 @@ pub struct WhisperModel {
 }
 
 pub const MODELS: &[WhisperModel] = &[
-    WhisperModel { id: "large-v3-turbo-q5_0", dtw: "large.v3.turbo", label: "Large v3 Turbo (권장, GPU)" },
-    WhisperModel { id: "small", dtw: "small", label: "Small (CPU 기본)" },
-    WhisperModel { id: "base", dtw: "base", label: "Base (가장 빠름)" },
+    WhisperModel {
+        id: "large-v3-turbo-q5_0",
+        dtw: "large.v3.turbo",
+        label: "Large v3 Turbo (권장, GPU)",
+    },
+    WhisperModel {
+        id: "small",
+        dtw: "small",
+        label: "Small (CPU 기본)",
+    },
+    WhisperModel {
+        id: "base",
+        dtw: "base",
+        label: "Base (가장 빠름)",
+    },
 ];
 
 impl WhisperModel {
@@ -171,6 +213,9 @@ impl WhisperModel {
     }
 
     pub fn url(&self) -> String {
-        format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", self.file_name())
+        format!(
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
+            self.file_name()
+        )
     }
 }

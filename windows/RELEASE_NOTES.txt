@@ -1,0 +1,14 @@
+EasyCut for Windows (베타 / Beta)
+
+[설치]
+• Windows 10/11 (64비트)
+• EasyCut_x.y.z_x64-setup.exe 를 받아 실행하세요. 서명되지 않은 앱이라 "Windows의 PC 보호" 창이 뜨면 [추가 정보] → [실행]을 누르세요.
+
+[지금 되는 것]
+• 영상·오디오·사진 가져오기(끌어다 놓기 포함), 멀티 트랙 타임라인(분할·삭제·이동·트림·속도·순서 바꾸기)
+• Whisper 음성 인식(처음 한 번 모델 574MB 받기) → 대본에서 단어 선택 후 Delete로 영상 잘라내기, 군더더기 제거
+• 원클릭 무음 컷, 대본으로 자막 만들기·스타일·SRT 가져오기/내보내기
+• MP4 내보내기(자막·텍스트 입히기 포함), 맥 앱과 같은 .easycut 프로젝트 파일
+
+[Install]
+• Windows 10/11 (64-bit). Run the setup .exe; if SmartScreen appears, click "More info" → "Run anyway".

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/easycut-core"]
+members = ["crates/easycut-core", "app/src-tauri"]
 
 [workspace.package]
 edition = "2021"

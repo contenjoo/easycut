@@ -26,7 +26,8 @@ impl TimelineWord {
 }
 
 pub const FILLER_WORDS: &[&str] = &[
-    "음", "음음", "어", "어어", "으", "으음", "흠", "아", "에", "그", "저", "뭐", "음…", "어…", "um", "uh", "hmm", "erm",
+    "음", "음음", "어", "어어", "으", "으음", "흠", "아", "에", "그", "저", "뭐", "음…", "어…",
+    "um", "uh", "hmm", "erm",
 ];
 
 fn is_trim_char(c: char) -> bool {
@@ -34,7 +35,23 @@ fn is_trim_char(c: char) -> bool {
         || c.is_ascii_punctuation()
         || matches!(
             c,
-            '…' | '~' | '。' | '、' | '，' | '！' | '？' | '「' | '」' | '『' | '』' | '·' | '“' | '”' | '‘' | '’' | '《' | '》'
+            '…' | '~'
+                | '。'
+                | '、'
+                | '，'
+                | '！'
+                | '？'
+                | '「'
+                | '」'
+                | '『'
+                | '』'
+                | '·'
+                | '“'
+                | '”'
+                | '‘'
+                | '’'
+                | '《'
+                | '》'
         )
 }
 
@@ -54,7 +71,9 @@ impl Project {
         let mut out = vec![];
         for (ti, track) in self.tracks.iter().enumerate() {
             for clip in track.clips.iter().filter(|c| c.kind == ClipKind::Media) {
-                let Some(asset) = self.asset(clip.asset_id) else { continue };
+                let Some(asset) = self.asset(clip.asset_id) else {
+                    continue;
+                };
                 let Some(words) = &asset.words else { continue };
                 for w in words {
                     let mid = (w.start + w.end) / 2.0;
@@ -63,7 +82,14 @@ impl Project {
                     }
                     let s = clip.timeline_time(w.start.max(clip.source_in));
                     let e = clip.timeline_time(w.end.min(clip.source_out));
-                    out.push(TimelineWord { word: w.clone(), asset_id: asset.id, clip_id: clip.id, track: ti, start: s, end: e });
+                    out.push(TimelineWord {
+                        word: w.clone(),
+                        asset_id: asset.id,
+                        clip_id: clip.id,
+                        track: ti,
+                        start: s,
+                        end: e,
+                    });
                 }
             }
         }
@@ -80,12 +106,18 @@ impl Project {
         }
         let mut ranges = vec![];
         for (clip_id, mut ws) in by_clip {
-            let Some(clip) = self.clip(clip_id) else { continue };
+            let Some(clip) = self.clip(clip_id) else {
+                continue;
+            };
             ws.sort_by(|a, b| a.start.total_cmp(&b.start));
             let mut cursor = clip.start;
             for w in &ws {
                 if w.start - cursor >= min_gap {
-                    let a = if cursor == clip.start { cursor } else { cursor + keep };
+                    let a = if cursor == clip.start {
+                        cursor
+                    } else {
+                        cursor + keep
+                    };
                     let b = w.start - keep;
                     if b - a > 0.1 {
                         ranges.push(TimeRange::new(a, b));
@@ -112,26 +144,44 @@ impl Project {
     }
 
     /// 대본으로 자막 생성 (기본값: 20자, 4.5초, 0.6초 쉼)
-    pub fn generated_captions(&self, max_chars: usize, max_duration: f64, pause_break: f64) -> Vec<Caption> {
+    pub fn generated_captions(
+        &self,
+        max_chars: usize,
+        max_duration: f64,
+        pause_break: f64,
+    ) -> Vec<Caption> {
         let words = self.timeline_words();
         let mut out: Vec<Caption> = vec![];
         let mut cur: Vec<&TimelineWord> = vec![];
 
         fn flush(cur: &mut Vec<&TimelineWord>, out: &mut Vec<Caption>, next_start: Option<f64>) {
-            let (Some(f), Some(l)) = (cur.first(), cur.last()) else { return };
+            let (Some(f), Some(l)) = (cur.first(), cur.last()) else {
+                return;
+            };
             let mut end = l.end + 0.25;
             if let Some(n) = next_start {
                 end = end.min(n);
             }
-            let text = cur.iter().map(|w| w.word.text.as_str()).collect::<Vec<_>>().join(" ");
+            let text = cur
+                .iter()
+                .map(|w| w.word.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
             out.push(Caption::new(f.start, end.max(f.start + 0.3), text));
             cur.clear();
         }
 
         for (i, w) in words.iter().enumerate() {
             if let (Some(l), Some(f)) = (cur.last(), cur.first()) {
-                let chars = cur.iter().map(|x| char_count(&x.word.text)).sum::<usize>() + cur.len() + char_count(&w.word.text);
-                let ends_sentence = l.word.text.chars().last().is_some_and(|c| ".?!。".contains(c));
+                let chars = cur.iter().map(|x| char_count(&x.word.text)).sum::<usize>()
+                    + cur.len()
+                    + char_count(&w.word.text);
+                let ends_sentence = l
+                    .word
+                    .text
+                    .chars()
+                    .last()
+                    .is_some_and(|c| ".?!。".contains(c));
                 if w.start - l.end > pause_break
                     || chars > max_chars
                     || w.end - f.start > max_duration
@@ -156,7 +206,11 @@ impl Project {
     /// 인식 결과 단어 수정
     pub fn update_word(&mut self, asset: Id, word: Id, text: &str) {
         if let Some(a) = self.assets.iter_mut().find(|a| a.id == asset) {
-            if let Some(w) = a.words.as_mut().and_then(|ws| ws.iter_mut().find(|w| w.id == word)) {
+            if let Some(w) = a
+                .words
+                .as_mut()
+                .and_then(|ws| ws.iter_mut().find(|w| w.id == word))
+            {
                 w.text = text.to_string();
             }
         }
@@ -164,7 +218,11 @@ impl Project {
 
     /// 전체 대본 텍스트
     pub fn transcript_text(&self) -> String {
-        self.timeline_words().iter().map(|w| w.word.text.as_str()).collect::<Vec<_>>().join(" ")
+        self.timeline_words()
+            .iter()
+            .map(|w| w.word.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -189,7 +247,10 @@ pub fn deletion_ranges(selected: &HashSet<String>, words: &[TimelineWord]) -> Ve
             start = first.start - 0.04_f64.min(gap.max(0.0) / 2.0);
         }
         let end;
-        if j + 1 < words.len() && words[j + 1].clip_id == last.clip_id && words[j + 1].start - last.end < 1.5 {
+        if j + 1 < words.len()
+            && words[j + 1].clip_id == last.clip_id
+            && words[j + 1].start - last.end < 1.5
+        {
             let gap = (words[j + 1].start - last.end).max(0.0);
             end = words[j + 1].start - 0.04_f64.min(gap / 2.0);
         } else {
@@ -212,14 +273,28 @@ pub mod srt {
 
     pub fn stamp(t: f64) -> String {
         let ms = (t.max(0.0) * 1000.0).round() as i64;
-        format!("{:02}:{:02}:{:02},{:03}", ms / 3_600_000, (ms / 60_000) % 60, (ms / 1000) % 60, ms % 1000)
+        format!(
+            "{:02}:{:02}:{:02},{:03}",
+            ms / 3_600_000,
+            (ms / 60_000) % 60,
+            (ms / 1000) % 60,
+            ms % 1000
+        )
     }
 
     pub fn make(captions: &[Caption]) -> String {
         captions
             .iter()
             .enumerate()
-            .map(|(i, c)| format!("{}\n{} --> {}\n{}\n", i + 1, stamp(c.start), stamp(c.end), c.text))
+            .map(|(i, c)| {
+                format!(
+                    "{}\n{} --> {}\n{}\n",
+                    i + 1,
+                    stamp(c.start),
+                    stamp(c.end),
+                    c.text
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -230,12 +305,16 @@ pub mod srt {
         let mut out = vec![];
         for b in text.split("\n\n") {
             let lines: Vec<&str> = b.split('\n').filter(|l| !l.is_empty()).collect();
-            let Some(ti) = lines.iter().position(|l| l.contains("-->")) else { continue };
+            let Some(ti) = lines.iter().position(|l| l.contains("-->")) else {
+                continue;
+            };
             let parts: Vec<&str> = lines[ti].split("-->").map(str::trim).collect();
             if parts.len() != 2 {
                 continue;
             }
-            let (Some(s), Some(e)) = (parse_stamp(parts[0]), parse_stamp(parts[1])) else { continue };
+            let (Some(s), Some(e)) = (parse_stamp(parts[0]), parse_stamp(parts[1])) else {
+                continue;
+            };
             out.push(Caption::new(s, e, lines[ti + 1..].join("\n")));
         }
         out
@@ -261,7 +340,11 @@ pub mod time_format {
         let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
         if frames {
             let f = ((t - total as f64) * fps) as i64;
-            return if h > 0 { format!("{h}:{m:02}:{s:02};{f:02}") } else { format!("{m:02}:{s:02};{f:02}") };
+            return if h > 0 {
+                format!("{h}:{m:02}:{s:02};{f:02}")
+            } else {
+                format!("{m:02}:{s:02};{f:02}")
+            };
         }
         let cs = ((t - total as f64) * 100.0) as i64;
         if h > 0 {

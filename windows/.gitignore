@@ -1,3 +1,8 @@
 target/
 node_modules/
 dist/
+app/src-tauri/gen/
+app/src-tauri/resources/bin/*
+!app/src-tauri/resources/bin/README.txt
+app/src-tauri/resources/licenses/*
+!app/src-tauri/resources/licenses/README.txt

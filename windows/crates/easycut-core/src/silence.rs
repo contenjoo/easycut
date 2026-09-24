@@ -28,7 +28,8 @@ impl LoudnessMeter {
             self.acc += v * v;
             self.n += 1;
             if self.n == Self::PER {
-                self.db.push((10.0 * (self.acc / Self::PER as f64).max(1e-10).log10()) as f32);
+                self.db
+                    .push((10.0 * (self.acc / Self::PER as f64).max(1e-10).log10()) as f32);
                 self.acc = 0.0;
                 self.n = 0;
             }
@@ -37,7 +38,8 @@ impl LoudnessMeter {
 
     pub fn finish(mut self) -> Vec<f32> {
         if self.n > 0 {
-            self.db.push((10.0 * (self.acc / self.n as f64).max(1e-10).log10()) as f32);
+            self.db
+                .push((10.0 * (self.acc / self.n as f64).max(1e-10).log10()) as f32);
         }
         self.db
     }
@@ -98,22 +100,39 @@ pub struct SilenceSettings {
 
 impl Default for SilenceSettings {
     fn default() -> Self {
-        SilenceSettings { threshold: -40.0, min_silence: 0.6, padding: 0.12 }
+        SilenceSettings {
+            threshold: -40.0,
+            min_silence: 0.6,
+            padding: 0.12,
+        }
     }
 }
 
 impl Project {
     /// 기본 트랙(트랙 1)의 소리 있는 클립 기준으로 무음을 타임라인 구간으로 변환
-    pub fn audio_silence_ranges(&self, loudness: &HashMap<Id, Vec<f32>>, settings: &SilenceSettings) -> Vec<TimeRange> {
+    pub fn audio_silence_ranges(
+        &self,
+        loudness: &HashMap<Id, Vec<f32>>,
+        settings: &SilenceSettings,
+    ) -> Vec<TimeRange> {
         let mut ranges = vec![];
         for track in self.tracks.iter().take(1).filter(|t| !t.muted) {
             for c in track.clips.iter().filter(|c| c.kind == ClipKind::Media) {
-                let Some(a) = self.asset(c.asset_id) else { continue };
+                let Some(a) = self.asset(c.asset_id) else {
+                    continue;
+                };
                 if !a.has_audio {
                     continue;
                 }
-                let Some(db) = loudness.get(&a.id) else { continue };
-                for r in silences(db, settings.threshold, settings.min_silence * c.speed, settings.padding * c.speed) {
+                let Some(db) = loudness.get(&a.id) else {
+                    continue;
+                };
+                for r in silences(
+                    db,
+                    settings.threshold,
+                    settings.min_silence * c.speed,
+                    settings.padding * c.speed,
+                ) {
                     let s0 = r.start.max(c.source_in);
                     let s1 = r.end.min(c.source_out);
                     if s1 - s0 <= 0.05 {

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EasyCut</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="toolbar">
+    <div class="group">
+      <button data-cmd="import" class="primary" data-i18n="import">가져오기</button>
+      <span id="title" class="title"></span>
+    </div>
+    <div class="group">
+      <button data-cmd="undo" data-i18n-title="undo" title="실행 취소 (Ctrl+Z)">↶</button>
+      <button data-cmd="redo" data-i18n-title="redo" title="다시 실행 (Ctrl+Y)">↷</button>
+      <button data-cmd="split" data-i18n="split">분할</button>
+      <button data-cmd="delete" data-i18n="delete">삭제</button>
+      <button data-cmd="text" data-i18n="text">텍스트</button>
+      <button data-cmd="silence" data-i18n="silence">무음 컷</button>
+      <button data-cmd="transcribe" data-i18n="transcribe">음성 인식</button>
+      <button data-cmd="captions" data-i18n="makeCaptions">자막 생성</button>
+      <button data-cmd="save" data-i18n="save">저장</button>
+      <button data-cmd="export" class="primary" data-i18n="export">내보내기</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="left" class="panel">
+      <nav class="tabs">
+        <button data-tab="media" class="on" data-i18n="media">미디어</button>
+        <button data-tab="transcript" data-i18n="transcript">대본</button>
+        <button data-tab="captions" data-i18n="captionsTab">자막</button>
+      </nav>
+      <div id="tab-media" class="tab on"></div>
+      <div id="tab-transcript" class="tab"></div>
+      <div id="tab-captions" class="tab"></div>
+    </section>
+
+    <section id="center">
+      <div id="stage">
+        <div id="canvas">
+          <video id="video" playsinline></video>
+          <img id="still" alt="" />
+          <div id="overlay"></div>
+        </div>
+        <div id="empty-hint" data-i18n="dropHint">영상, 오디오, 사진을 여기로 끌어다 놓으세요</div>
+      </div>
+      <div id="transport">
+        <span id="clock">00:00.00</span>
+        <button data-cmd="start" title="Home">⏮</button>
+        <button data-cmd="back5" title="Shift+←">−5s</button>
+        <button data-cmd="play" id="playBtn" class="primary" title="Space">▶</button>
+        <button data-cmd="fwd5" title="Shift+→">+5s</button>
+        <button data-cmd="end" title="End">⏭</button>
+        <select id="rate" title="J / K / L">
+          <option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option>
+          <option value="2">2x</option><option value="4">4x</option><option value="8">8x</option><option value="16">16x</option>
+        </select>
+        <span id="dur">00:00.00</span>
+      </div>
+    </section>
+
+    <section id="right" class="panel"><div id="inspector"></div></section>
+  </main>
+
+  <section id="timeline-wrap">
+    <div id="tl-toolbar">
+      <span id="range-info"></span>
+      <span class="spacer"></span>
+      <button data-cmd="zoomOut" title="Ctrl+-">−</button>
+      <input id="zoom" type="range" min="-0.7" max="2.9" step="0.01" value="1.6" />
+      <button data-cmd="zoomIn" title="Ctrl+=">＋</button>
+      <button data-cmd="fit" data-i18n="fit">전체</button>
+    </div>
+    <div id="tl-scroll"><canvas id="timeline"></canvas></div>
+  </section>
+
+  <div id="toast"></div>
+  <div id="modal" class="hidden"><div class="box" id="modal-box"></div></div>
+  <div id="jobs"></div>
+
+  <script src="i18n.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
