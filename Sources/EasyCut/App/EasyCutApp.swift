@@ -80,7 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // 녹화 중에는 창이 없어도 끝내지 않는다
+        MainActor.assumeIsolated { !(store?.recording.isBusy ?? false) }
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let store else { return .terminateNow }
@@ -152,6 +155,7 @@ struct AppCommands: Commands {
             Divider()
             Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")
             Button("링크로 가져오기 (유튜브 등)…") { store.showLinkSheet = true }.keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("화면·얼굴 녹화…") { store.recording.open() }.keyboardShortcut("r", modifiers: [.command, .option])
         }
         CommandGroup(replacing: .saveItem) {
             Button("저장") { store.save() }.keyboardShortcut("s")

@@ -47,6 +47,7 @@ final class EditorStore: ObservableObject {
     @Published var showSilenceSheet = false
     @Published var showLinkSheet = false
     @Published var showClaudeSheet = false
+    @Published var showRecordSheet = false
     @Published var snapping = true
     @Published var followPlayhead = true
     @Published var timelineVersion = 0
@@ -68,6 +69,7 @@ final class EditorStore: ObservableObject {
     let downloader = ModelDownloader()
     lazy var ai = AIAssistant(store: self)
     lazy var control = ControlServer(store: self)
+    lazy var recording = RecordController(store: self)
 
     private var undoStack: [Project] = []
     private var redoStack: [Project] = []

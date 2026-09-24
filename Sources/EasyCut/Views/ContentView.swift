@@ -43,6 +43,7 @@ struct ContentView: View {
         .sheet(isPresented: $store.showSilenceSheet) { SilenceSheet(store: store) }
         .sheet(isPresented: $store.showLinkSheet) { LinkSheet(store: store) }
         .sheet(isPresented: $store.showClaudeSheet) { ConnectSheet() }
+        .sheet(isPresented: $store.showRecordSheet) { RecordSheet(rec: store.recording) }
         .alert("알림", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } })) {
             Button("확인") { store.alert = nil }
         } message: {
@@ -86,6 +87,8 @@ struct MainToolbar: ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button { store.importPanel() } label: { Label("가져오기", systemImage: "square.and.arrow.down") }
                 .help("미디어 가져오기 (⌘I)")
+            Button { store.recording.open() } label: { Label("녹화", systemImage: "record.circle") }
+                .help("화면·얼굴 녹화 (⌥⌘R)")
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { store.undo() } label: { Label("실행 취소", systemImage: "arrow.uturn.backward") }

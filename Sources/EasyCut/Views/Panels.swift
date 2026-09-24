@@ -19,6 +19,8 @@ struct MediaBinPanel: View {
                     .help("영상·오디오·사진 가져오기 (⌘I)")
                 Button { store.showLinkSheet = true } label: { Label("링크", systemImage: "link") }
                     .help("유튜브 등 영상 링크로 가져오기 (⇧⌘I)")
+                Button { store.recording.open() } label: { Label("녹화", systemImage: "record.circle") }
+                    .help("화면·얼굴 녹화 (⌥⌘R)")
                 Spacer()
                 Text("\(store.project.assets.count)개").font(.caption).foregroundStyle(.secondary)
             }
