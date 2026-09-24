@@ -4,6 +4,7 @@ mod media;
 mod selftest;
 mod stt;
 mod tools;
+mod update;
 
 pub use selftest::run as selftest;
 
@@ -549,6 +550,19 @@ async fn transcribe(app: AppHandle, st: State<'_, AppState>, asset: Id, language
     Ok(changed(&app, &st))
 }
 
+#[tauri::command]
+async fn check_update() -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(update::check).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle, url: String) -> Res<()> {
+    job(&app, "update", 0.0, "업데이트 받는 중…");
+    tauri::async_runtime::spawn_blocking(move || update::install(&url)).await.map_err(|e| e.to_string())??;
+    app.exit(0);
+    Ok(())
+}
+
 /// 실행할 때 넘겨받은 파일 (탐색기에서 "EasyCut으로 열기", 끌어다 놓기로 실행)
 #[tauri::command]
 fn startup_files() -> Vec<String> {
@@ -589,7 +603,7 @@ pub fn run() {
             import_files, add_to_timeline, remove_asset,
             split, delete_clips, ripple_delete_range, move_clips, reorder_clip, trim_clip, set_speed, update_clip, update_track, add_text, update_project,
             delete_words, update_word, remove_fillers, generate_captions, export_srt, import_srt, silence_ranges,
-            whisper_status, download_model, transcribe, cancel_job, export_video, startup_files,
+            whisper_status, download_model, transcribe, cancel_job, export_video, startup_files, check_update, install_update,
         ])
         .setup(|app| {
             let _ = app.path().app_data_dir();

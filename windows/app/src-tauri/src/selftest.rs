@@ -53,6 +53,7 @@ pub fn run(dir: &Path) -> i32 {
         c.check(p.is_some() || t == "whisper-cli", &format!("{t}: {}", p.map(|p| p.display().to_string()).unwrap_or("-".into())));
     }
 
+    c.check(crate::update::is_newer("0.2.0", "0.1.9") && !crate::update::is_newer("0.1.0", "0.1.0"), "update version compare");
     println!("2) import");
     let sample = match make_media(dir) {
         Ok(p) => p,

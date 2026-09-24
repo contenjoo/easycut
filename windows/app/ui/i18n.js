@@ -20,7 +20,7 @@
     download: "받기", noAudio: "음성이 있는 영상/오디오를 먼저 타임라인에 올려 주세요.", range: "구간", rangeHint: "Delete 잘라내기 · 빈 곳 클릭/X/Esc 해제",
     cutRange: "구간 잘라내기", engineMissing: "Whisper 엔진이나 ffmpeg를 찾을 수 없습니다. EasyCut을 다시 설치해 주세요.",
     unsaved: "저장하지 않은 변경 사항이 있습니다. 계속할까요?", open: "열기", newProj: "새로 만들기", enterText: "텍스트를 입력하세요",
-    track: "트랙", captionsRow: "자막", reordered: "순서를 바꿨습니다 (Alt를 누른 채 끌면 자유 이동)",
+    track: "트랙", captionsRow: "자막", newVersion: "새 버전이 나왔습니다: EasyCut", currentVersion: "지금 쓰는 버전:", update: "업데이트", reordered: "순서를 바꿨습니다 (Alt를 누른 채 끌면 자유 이동)",
   };
   const en = {
     import: "Import", undo: "Undo (Ctrl+Z)", redo: "Redo (Ctrl+Y)", split: "Split", delete: "Delete", text: "Text",
@@ -42,7 +42,7 @@
     download: "Download", noAudio: "Put a video/audio clip with speech on the timeline first.", range: "Range", rangeHint: "Delete to cut · click empty space/X/Esc to clear",
     cutRange: "Cut Range", engineMissing: "Whisper or ffmpeg not found. Please reinstall EasyCut.",
     unsaved: "You have unsaved changes. Continue?", open: "Open", newProj: "New", enterText: "Enter text",
-    track: "Track", captionsRow: "Captions", reordered: "Reordered (hold Alt while dragging to move freely)",
+    track: "Track", captionsRow: "Captions", newVersion: "A new version is available: EasyCut", currentVersion: "You have:", update: "Update", reordered: "Reordered (hold Alt while dragging to move freely)",
   };
   const lang = (navigator.language || "ko").toLowerCase().startsWith("ko") ? "ko" : "en";
   const dict = lang === "ko" ? ko : en;

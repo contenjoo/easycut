@@ -666,6 +666,17 @@ async function init() {
   setState(await invoke("get_state"));
   const files = await invoke("startup_files");
   if (files.length) importFiles(files);
+  checkUpdate();
+}
+
+async function checkUpdate() {
+  try {
+    const u = await invoke("check_update");
+    if (!u || localStorage.getItem("skipUpdate") === u.version) return;
+    const ok = await confirmModal(`${T("newVersion")} ${u.version}`, `${T("currentVersion")} ${u.current}\n\n${u.notes.slice(0, 600)}`, T("update"));
+    if (ok) await invoke("install_update", { url: u.url });
+    else localStorage.setItem("skipUpdate", u.version);
+  } catch (_) {}
 }
 
 init();
