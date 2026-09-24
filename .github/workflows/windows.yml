@@ -61,8 +61,10 @@ jobs:
       - name: Self-test on Windows
         run: |
           $env:PATH = "$PWD\windows\app\src-tauri\resources\bin;$env:PATH"
-          windows/target/release/easycut-windows.exe --selftest "$env:RUNNER_TEMP\selftest"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # 창 앱(GUI subsystem)이라 끝날 때까지 기다려 종료 코드를 확인한다
+          $p = Start-Process windows/target/release/easycut-windows.exe -ArgumentList "--selftest", "$env:RUNNER_TEMP\selftest" -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest.txt
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0 -or -not (Select-String -Path selftest.txt -Pattern "ALL PASSED" -Quiet)) { exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
