@@ -48,6 +48,9 @@ struct RecordSheet: View {
                 }
                 Toggle("카메라(얼굴)", isOn: $rec.useCamera)
                 if rec.useCamera {
+                    Toggle("얼굴을 동그랗게", isOn: $rec.cameraCircle)
+                }
+                if rec.useCamera {
                     if rec.cameras.isEmpty {
                         Text("카메라를 찾지 못했습니다").foregroundStyle(.secondary)
                     } else {
@@ -56,6 +59,7 @@ struct RecordSheet: View {
                         }
                     }
                 }
+                Toggle("마우스 클릭 강조", isOn: $rec.highlightClicks)
                 Toggle("컴퓨터 소리 (별도 트랙)", isOn: $rec.systemAudio)
                 if rec.systemAudio && rec.target == .window {
                     Text("창 녹화에서는 그 창을 띄운 앱의 소리만 녹음됩니다").font(.caption).foregroundStyle(.secondary)

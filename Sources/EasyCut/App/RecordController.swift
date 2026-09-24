@@ -23,6 +23,8 @@ final class RecordController: ObservableObject {
     @AppStorage("recCameraID") var cameraID = ""
     @AppStorage("recMicID") var micID = ""
     @AppStorage("recSystemAudio") var systemAudio = false
+    @AppStorage("recClicks") var highlightClicks = true
+    @AppStorage("recCamCircle") var cameraCircle = true
     @AppStorage("recTarget") var targetRaw = TargetKind.display.rawValue
     @AppStorage("recArea") private var areaRaw = ""
     @Published var windows: [SCWindow] = []
@@ -52,6 +54,8 @@ final class RecordController: ObservableObject {
     private var pauseBegan: Date?
     private var borderWindow: NSWindow?
     private let hotKeys = RecordHotKeys()
+    private var clickMonitor: Any?
+    private var clicks: [ClickMark] = []
     private var hiddenWindow: NSWindow?
     private var excludeApp: SCRunningApplication?
     weak var store: EditorStore?
@@ -194,6 +198,7 @@ final class RecordController: ObservableObject {
                     self.elapsed = Date().timeIntervalSince(self.startedAt) - self.pausedTotal
                 }
             }
+            startClickCapture(rec)
             hotKeys.register { [weak self] action in
                 guard let self else { return }
                 switch action {
@@ -238,7 +243,8 @@ final class RecordController: ObservableObject {
         do {
             let r = try await rec.stop()
             finishUI()
-            await store?.importRecording(screen: r.screen, camera: r.camera, systemAudio: r.systemAudio)
+            await store?.importRecording(screen: r.screen, camera: r.camera, systemAudio: r.systemAudio,
+                                         clicks: clicks, showClicks: highlightClicks, cameraCircle: cameraCircle)
         } catch {
             finishUI()
             store?.alert = error.localizedDescription
@@ -246,7 +252,22 @@ final class RecordController: ObservableObject {
         recorder = nil
     }
 
+    /// 녹화 범위 안의 마우스 클릭을 녹화 시간과 함께 기록 (나중에 클릭 강조로 표시)
+    private func startClickCapture(_ rec: ScreenRecorder) {
+        clicks = []
+        let rect = rec.captureRect
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak rec] _ in
+            let p = NSEvent.mouseLocation
+            let g = CGPoint(x: p.x, y: primaryHeight - p.y)
+            guard rect.contains(g), let t = rec?.currentMediaTime() else { return }
+            let mark = ClickMark(t: t, x: (g.x - rect.minX) / rect.width, y: (g.y - rect.minY) / rect.height)
+            Task { @MainActor in self?.clicks.append(mark) }
+        }
+    }
+
     private func finishUI() {
+        if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
         phase = .idle
         hotKeys.unregister()
         borderWindow?.orderOut(nil)
@@ -299,9 +320,11 @@ final class RecordController: ObservableObject {
 
 extension EditorStore {
     /// 녹화 파일을 타임라인에: 화면은 트랙 1, 카메라는 트랙 2 오른쪽 아래 작은 화면. 그리고 음성 인식 시작.
-    func importRecording(screen: URL, camera: URL?, systemAudio: URL? = nil) async {
+    func importRecording(screen: URL, camera: URL?, systemAudio: URL? = nil,
+                         clicks: [ClickMark] = [], showClicks: Bool = true, cameraCircle: Bool = true) async {
         do {
-            let sa = try await MediaProbe.probe(screen)
+            var sa = try await MediaProbe.probe(screen)
+            if !clicks.isEmpty { sa.clicks = clicks }
             var ca: MediaAsset?
             if let camera { ca = try? await MediaProbe.probe(camera) }
             var aa: MediaAsset?
@@ -313,17 +336,22 @@ extension EditorStore {
                 if let aa { p.assets.append(aa) }
                 if wasEmpty, sa.width > 0 { p.canvasWidth = sa.width; p.canvasHeight = sa.height }
                 let t = wasEmpty ? 0 : max(p.trackEnd(0), p.trackEnd(1), p.trackEnd(2))
-                p.insert(asset: sa, track: 0, at: t)
+                let sid = p.insert(asset: sa, track: 0, at: t)
+                if !clicks.isEmpty, showClicks, let loc = p.locate(clip: sid) { p.tracks[loc.track].clips[loc.index].showClicks = true }
                 // 컴퓨터 소리는 트랙 3
                 if let aa { p.insert(asset: aa, track: 2, at: t) }
                 if let ca, ca.width > 0 {
                     let id = p.insert(asset: ca, track: 1, at: t)
                     if let loc = p.locate(clip: id) {
                         let W = p.canvasWidth, H = p.canvasHeight
-                        let base = min(W / ca.width, H / ca.height)
-                        let widthFrac = 0.24
-                        let scale = widthFrac * W / (ca.width * base)
-                        let heightFrac = ca.height * base * scale / H
+                        // 원 모양이면 가운데 정사각형으로 잘리므로 그 크기로 배치
+                        let cw = cameraCircle ? min(ca.width, ca.height) : ca.width
+                        let ch = cameraCircle ? min(ca.width, ca.height) : ca.height
+                        let base = min(W / cw, H / ch)
+                        let widthFrac = cameraCircle ? 0.17 : 0.24
+                        let scale = widthFrac * W / (cw * base)
+                        let heightFrac = ch * base * scale / H
+                        if cameraCircle { p.tracks[loc.track].clips[loc.index].shape = .circle }
                         p.tracks[loc.track].clips[loc.index].scale = scale
                         p.tracks[loc.track].clips[loc.index].offsetX = 0.5 - widthFrac / 2 - 0.02
                         p.tracks[loc.track].clips[loc.index].offsetY = 0.5 - heightFrac / 2 - 0.03

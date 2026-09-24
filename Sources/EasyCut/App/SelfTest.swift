@@ -278,6 +278,14 @@ enum SelfTest {
         check(abs(p.duration - 3) < 1e-9, "끝 트림")
         let b = p.insert(asset: a, track: 0, at: 1.5)
         check(p.clip(b)!.start >= 1.5 && p.tracks[0].clips.count == 3, "겹침 해결: 겹친 클립 밀어내기")
+        // 화면 효과
+        let base = CIImage(color: CIColor(red: 0.2, green: 0.5, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        let circ = Effects.shape(base, .circle)
+        check(circ.extent.size == CGSize(width: 720, height: 720), "모양: 원은 가운데 정사각형")
+        check(Effects.shape(base, .rounded).extent == base.extent, "모양: 둥근 사각형은 크기 유지")
+        let clicked = Effects.clicks(base, marks: [ClickMark(t: 1, x: 0.5, y: 0.5)], sourceTime: 1.2)
+        check(clicked.extent == base.extent, "클릭 강조: 크기 유지")
+        check(Effects.personBackground(base, effect: .blur).extent == base.extent, "인물 배경 흐림: 사람 없어도 안전")
         // 그룹 · 합치기
         var g = Project()
         g.assets = [a]

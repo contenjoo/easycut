@@ -208,6 +208,24 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         session.startRunning()
     }
 
+    /// 지금이 녹화 파일의 몇 초인지 (멈춤 중이거나 녹화 전후면 nil)
+    func currentMediaTime() -> Double? {
+        queue.sync {
+            guard let t0 = startTime, !paused, endTime == nil else { return nil }
+            return (Self.hostNow - t0 - pauseOffset).seconds
+        }
+    }
+
+    /// 녹화되는 범위 (전역 좌표, 왼쪽 위 원점, 포인트)
+    var captureRect: CGRect {
+        let d = CGDisplayBounds(options.display.displayID)
+        switch options.target {
+        case .display: return d
+        case .window(let w): return w.frame
+        case .area(let r): return r.offsetBy(dx: d.minX, dy: d.minY)
+        }
+    }
+
     func pause() {
         queue.async {
             guard !self.paused, self.startTime != nil else { return }

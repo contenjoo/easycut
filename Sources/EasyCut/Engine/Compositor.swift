@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import AppKit
+import Vision
 
 /// 컴포지터가 한 프레임을 그리는 데 필요한 정보
 struct RenderLayer {
@@ -19,6 +20,12 @@ struct RenderLayer {
     var offsetY: Double
     var fadeIn: Double
     var fadeOut: Double
+    var sourceIn: Double = 0
+    var speed: Double = 1
+    var shape: ClipShape = .none
+    var backgroundEffect: BackgroundEffect = .none
+    /// 표시할 마우스 클릭 (원본 시간 기준)
+    var clicks: [ClickMark] = []
 
     func alpha(at t: Double) -> Double {
         var a = opacity
@@ -219,6 +226,14 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
                 isText = true
             }
             src = src.transformed(by: CGAffineTransform(translationX: -src.extent.minX, y: -src.extent.minY))
+            if !isText {
+                if layer.backgroundEffect != .none { src = Effects.personBackground(src, effect: layer.backgroundEffect) }
+                if !layer.clicks.isEmpty { src = Effects.clicks(src, marks: layer.clicks, sourceTime: layer.sourceIn + (t - layer.start) * layer.speed) }
+                if layer.shape != .none {
+                    src = Effects.shape(src, layer.shape)
+                    src = src.transformed(by: CGAffineTransform(translationX: -src.extent.minX, y: -src.extent.minY))
+                }
+            }
             let w = src.extent.width, h = src.extent.height
             guard w > 0, h > 0 else { continue }
             var x: CGFloat, y: CGFloat
@@ -248,5 +263,74 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
             result = img.transformed(by: CGAffineTransform(translationX: x, y: y)).composited(over: result)
         }
         return result.cropped(to: canvas)
+    }
+}
+
+/// 클립 효과: 모양 자르기, 인물 배경, 마우스 클릭 강조 (모두 원본 크기 좌표에서 처리)
+enum Effects {
+    /// 원: 가운데 정사각형을 원으로 (흰 테두리), 둥근 사각형: 모서리 둥글게
+    static func shape(_ img: CIImage, _ shape: ClipShape) -> CIImage {
+        let e = img.extent
+        switch shape {
+        case .none:
+            return img
+        case .circle:
+            let s = min(e.width, e.height)
+            let sq = CGRect(x: e.midX - s / 2, y: e.midY - s / 2, width: s, height: s)
+            let c = CIVector(x: sq.midX, y: sq.midY)
+            let rim = max(2, s * 0.018)
+            let inner = CIFilter(name: "CIRadialGradient", parameters: [
+                "inputCenter": c, "inputRadius0": s / 2 - rim - 1, "inputRadius1": s / 2 - rim,
+                "inputColor0": CIColor.white, "inputColor1": CIColor.clear])!.outputImage!.cropped(to: sq)
+            let ring = CIFilter(name: "CIRadialGradient", parameters: [
+                "inputCenter": c, "inputRadius0": s / 2 - 1, "inputRadius1": s / 2,
+                "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: 0.95), "inputColor1": CIColor.clear])!.outputImage!.cropped(to: sq)
+            let face = img.cropped(to: sq).applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: inner])
+            return face.composited(over: ring).cropped(to: sq)
+        case .rounded:
+            let r = min(e.width, e.height) * 0.08
+            guard let mask = CIFilter(name: "CIRoundedRectangleGenerator", parameters: [
+                "inputExtent": CIVector(cgRect: e), "inputRadius": r, "inputColor": CIColor.white])?.outputImage else { return img }
+            return img.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: mask.cropped(to: e)]).cropped(to: e)
+        }
+    }
+
+    /// 인물만 남기고 배경을 흐리게/지우기
+    static func personBackground(_ img: CIImage, effect: BackgroundEffect) -> CIImage {
+        let e = img.extent
+        let req = VNGeneratePersonSegmentationRequest()
+        req.qualityLevel = .balanced
+        req.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        let handler = VNImageRequestHandler(ciImage: img, options: [:])
+        guard (try? handler.perform([req])) != nil, let pb = req.results?.first?.pixelBuffer else { return img }
+        var mask = CIImage(cvPixelBuffer: pb)
+        mask = mask.transformed(by: CGAffineTransform(scaleX: e.width / mask.extent.width, y: e.height / mask.extent.height))
+            .transformed(by: CGAffineTransform(translationX: e.minX, y: e.minY))
+        let bg: CIImage
+        switch effect {
+        case .blur: bg = img.clampedToExtent().applyingGaussianBlur(sigma: Double(min(e.width, e.height)) * 0.025).cropped(to: e)
+        default: bg = CIImage.empty()
+        }
+        return img.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: bg, kCIInputMaskImageKey: mask]).cropped(to: e)
+    }
+
+    /// 클릭한 자리에 노란 원이 퍼졌다 사라지는 표시 (0.7초)
+    static func clicks(_ img: CIImage, marks: [ClickMark], sourceTime s: Double) -> CIImage {
+        let e = img.extent
+        let dur = 0.7
+        var out = img
+        for m in marks where s >= m.t && s - m.t <= dur {
+            let p = (s - m.t) / dur
+            let r = CGFloat(0.02 + 0.03 * p) * min(e.width, e.height)
+            let a = CGFloat(0.65 * (1 - p))
+            let c = CIVector(x: e.minX + CGFloat(m.x) * e.width, y: e.minY + CGFloat(1 - m.y) * e.height)
+            guard let disk = CIFilter(name: "CIRadialGradient", parameters: [
+                "inputCenter": c, "inputRadius0": r * 0.55, "inputRadius1": r,
+                "inputColor0": CIColor(red: 1, green: 0.84, blue: 0.1, alpha: a), "inputColor1": CIColor.clear])?.outputImage else { continue }
+            out = disk.cropped(to: e).composited(over: out)
+        }
+        return out
     }
 }

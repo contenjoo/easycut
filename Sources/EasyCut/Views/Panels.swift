@@ -423,6 +423,30 @@ struct ClipInspector: View {
                 ValueSlider(title: "세로 위치", value: bind(\.offsetY, key: "oy"), range: -1...1) { String(format: "%.2f", $0) }
                 ValueSlider(title: "불투명도", value: bind(\.opacity, key: "op"), range: 0...1) { "\(Int($0 * 100))%" }
                 HStack {
+                    Text("모양").font(.caption).frame(width: 58, alignment: .leading)
+                    Picker("", selection: Binding(get: { clip.shape ?? .none },
+                                                  set: { v in store.updateClip(clip.id, key: "shape") { $0.shape = v == .none ? nil : v } })) {
+                        ForEach(ClipShape.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                }
+                if kind == .video || kind == .image {
+                    HStack {
+                        Text("인물 배경").font(.caption).frame(width: 58, alignment: .leading)
+                        Picker("", selection: Binding(get: { clip.backgroundEffect ?? .none },
+                                                      set: { v in store.updateClip(clip.id, key: "bgfx") { $0.backgroundEffect = v == .none ? nil : v } })) {
+                            ForEach(BackgroundEffect.allCases) { Text($0.label).tag($0) }
+                        }
+                        .pickerStyle(.segmented).labelsHidden()
+                    }
+                    .help("사람만 남기고 뒤 배경을 흐리게 하거나 지웁니다 (얼굴 카메라에 알맞음)")
+                }
+                if let marks = asset?.clicks, !marks.isEmpty {
+                    Toggle("마우스 클릭 강조 (\(marks.count)번)", isOn: Binding(get: { clip.showClicks == true },
+                                                                  set: { v in store.updateClip(clip.id, key: "clicks") { $0.showClicks = v ? true : nil } }))
+                        .font(.caption)
+                }
+                HStack {
                     Text("화면 배치").font(.caption).foregroundStyle(.secondary)
                     Button("전체") { store.updateClip(clip.id, key: "layout") { $0.scale = 1; $0.offsetX = 0; $0.offsetY = 0 } }
                     Button("PIP ↘") { store.updateClip(clip.id, key: "layout") { $0.scale = 0.3; $0.offsetX = 0.33; $0.offsetY = 0.32 } }
