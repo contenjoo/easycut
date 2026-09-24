@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Third-party components bundled in the release build (see vendor/licenses/):
-
-- FFmpeg 8.0 — LGPL-2.1, built from unmodified source by scripts/build_deps.sh
-- whisper.cpp v1.9.4 — MIT
