@@ -43,7 +43,7 @@ struct AIPanel: View {
                     Divider()
                     Toggle("생각 과정 보기", isOn: $ai.showThinking)
                 } label: {
-                    Text("\(ai.currentModelName)\(ai.effort == .auto ? "" : " · \(ai.effort.label.components(separatedBy: " ").first ?? "")")")
+                    Text(L(ai.currentModelName) + (ai.effort == .auto ? "" : " · " + (L(ai.effort.label).components(separatedBy: " ").first ?? "")))
                         .font(.caption)
                 }
                 .menuStyle(.borderlessButton)
@@ -51,7 +51,7 @@ struct AIPanel: View {
                 .help("Claude 모델과 추론 강도 선택 (\(ai.backend == .plan ? "플랜 로그인" : "API 키"))")
                 Menu {
                     Picker("연결 방식", selection: $ai.backend) {
-                        ForEach(AIBackend.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(AIBackend.allCases) { Text(L($0.rawValue)).tag($0) }
                     }
                     Divider()
                     Button("API 키 설정…") { showKey = true }
@@ -102,7 +102,7 @@ struct AIPanel: View {
                                     Text("이렇게 말해 보세요").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                     ForEach(Self.examples, id: \.self) { ex in
                                         Button { ai.send(ex) } label: {
-                                            Text(ex).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                                            Text(L(ex)).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
                                         }
                                         .buttonStyle(.bordered)
                                     }
@@ -114,7 +114,7 @@ struct AIPanel: View {
                             if ai.busy {
                                 HStack(spacing: 6) {
                                     ProgressView().controlSize(.small)
-                                    Text(ai.status).font(.caption).foregroundStyle(.secondary)
+                                    Text(L(ai.status)).font(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     Button("중지") { ai.cancel() }.controlSize(.small)
                                 }
@@ -162,7 +162,7 @@ struct AIPanel: View {
 
     @ViewBuilder
     func check(_ on: Bool, _ title: String) -> some View {
-        if on { Label(title, systemImage: "checkmark") } else { Text(title) }
+        if on { Label(L(title), systemImage: "checkmark") } else { Text(L(title)) }
     }
 
     func submit() {
@@ -179,12 +179,12 @@ struct AIPanel: View {
         case .assistant:
             Text(item.text).padding(8).background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 10)).textSelection(.enabled)
         case .tool:
-            Label(item.text, systemImage: "wand.and.stars").font(.caption).foregroundStyle(.purple)
+            Label(L(item.text), systemImage: "wand.and.stars").font(.caption).foregroundStyle(.purple)
         case .error:
-            Label(item.text, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+            Label(L(item.text), systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
         case .thinking:
             DisclosureGroup {
-                Text(item.text).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(L(item.text)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             } label: {
                 Label("생각 과정", systemImage: "brain").font(.caption).foregroundStyle(.secondary)
             }
@@ -200,7 +200,7 @@ struct KeySheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Claude API 키").font(.title2.bold())
-            Text(ai.hasKey ? "키가 저장되어 있습니다. 새 키를 넣으면 바뀝니다." : "키를 붙여 넣으세요.").foregroundStyle(.secondary)
+            Text(L(ai.hasKey ? "키가 저장되어 있습니다. 새 키를 넣으면 바뀝니다." : "키를 붙여 넣으세요.")).foregroundStyle(.secondary)
             SecureField("sk-ant-…", text: $key).textFieldStyle(.roundedBorder)
             HStack {
                 if ai.hasKey { Button("키 삭제", role: .destructive) { ai.setKey(""); dismiss() } }
@@ -236,7 +236,7 @@ struct ConnectSheet: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
                     step(1, "Claude Code 설치", done: codeInstalled) {
-                        Button(codeInstalled ? "다시 설치" : "설치하기") {
+                        Button(L(codeInstalled ? "다시 설치" : "설치하기")) {
                             Tools.runInTerminal("""
                             echo "Claude Code를 설치합니다 (공식 설치 스크립트: claude.ai/install.sh)"
                             curl -fsSL https://claude.ai/install.sh | bash
@@ -257,7 +257,7 @@ struct ConnectSheet: View {
                             """, name: "Claude 로그인")
                         }
                         .disabled(!codeInstalled)
-                        Button(checking ? "확인 중…" : "로그인 확인") {
+                        Button(L(checking ? "확인 중…" : "로그인 확인")) {
                             checking = true
                             Task { loggedIn = await ClaudeLink.checkLogin(); checking = false }
                         }
@@ -275,7 +275,7 @@ struct ConnectSheet: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
                     step(nil, "Claude 데스크톱 앱에서 EasyCut 조작", done: desktopLinked) {
-                        Button(desktopLinked ? "다시 연결" : "연결하기") {
+                        Button(L(desktopLinked ? "다시 연결" : "연결하기")) {
                             do {
                                 try ClaudeLink.connectDesktop()
                                 desktopLinked = ClaudeLink.desktopConnected
@@ -284,7 +284,7 @@ struct ConnectSheet: View {
                         }
                     }
                     step(nil, "Claude Code(터미널)에서 EasyCut 조작", done: codeLinked) {
-                        Button(codeLinked ? "다시 연결" : "연결하기") {
+                        Button(L(codeLinked ? "다시 연결" : "연결하기")) {
                             Task {
                                 do { try await ClaudeLink.connectCode(); codeLinked = ClaudeLink.codeConnected; message = "Claude Code에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다." }
                                 catch { message = error.localizedDescription }
@@ -298,7 +298,7 @@ struct ConnectSheet: View {
                 .padding(6)
             } label: { Text("Claude 앱에서 EasyCut 조작 (선택)").font(.headline) }
 
-            if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.blue) }
+            if !message.isEmpty { Text(L(message)).font(.callout).foregroundStyle(.blue) }
             HStack {
                 Text("API 키로 쓰려면 AI 탭 ⚙︎ › 연결 방식 › API 키").font(.caption).foregroundStyle(.secondary)
                 Spacer()
@@ -315,7 +315,7 @@ struct ConnectSheet: View {
             Image(systemName: done ? "checkmark.circle.fill" : (n.map { "\($0).circle" } ?? "circle"))
                 .foregroundStyle(done ? .green : .secondary)
                 .font(.title3)
-            Text(title)
+            Text(L(title))
             Spacer()
             buttons().controlSize(.small)
         }

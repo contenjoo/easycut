@@ -19,6 +19,8 @@ struct MediaBinPanel: View {
                     .help("영상·오디오·사진 가져오기 (⌘I)")
                 Button { store.showLinkSheet = true } label: { Label("링크", systemImage: "link") }
                     .help("유튜브 등 영상 링크로 가져오기 (⇧⌘I)")
+                Button { store.recording.open() } label: { Label("녹화", systemImage: "record.circle") }
+                    .help("화면·얼굴 녹화 (⌥⌘R)")
                 Spacer()
                 Text("\(store.project.assets.count)개").font(.caption).foregroundStyle(.secondary)
             }
@@ -28,7 +30,7 @@ struct MediaBinPanel: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(name) 가져오는 중").font(.caption.weight(.semibold)).lineLimit(1)
                         ProgressView(value: job.value)
-                        Text(job.message).font(.caption2).foregroundStyle(.secondary)
+                        Text(L(job.message)).font(.caption2).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 10).padding(.bottom, 8)
                 }
@@ -115,7 +117,7 @@ struct AssetTile: View {
             Button("타임라인에 추가") { store.addToTimeline(asset.id) }
             Button("재생헤드 위치에 추가") { store.addToTimeline(asset.id, at: store.time) }
             if asset.hasAudio {
-                Button(asset.words == nil ? "음성 인식 (STT)" : "음성 다시 인식") { store.transcribe(asset.id) }
+                Button(L(asset.words == nil ? "음성 인식 (STT)" : "음성 다시 인식")) { store.transcribe(asset.id) }
             }
             Divider()
             Button("Finder에서 보기") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: asset.originalPath ?? asset.path)]) }
@@ -216,7 +218,7 @@ struct CaptionRow: View {
                     .foregroundStyle(store.captionCutsVideo ? Color.red.opacity(0.8) : .secondary)
             }
             .buttonStyle(.borderless)
-            .help(store.captionCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제")
+            .help(L(store.captionCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제"))
         }
         .padding(.vertical, 2)
         .onAppear { text = caption.text }
@@ -277,7 +279,7 @@ struct TextStyleControls: View {
                 HStack {
                     Text("위치").frame(width: 44, alignment: .leading)
                     Slider(value: $style.positionY, in: 0.05...0.95)
-                    Text(style.positionY > 0.66 ? "아래" : (style.positionY < 0.33 ? "위" : "가운데")).frame(width: 44)
+                    Text(L(style.positionY > 0.66 ? "아래" : (style.positionY < 0.33 ? "위" : "가운데"))).frame(width: 44)
                 }
             }
             HStack(spacing: 6) {
@@ -334,7 +336,7 @@ struct InspectorPanel: View {
 
 struct SectionTitle: View {
     let text: String
-    var body: some View { Text(text).font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase) }
+    var body: some View { Text(L(text)).font(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase) }
 }
 
 struct ValueSlider: View {
@@ -345,7 +347,7 @@ struct ValueSlider: View {
 
     var body: some View {
         HStack {
-            Text(title).frame(width: 58, alignment: .leading)
+            Text(L(title)).frame(width: 58, alignment: .leading)
             Slider(value: $value, in: range)
             Text(format(value)).monospacedDigit().font(.caption).frame(width: 46, alignment: .trailing)
         }
@@ -368,7 +370,7 @@ struct ClipInspector: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: isText ? "textformat" : (kind == .video ? "film" : kind == .audio ? "waveform" : "photo"))
-                Text(isText ? "텍스트" : (asset?.name ?? "클립")).font(.headline).lineLimit(2)
+                Text(L(isText ? "텍스트" : (asset?.name ?? "클립"))).font(.headline).lineLimit(2)
             }
             Text("시작 \(TimeFormat.clock(clip.start)) · 길이 \(TimeFormat.clock(clip.duration))")
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -406,9 +408,9 @@ struct ClipInspector: View {
                 SectionTitle(text: "오디오")
                 ValueSlider(title: "볼륨", value: bind(\.volume, key: "vol"), range: 0...2) { "\(Int($0 * 100))%" }
                 HStack {
-                    Button(clip.volume == 0 ? "소리 켜기" : "음소거") { store.updateClip(clip.id, key: "mute") { $0.volume = $0.volume == 0 ? 1 : 0 } }
+                    Button(L(clip.volume == 0 ? "소리 켜기" : "음소거")) { store.updateClip(clip.id, key: "mute") { $0.volume = $0.volume == 0 ? 1 : 0 } }
                     if let a = asset, a.hasAudio {
-                        Button(a.words == nil ? "음성 인식" : "다시 인식") { store.transcribe(a.id) }
+                        Button(L(a.words == nil ? "음성 인식" : "다시 인식")) { store.transcribe(a.id) }
                     }
                 }
                 .controlSize(.small)
@@ -420,6 +422,30 @@ struct ClipInspector: View {
                 ValueSlider(title: "가로 위치", value: bind(\.offsetX, key: "ox"), range: -1...1) { String(format: "%.2f", $0) }
                 ValueSlider(title: "세로 위치", value: bind(\.offsetY, key: "oy"), range: -1...1) { String(format: "%.2f", $0) }
                 ValueSlider(title: "불투명도", value: bind(\.opacity, key: "op"), range: 0...1) { "\(Int($0 * 100))%" }
+                HStack {
+                    Text("모양").font(.caption).frame(width: 58, alignment: .leading)
+                    Picker("", selection: Binding(get: { clip.shape ?? .none },
+                                                  set: { v in store.updateClip(clip.id, key: "shape") { $0.shape = v == .none ? nil : v } })) {
+                        ForEach(ClipShape.allCases) { Text(L($0.label)).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                }
+                if kind == .video || kind == .image {
+                    HStack {
+                        Text("인물 배경").font(.caption).frame(width: 58, alignment: .leading)
+                        Picker("", selection: Binding(get: { clip.backgroundEffect ?? .none },
+                                                      set: { v in store.updateClip(clip.id, key: "bgfx") { $0.backgroundEffect = v == .none ? nil : v } })) {
+                            ForEach(BackgroundEffect.allCases) { Text(L($0.label)).tag($0) }
+                        }
+                        .pickerStyle(.segmented).labelsHidden()
+                    }
+                    .help("사람만 남기고 뒤 배경을 흐리게 하거나 지웁니다 (얼굴 카메라에 알맞음)")
+                }
+                if let marks = asset?.clicks, !marks.isEmpty {
+                    Toggle("마우스 클릭 강조 (\(marks.count)번)", isOn: Binding(get: { clip.showClicks == true },
+                                                                  set: { v in store.updateClip(clip.id, key: "clicks") { $0.showClicks = v ? true : nil } }))
+                        .font(.caption)
+                }
                 HStack {
                     Text("화면 배치").font(.caption).foregroundStyle(.secondary)
                     Button("전체") { store.updateClip(clip.id, key: "layout") { $0.scale = 1; $0.offsetX = 0; $0.offsetY = 0 } }
@@ -522,7 +548,7 @@ struct ProjectInspector: View {
                     store.updateProject(key: "canvas") { $0.canvasWidth = pr.w; $0.canvasHeight = pr.h }
                 }
             })) {
-                ForEach(CanvasPreset.all) { Text($0.id).tag("\(Int($0.w))x\(Int($0.h))") }
+                ForEach(CanvasPreset.all) { Text(L($0.id)).tag("\(Int($0.w))x\(Int($0.h))") }
                 if !CanvasPreset.all.contains(where: { $0.w == p.canvasWidth && $0.h == p.canvasHeight }) {
                     Text("\(Int(p.canvasWidth))×\(Int(p.canvasHeight)) (원본)").tag("\(Int(p.canvasWidth))x\(Int(p.canvasHeight))")
                 }

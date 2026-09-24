@@ -51,24 +51,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 창이 뜨기 전에 들어온 파일은 모아 뒀다가 연결되면 연다
     private var pending: [URL] = []
     weak var store: EditorStore? {
-        didSet { if store != nil, !pending.isEmpty { let u = pending; pending = []; openURLs(u) } }
+        didSet {
+            guard let store, oldValue == nil else { return }
+            if !pending.isEmpty { let u = pending; pending = []; openURLs(u) }
+            // 파일을 열며 시작한 게 아니면 지난 작업 복구 제안, 그다음 업데이트 확인
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                MainActor.assumeIsolated {
+                    store.offerRecovery()
+                    Updater.checkInBackground(store: store)
+                }
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 인터넷에서 받은 설치 파일이면 내장 도구에 붙은 격리 표시를 풀어 바로 실행되게 한다
-        if let dir = Tools.bundledDir, let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
-            for f in files { removexattr(dir.appendingPathComponent(f).path, "com.apple.quarantine", 0) }
+        // (iCloud 동기화 폴더 등에서는 오래 걸릴 수 있어 메인 스레드 밖에서, 표시가 있을 때만)
+        if let dir = Tools.bundledDir {
+            DispatchQueue.global(qos: .utility).async {
+                for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                    let path = dir.appendingPathComponent(f).path
+                    if getxattr(path, "com.apple.quarantine", nil, 0, 0, 0) >= 0 { removexattr(path, "com.apple.quarantine", 0) }
+                }
+            }
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // 녹화 중에는 창이 없어도 끝내지 않는다
+        MainActor.assumeIsolated { !(store?.recording.isBusy ?? false) }
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let store else { return .terminateNow }
-        return MainActor.assumeIsolated { store.confirmDiscard() } ? .terminateNow : .terminateCancel
+        return MainActor.assumeIsolated {
+            store.autosaveNow()
+            return Updater.installing || store.confirmDiscard()
+        } ? .terminateNow : .terminateCancel
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -124,16 +146,27 @@ struct AppCommands: Commands {
     }
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("업데이트 확인…") { Updater.check(store: store, userInitiated: true) }
+            Menu("언어 / Language") {
+                ForEach(Loc.Choice.allCases, id: \.self) { c in
+                    let name = ["auto": "자동 (시스템 언어) / Automatic", "ko": "한국어", "en": "English"][c.rawValue] ?? c.rawValue
+                    Button(Loc.choice == c ? "✓ " + name : "   " + name) { LanguageSwitch.set(c) }
+                }
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button("새 프로젝트") { store.newProject() }.keyboardShortcut("n")
             Button("프로젝트 열기…") { store.openPanel() }.keyboardShortcut("o")
             Divider()
             Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")
             Button("링크로 가져오기 (유튜브 등)…") { store.showLinkSheet = true }.keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("화면·얼굴 녹화…") { store.recording.open() }.keyboardShortcut("r", modifiers: [.command, .option])
         }
         CommandGroup(replacing: .saveItem) {
             Button("저장") { store.save() }.keyboardShortcut("s")
             Button("다른 이름으로 저장…") { store.save(as: true) }.keyboardShortcut("s", modifiers: [.command, .shift])
+            Toggle("자동 저장", isOn: $store.autosaveEnabled)
             Divider()
             Button("영상 내보내기…") { store.showExport = true }.keyboardShortcut("e")
             Button("SRT 자막 내보내기…") { store.exportSRT() }
@@ -157,6 +190,10 @@ struct AppCommands: Commands {
             Button("삭제  (⌫)") { store.deleteSelection(ripple: false) }
             Button("삭제 후 빈틈 메우기  (⌘⌫)") { store.deleteSelection(ripple: true) }
             Button("복제  (⌘D)") { store.duplicateSelection() }
+            Divider()
+            Button("그룹으로 묶기") { store.groupSelection() }.keyboardShortcut("g")
+            Button("그룹 해제") { store.ungroupSelection() }.keyboardShortcut("g", modifiers: [.command, .shift])
+            Button("하나로 합치기") { store.joinSelection() }.keyboardShortcut("j")
             Divider()
             Button("구간 시작  (I)") { store.setMarkIn() }
             Button("구간 끝  (O)") { store.setMarkOut() }

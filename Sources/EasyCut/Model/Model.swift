@@ -50,11 +50,33 @@ struct MediaAsset: Codable, Identifiable, Hashable {
     var height: Double
     var hasAudio: Bool
     var words: [Word]?
+    /// 녹화할 때 기록한 마우스 클릭 (원본 시간, 화면 비율 좌표 · 왼쪽 위 원점)
+    var clicks: [ClickMark]?
     /// MKV 등 변환해서 가져온 경우 원본 파일 경로
     var originalPath: String?
 
     var url: URL { URL(fileURLWithPath: path) }
     var isMissing: Bool { !FileManager.default.fileExists(atPath: path) }
+}
+
+struct ClickMark: Codable, Hashable {
+    var t: Double
+    var x: Double
+    var y: Double
+}
+
+/// 클립 화면 모양 (얼굴 카메라를 동그랗게 등)
+enum ClipShape: String, Codable, CaseIterable, Identifiable {
+    case none, circle, rounded
+    var id: String { rawValue }
+    var label: String { switch self { case .none: "기본"; case .circle: "원"; case .rounded: "둥근 사각형" } }
+}
+
+/// 인물 뒤 배경 처리 (Vision 인물 분리)
+enum BackgroundEffect: String, Codable, CaseIterable, Identifiable {
+    case none, blur, remove
+    var id: String { rawValue }
+    var label: String { switch self { case .none: "그대로"; case .blur: "흐리게"; case .remove: "지우기" } }
 }
 
 struct TextStyle: Codable, Hashable {
@@ -99,6 +121,14 @@ struct Clip: Codable, Identifiable, Hashable {
     var offsetY: Double = 0
     var fadeIn: Double = 0
     var fadeOut: Double = 0
+    /// 같은 값의 클립끼리 한 묶음(그룹)으로 선택·이동된다
+    var groupID: UUID?
+    /// 화면 모양 (nil = 기본)
+    var shape: ClipShape?
+    /// 인물 배경 효과 (nil = 그대로)
+    var backgroundEffect: BackgroundEffect?
+    /// 녹화 때 기록한 마우스 클릭 강조 표시
+    var showClicks: Bool?
 
     var duration: Double { max(0, (sourceOut - sourceIn) / speed) }
     var end: Double { start + duration }

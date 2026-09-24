@@ -168,7 +168,7 @@ struct TransportBar: View {
     func iconButton(_ name: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: name).frame(width: 20, height: 20) }
             .buttonStyle(.borderless)
-            .help(help)
+            .help(L(help))
     }
 }
 

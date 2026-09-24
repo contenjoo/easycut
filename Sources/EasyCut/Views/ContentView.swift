@@ -14,7 +14,7 @@ struct ContentView: View {
                 InspectorPanel(store: store)
                     .frame(minWidth: 240, idealWidth: 280, maxWidth: 380)
             }
-            .frame(minHeight: 320, idealHeight: 520)
+            .frame(minHeight: 260, idealHeight: 520)
             VStack(spacing: 0) {
                 TimelineToolbar(store: store)
                 TimelineContainer(store: store)
@@ -26,7 +26,7 @@ struct ContentView: View {
         .navigationTitle(store.windowTitle)
         .overlay(alignment: .top) {
             if let t = store.toast {
-                Text(t)
+                Text(L(t))
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(.ultraThickMaterial, in: Capsule())
@@ -43,10 +43,11 @@ struct ContentView: View {
         .sheet(isPresented: $store.showSilenceSheet) { SilenceSheet(store: store) }
         .sheet(isPresented: $store.showLinkSheet) { LinkSheet(store: store) }
         .sheet(isPresented: $store.showClaudeSheet) { ConnectSheet() }
+        .sheet(isPresented: $store.showRecordSheet) { RecordSheet(rec: store.recording) }
         .alert("알림", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } })) {
             Button("확인") { store.alert = nil }
         } message: {
-            Text(store.alert ?? "")
+            Text(L(store.alert ?? ""))
         }
         .onAppear {
             if keyMonitor == nil { keyMonitor = KeyMonitor(store: store) }
@@ -62,7 +63,7 @@ struct LeftPanel: View {
         VStack(spacing: 0) {
             Picker("", selection: $store.leftTab) {
                 ForEach(LeftTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(L(tab.rawValue)).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -86,6 +87,8 @@ struct MainToolbar: ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button { store.importPanel() } label: { Label("가져오기", systemImage: "square.and.arrow.down") }
                 .help("미디어 가져오기 (⌘I)")
+            Button { store.recording.open() } label: { Label("녹화", systemImage: "record.circle") }
+                .help("화면·얼굴 녹화 (⌥⌘R)")
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { store.undo() } label: { Label("실행 취소", systemImage: "arrow.uturn.backward") }
@@ -133,11 +136,22 @@ struct TimelineToolbar: View {
             Toggle(isOn: $store.snapping) { Image(systemName: "magnet") }.toggleStyle(.button).help("스냅 (N)")
             Toggle(isOn: $store.followPlayhead) { Image(systemName: "arrow.right.to.line") }.toggleStyle(.button).help("재생 시 타임라인 따라가기")
             Button { store.addTrack() } label: { Image(systemName: "plus.rectangle.on.rectangle") }.help("트랙 추가")
+            Divider().frame(height: 16)
+            Button { store.changeTrackHeight(by: 1 / 1.25) } label: {
+                Image(systemName: "rectangle.compress.vertical").frame(width: 22, height: 20).contentShape(Rectangle())
+            }
+            .help("트랙 낮게")
+            .disabled(store.trackHeight <= EditorStore.trackHeightRange.lowerBound)
+            Button { store.changeTrackHeight(by: 1.25) } label: {
+                Image(systemName: "rectangle.expand.vertical").frame(width: 22, height: 20).contentShape(Rectangle())
+            }
+            .help("트랙 높게")
+            .disabled(store.trackHeight >= EditorStore.trackHeightRange.upperBound)
             Spacer()
-            Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
+            Button { store.zoom = max(0.5, store.zoom / 1.5) } label: { Image(systemName: "minus.magnifyingglass").frame(width: 22, height: 20).contentShape(Rectangle()) }.help("축소 (⌘-)")
             Slider(value: Binding(get: { log(store.zoom) }, set: { store.zoom = exp($0) }), in: log(0.5)...log(800))
                 .frame(width: 140)
-            Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
+            Button { store.zoom = min(800, store.zoom * 1.5) } label: { Image(systemName: "plus.magnifyingglass").frame(width: 22, height: 20).contentShape(Rectangle()) }.help("확대 (⌘=)")
             Button("전체") { store.zoomToFit() }.help("전체 보기 (⇧Z)")
         }
         .buttonStyle(.borderless)

@@ -61,7 +61,7 @@ struct ExportSheet: View {
             } else {
                 Form {
                     Picker("형식", selection: $formatRaw) {
-                        ForEach(ExportFormat.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                        ForEach(ExportFormat.allCases) { Text(L($0.rawValue)).tag($0.rawValue) }
                     }
                     if format != .m4a {
                         Picker("해상도", selection: $resolution) {
@@ -77,10 +77,10 @@ struct ExportSheet: View {
                         .disabled(store.project.captions.isEmpty)
                 }
                 .formStyle(.grouped)
-                Text(format == .m4a ? "길이 \(TimeFormat.clock(store.project.duration))"
-                     : "출력 \(Int(outSize.width))×\(Int(outSize.height)) · 길이 \(TimeFormat.clock(store.project.duration))")
+                Text(L(format == .m4a ? "길이 \(TimeFormat.clock(store.project.duration))"
+                     : "출력 \(Int(outSize.width))×\(Int(outSize.height)) · 길이 \(TimeFormat.clock(store.project.duration))"))
                     .font(.caption).foregroundStyle(.secondary)
-                if let error { Text(error).foregroundStyle(.red).font(.callout) }
+                if let error { Text(L(error)).foregroundStyle(.red).font(.callout) }
                 HStack {
                     Spacer()
                     Button("취소") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -147,10 +147,10 @@ struct STTSettingsSheet: View {
             Text("음성 인식(STT) 설정").font(.title2.bold())
             Form {
                 Picker("언어", selection: $store.sttLanguageID) {
-                    ForEach(STTLanguage.all) { Text($0.name).tag($0.id) }
+                    ForEach(STTLanguage.all) { Text(L($0.name)).tag($0.id) }
                 }
                 Picker("엔진", selection: Binding(get: { store.sttEngine }, set: { store.sttEngine = $0 })) {
-                    ForEach(STTEngine.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(STTEngine.allCases) { Text(L($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
             }
@@ -183,7 +183,7 @@ struct STTSettingsSheet: View {
                             }
                             .buttonStyle(.borderless)
                             VStack(alignment: .leading) {
-                                Text(m.title)
+                                Text(L(m.title))
                                 Text("\(m.sizeMB)MB · Hugging Face (ggerganov/whisper.cpp)").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -201,7 +201,7 @@ struct STTSettingsSheet: View {
                             }
                         }
                     }
-                    if let e = downloader.error { Text(e).foregroundStyle(.red).font(.caption) }
+                    if let e = downloader.error { Text(L(e)).foregroundStyle(.red).font(.caption) }
                     Button("모델 폴더 열기") { NSWorkspace.shared.open(AppPaths.models) }.controlSize(.small)
                 }
                 .id(refresh)
@@ -263,6 +263,10 @@ enum Shortcuts {
             .init(keys: "C", desc: "재생헤드에 자막 추가"),
             .init(keys: "자막 탭에서 끌기", desc: "자막과 영상 구간째 순서 바꾸기"),
             .init(keys: "트랙 1 클립 끌기", desc: "끼워 넣어 순서 바꾸기 (⌥+끌기 = 자유 이동)"),
+            .init(keys: "빈 곳 끌기", desc: "클립 여러 개 선택 (⇧/⌘ = 기존 선택에 더하기)"),
+            .init(keys: "눈금자 끌기", desc: "시간 구간 선택 → ⌫ 잘라내기"),
+            .init(keys: "⌘G / ⇧⌘G", desc: "선택한 클립 그룹으로 묶기 / 풀기 (묶이면 함께 선택·이동)"),
+            .init(keys: "⌘J", desc: "하나로 합치기: 잘린 조각은 한 클립으로, 나머지는 빈틈 없이 붙여 그룹으로"),
             .init(keys: "T", desc: "재생헤드에 텍스트(제목) 추가"),
         ]),
         ("타임라인 · 파일", [
@@ -296,12 +300,12 @@ struct ShortcutsSheet: View {
                             Text(g.0).font(.headline)
                             ForEach(g.1) { s in
                                 HStack(alignment: .top) {
-                                    Text(s.keys)
+                                    Text(L(s.keys))
                                         .font(.system(.callout, design: .rounded).weight(.semibold))
                                         .padding(.horizontal, 6).padding(.vertical, 2)
                                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
                                         .frame(width: 150, alignment: .leading)
-                                    Text(s.desc).font(.callout)
+                                    Text(L(s.desc)).font(.callout)
                                     Spacer(minLength: 0)
                                 }
                             }
@@ -342,7 +346,7 @@ struct LinkSheet: View {
                 .onSubmit { if valid { start() } }
             Form {
                 Picker("화질", selection: $qualityRaw) {
-                    ForEach(LinkImporter.Quality.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                    ForEach(LinkImporter.Quality.allCases) { Text(L($0.rawValue)).tag($0.rawValue) }
                 }
                 Toggle("업로더가 올린 자막도 받기 (한국어·영어)", isOn: $subtitles)
                     .disabled(quality == .audio)
@@ -361,10 +365,10 @@ struct LinkSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: LinkImporter.ytdlp == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(LinkImporter.ytdlp == nil ? .orange : .green)
-                Text(LinkImporter.ytdlp == nil ? "유튜브 도구(yt-dlp)가 필요합니다" : "유튜브 도구 준비됨 \(toolMsg)").font(.caption)
+                Text(L(LinkImporter.ytdlp == nil ? "유튜브 도구(yt-dlp)가 필요합니다" : "유튜브 도구 준비됨 \(toolMsg)")).font(.caption)
                 Spacer()
                 if toolBusy { ProgressView().controlSize(.small) }
-                Button(LinkImporter.ytdlp == nil ? "유튜브 도구 설치" : "업데이트") {
+                Button(L(LinkImporter.ytdlp == nil ? "유튜브 도구 설치" : "업데이트")) {
                     toolBusy = true
                     Task {
                         do { toolMsg = "(\(try await Tools.installYtdlp { _ in }))" } catch { toolMsg = "설치 실패: \(error.localizedDescription)" }

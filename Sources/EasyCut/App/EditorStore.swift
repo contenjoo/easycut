@@ -32,12 +32,22 @@ final class EditorStore: ObservableObject {
     @Published var converting: [String: JobProgress] = [:]
     @Published var leftTab: LeftTab = .media
     @Published var zoom: Double = 40 // px / 초
+    /// 타임라인 트랙 한 줄 높이 (px)
+    @Published var trackHeight: Double = {
+        let v = UserDefaults.standard.double(forKey: "trackHeight")
+        return v > 0 ? v : 58
+    }() { didSet { UserDefaults.standard.set(trackHeight, forKey: "trackHeight") } }
+    static let trackHeightRange: ClosedRange<Double> = 40...160
+    func changeTrackHeight(by f: Double) {
+        trackHeight = min(Self.trackHeightRange.upperBound, max(Self.trackHeightRange.lowerBound, (trackHeight * f).rounded()))
+    }
     @Published var showExport = false
     @Published var showShortcuts = false
     @Published var showSTTSettings = false
     @Published var showSilenceSheet = false
     @Published var showLinkSheet = false
     @Published var showClaudeSheet = false
+    @Published var showRecordSheet = false
     @Published var snapping = true
     @Published var followPlayhead = true
     @Published var timelineVersion = 0
@@ -51,12 +61,15 @@ final class EditorStore: ObservableObject {
     @AppStorage("whisperModel") var whisperModelID: String = WhisperModel.all[0].id
     /// 자막을 지우면 그 구간 영상도 함께 잘라낸다
     @AppStorage("captionCutsVideo") var captionCutsVideo = true
+    /// 바뀔 때마다 자동 저장 (저장한 적 없는 프로젝트는 복구용 파일에 보관)
+    @AppStorage("autosave") var autosaveEnabled = true
 
     let player = PlayerController()
     let media = MediaCache()
     let downloader = ModelDownloader()
     lazy var ai = AIAssistant(store: self)
     lazy var control = ControlServer(store: self)
+    lazy var recording = RecordController(store: self)
 
     private var undoStack: [Project] = []
     private var redoStack: [Project] = []
@@ -131,6 +144,7 @@ final class EditorStore: ObservableObject {
     private func setProject(_ p: Project) {
         project = p
         dirty = true
+        scheduleAutosave()
         let ids = Set(p.tracks.flatMap(\.clips).map(\.id))
         selection = selection.intersection(ids)
         if let c = selectedCaption, !p.captions.contains(where: { $0.id == c }) { selectedCaption = nil }
@@ -174,7 +188,7 @@ final class EditorStore: ObservableObject {
     }
 
     func showToast(_ s: String) {
-        toast = s
+        toast = L(s)
         toastTask?.cancel()
         toastTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_200_000_000)
@@ -313,6 +327,7 @@ final class EditorStore: ObservableObject {
         dirty = false
         selection = []
         timelineVersion += 1
+        clearRecovery()
     }
 
     func confirmDiscard() -> Bool {
@@ -323,9 +338,9 @@ final class EditorStore: ObservableObject {
         a.addButton(withTitle: "저장")
         a.addButton(withTitle: "저장 안 함")
         a.addButton(withTitle: "취소")
-        switch a.runModal() {
+        switch a.localized().runModal() {
         case .alertFirstButtonReturn: return save()
-        case .alertSecondButtonReturn: return true
+        case .alertSecondButtonReturn: clearRecovery(); return true
         default: return false
         }
     }
@@ -348,6 +363,7 @@ final class EditorStore: ObservableObject {
             dirty = false
             selection = []
             timelineVersion += 1
+            clearRecovery()
             for a in p.assets { media.prepare(a) }
             scheduleRebuild(immediate: true)
             restoreConvertedAssets()
@@ -380,7 +396,7 @@ final class EditorStore: ObservableObject {
         if url == nil || `as` {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [UTType(filenameExtension: "easycut") ?? .json]
-            panel.nameFieldStringValue = "새 프로젝트.easycut"
+            panel.nameFieldStringValue = L("새 프로젝트.easycut")
             guard panel.runModal() == .OK, let u = panel.url else { return false }
             url = u
         }
@@ -391,6 +407,8 @@ final class EditorStore: ObservableObject {
             try enc.encode(project).write(to: url, options: .atomic)
             projectURL = url
             dirty = false
+            autosaveTask?.cancel()
+            clearRecovery()
             showToast("저장했습니다")
             return true
         } catch {
@@ -419,7 +437,7 @@ final class EditorStore: ObservableObject {
     }
 
     func deleteSelection(ripple: Bool) {
-        if let r = markRange {
+        if let r = markRange, selection.isEmpty {
             apply { $0.rippleDelete(from: r.lowerBound, to: r.upperBound) }
             clearMarks()
             showToast("구간 삭제")
@@ -443,11 +461,15 @@ final class EditorStore: ObservableObject {
         }
         guard !clips.isEmpty else { return }
         var newIDs: Set<UUID> = []
+        // 여러 개(그룹)를 복제하면 배치를 유지한 채 통째로 바로 뒤에 놓는다
+        let offset = (clips.map(\.1.end).max() ?? 0) - (clips.map(\.1.start).min() ?? 0)
+        var groupMap: [UUID: UUID] = [:]
         apply { p in
             for (ti, c) in clips {
                 var n = c
                 n.id = UUID()
-                n.start = c.end
+                n.start = c.start + offset
+                n.groupID = c.groupID.map { g in groupMap[g] ?? { let x = UUID(); groupMap[g] = x; return x }() }
                 p.tracks[ti].clips.append(n)
                 p.resolveOverlaps(track: ti, pinned: n.id)
                 newIDs.insert(n.id)
@@ -474,10 +496,12 @@ final class EditorStore: ObservableObject {
         let t = time
         var newIDs: Set<UUID> = []
         let items = clipboard
+        var groupMap: [UUID: UUID] = [:]
         apply { p in
             for (ti, c) in items {
                 var n = c
                 n.id = UUID()
+                n.groupID = c.groupID.map { g in groupMap[g] ?? { let x = UUID(); groupMap[g] = x; return x }() }
                 n.start = t + (c.start - base)
                 while p.tracks.count <= ti { p.tracks.append(Track(name: "트랙 \(p.tracks.count + 1)")) }
                 p.tracks[ti].clips.append(n)
@@ -486,6 +510,39 @@ final class EditorStore: ObservableObject {
             }
         }
         selection = newIDs
+    }
+
+    // MARK: 그룹 · 합치기
+
+    func groupSelection() {
+        guard selection.count >= 2 else { showToast("묶을 클립을 2개 이상 선택하세요 (빈 곳을 끌거나 ⇧/⌘+클릭)"); return }
+        var ok = false
+        let ids = selection
+        apply { ok = $0.group(ids) }
+        selection = project.groupMembers(of: ids)
+        if ok { showToast("\(selection.count)개 클립을 그룹으로 묶었습니다 (⇧⌘G 해제)") }
+    }
+
+    func ungroupSelection() {
+        guard project.tracks.flatMap(\.clips).contains(where: { selection.contains($0.id) && $0.groupID != nil }) else {
+            showToast("그룹으로 묶인 클립을 선택하세요"); return
+        }
+        let ids = selection
+        apply { $0.ungroup(ids) }
+        showToast("그룹을 풀었습니다")
+    }
+
+    func joinSelection() {
+        guard selection.count >= 2 else { showToast("합칠 클립을 2개 이상 선택하세요"); return }
+        let ids = selection
+        var r = (merged: 0, grouped: 0)
+        apply { r = $0.join(ids) }
+        let alive = Set(project.tracks.flatMap(\.clips).map(\.id))
+        selection = project.groupMembers(of: ids.intersection(alive))
+        var parts: [String] = []
+        if r.merged > 0 { parts.append("잘린 조각 \(r.merged)곳을 하나로 합침") }
+        if r.grouped > 0 { parts.append("나머지 \(r.grouped)개는 빈틈 없이 붙여 그룹으로 묶음") }
+        showToast(parts.isEmpty ? "합칠 수 있는 클립이 없습니다 (같은 트랙에서 이웃한 클립을 선택하세요)" : parts.joined(separator: ", "))
     }
 
     func selectAll() {
@@ -548,8 +605,8 @@ final class EditorStore: ObservableObject {
         return min(a, b)...max(a, b)
     }
 
-    func setMarkIn() { markIn = time; if let o = markOut, o < time { markOut = nil }; showToast("시작 지점 (I) \(TimeFormat.clock(time))") }
-    func setMarkOut() { markOut = time; if let i = markIn, i > time { markIn = nil }; showToast("끝 지점 (O) \(TimeFormat.clock(time))") }
+    func setMarkIn() { selection = []; markIn = time; if let o = markOut, o < time { markOut = nil }; showToast("시작 지점 (I) \(TimeFormat.clock(time))") }
+    func setMarkOut() { selection = []; markOut = time; if let i = markIn, i > time { markIn = nil }; showToast("끝 지점 (O) \(TimeFormat.clock(time))") }
     func clearMarks() { markIn = nil; markOut = nil }
 
     // MARK: 재생 이동
@@ -579,7 +636,7 @@ final class EditorStore: ObservableObject {
                 a.messageText = "이미 인식이 끝났습니다. 다시 인식할까요?"
                 a.informativeText = "기존 대본 수정 내용은 사라집니다."
                 a.addButton(withTitle: "다시 인식"); a.addButton(withTitle: "취소")
-                if a.runModal() == .alertFirstButtonReturn { any.forEach { transcribe($0.id) } }
+                if a.localized().runModal() == .alertFirstButtonReturn { any.forEach { transcribe($0.id) } }
             }
             return
         }
@@ -726,7 +783,7 @@ final class EditorStore: ObservableObject {
             a.messageText = "기존 자막을 대본으로 다시 만들까요?"
             a.informativeText = "직접 수정한 자막 내용은 사라집니다."
             a.addButton(withTitle: "다시 만들기"); a.addButton(withTitle: "취소")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
+            guard a.localized().runModal() == .alertFirstButtonReturn else { return }
         }
         apply { $0.captions = caps; $0.showCaptions = true }
         showToast("자막 \(caps.count)개 생성")
@@ -836,7 +893,74 @@ final class EditorStore: ObservableObject {
         return "EasyCut"
     }
 
+    // MARK: 자동 저장
+
+    private var autosaveTask: Task<Void, Never>?
+
+    /// 저장한 적 없는 프로젝트를 보관하는 복구용 파일
+    nonisolated static var recoveryURL: URL { AppPaths.support.appendingPathComponent("복구용 프로젝트.easycut") }
+
+    /// 편집이 멈추고 1.5초 뒤 저장 (연속 조작은 한 번만 저장)
+    private func scheduleAutosave() {
+        guard autosaveEnabled else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            self?.autosaveNow()
+        }
+    }
+
+    /// 지금 바로 자동 저장. 파일이 있으면 그 파일에, 없으면 복구용 파일에 쓴다.
+    func autosaveNow() {
+        autosaveTask?.cancel()
+        guard autosaveEnabled, dirty else { return }
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        guard let data = try? enc.encode(project) else { return }
+        if let url = projectURL {
+            do {
+                try data.write(to: url, options: .atomic)
+                dirty = false
+            } catch {
+                showToast("자동 저장 실패: \(error.localizedDescription)")
+            }
+        } else if !project.assets.isEmpty {
+            // 새 프로젝트는 '저장' 전까지 복구용 파일에 보관 (창 제목의 '편집됨'은 유지)
+            try? data.write(to: Self.recoveryURL, options: .atomic)
+        }
+    }
+
+    func clearRecovery() {
+        try? FileManager.default.removeItem(at: Self.recoveryURL)
+    }
+
+    /// 지난번에 저장하지 않고 끝난 프로젝트가 있으면 복구할지 묻는다
+    func offerRecovery() {
+        let url = Self.recoveryURL
+        guard FileManager.default.fileExists(atPath: url.path), projectURL == nil, project.assets.isEmpty,
+              let data = try? Data(contentsOf: url), let p = try? JSONDecoder().decode(Project.self, from: data) else { return }
+        let a = NSAlert()
+        a.messageText = "저장하지 않은 프로젝트가 있습니다"
+        let when = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            .map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) } ?? ""
+        a.informativeText = "\(when)에 자동으로 보관된 작업(미디어 \(p.assets.count)개, 길이 \(TimeFormat.clock(p.duration)))을 다시 열까요?"
+        a.addButton(withTitle: "복구")
+        a.addButton(withTitle: "버리기")
+        guard a.localized().runModal() == .alertFirstButtonReturn else { clearRecovery(); return }
+        undoStack.removeAll(); redoStack.removeAll()
+        project = p
+        projectURL = nil
+        dirty = true
+        selection = []
+        timelineVersion += 1
+        for a in p.assets { media.prepare(a) }
+        scheduleRebuild(immediate: true)
+        restoreConvertedAssets()
+        showToast("복구했습니다. ⌘S로 저장하세요")
+    }
+
     var windowTitle: String {
-        "\(projectURL?.deletingPathExtension().lastPathComponent ?? "새 프로젝트")\(dirty ? " — 편집됨" : "")"
+        "\(projectURL?.deletingPathExtension().lastPathComponent ?? L("새 프로젝트"))\(dirty ? L(" — 편집됨") : "")"
     }
 }

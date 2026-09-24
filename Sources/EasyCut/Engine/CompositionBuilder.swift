@@ -65,9 +65,16 @@ enum CompositionBuilder {
             var aTrack: AVMutableCompositionTrack?
             var aParams: AVMutableAudioMixInputParameters?
             for clip in track.clips.sorted(by: { $0.start < $1.start }) {
-                let common = RenderLayer(content: .image(path: ""), start: clip.start, end: clip.end, opacity: clip.opacity,
+                var common = RenderLayer(content: .image(path: ""), start: clip.start, end: clip.end, opacity: clip.opacity,
                                          scale: clip.scale, offsetX: clip.offsetX, offsetY: clip.offsetY,
                                          fadeIn: clip.fadeIn, fadeOut: clip.fadeOut)
+                common.sourceIn = clip.sourceIn
+                common.speed = clip.speed
+                common.shape = clip.shape ?? .none
+                common.backgroundEffect = clip.backgroundEffect ?? .none
+                if clip.showClicks == true, let marks = project.asset(clip.assetID)?.clicks {
+                    common.clicks = marks.filter { $0.t >= clip.sourceIn - 1 && $0.t <= clip.sourceOut }
+                }
                 if clip.kind == .text {
                     if !track.hidden {
                         var l = common

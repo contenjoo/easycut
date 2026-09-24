@@ -19,7 +19,7 @@ struct TranscriptPanel: View {
                 .buttonStyle(.borderedProminent)
                 .help("타임라인의 영상/오디오 음성을 텍스트로 변환 (⇧⌘R)")
                 Button { store.showSTTSettings = true } label: {
-                    Text("\(store.sttLanguage.name) · \(store.sttEngine == .apple ? "Apple" : "Whisper")")
+                    Text("\(L(store.sttLanguage.name)) · \(store.sttEngine == .apple ? "Apple" : "Whisper")")
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
@@ -37,7 +37,7 @@ struct TranscriptPanel: View {
                             Button("취소") { store.cancelTranscription(id) }.controlSize(.small)
                         }
                         ProgressView(value: job.value)
-                        Text(job.message).font(.caption2).foregroundStyle(.secondary)
+                        Text(L(job.message)).font(.caption2).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 10).padding(.bottom, 8)
                 }
@@ -73,7 +73,7 @@ struct TranscriptPanel: View {
                 Divider()
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
-                        Text(selectedCount > 0 ? "\(selectedCount)개 단어 선택됨" : "단어 \(words.count)개 · 클릭=이동, 드래그=선택")
+                        Text(L(selectedCount > 0 ? "\(selectedCount)개 단어 선택됨" : "단어 \(words.count)개 · 클릭=이동, 드래그=선택"))
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -374,7 +374,7 @@ struct TranscriptTextView: NSViewRepresentable {
             a.addButton(withTitle: "확인")
             a.addButton(withTitle: "취소")
             a.window.initialFirstResponder = field
-            if a.runModal() == .alertFirstButtonReturn {
+            if a.localized().runModal() == .alertFirstButtonReturn {
                 let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if text.isEmpty { store.deleteWords([w.id]) } else { store.updateWord(asset: w.assetID, word: w.word.id, text: text) }
             }
@@ -467,7 +467,7 @@ struct SilenceSheet: View {
             Text("말이 없는 부분을 찾아 한 번에 잘라냅니다. 잘릴 곳은 타임라인에 빨간색으로 표시됩니다.")
                 .font(.callout).foregroundStyle(.secondary)
             Picker("기준", selection: $modeRaw) {
-                ForEach(SilenceMode.allCases) { Text($0.rawValue).tag($0.rawValue).disabled($0 == .transcript && !hasTranscript) }
+                ForEach(SilenceMode.allCases) { Text(L($0.rawValue)).tag($0.rawValue).disabled($0 == .transcript && !hasTranscript) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -503,7 +503,7 @@ struct SilenceSheet: View {
             GroupBox {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(ranges.isEmpty ? "잘라낼 무음이 없습니다" : "\(ranges.count)곳 · \(String(format: "%.1f", total))초 삭제")
+                        Text(L(ranges.isEmpty ? "잘라낼 무음이 없습니다" : "\(ranges.count)곳 · \(String(format: "%.1f", total))초 삭제"))
                             .font(.headline)
                             .foregroundStyle(ranges.isEmpty ? Color.secondary : Color.red)
                         Text("\(TimeFormat.clock(dur)) → \(TimeFormat.clock(max(0, dur - total)))  (\(dur > 0 ? Int(total / dur * 100) : 0)% 단축)")

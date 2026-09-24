@@ -4,7 +4,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 APP="$ROOT/dist/EasyCut.app"
-VERSION="1.2.0"
+VERSION="1.7.1"
+
+# 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
+SIGN_ID="${EASYCUT_SIGN_ID:-EasyCut Self-Signed}"
+if security find-identity -p codesigning 2>/dev/null | grep -q "\"$SIGN_ID\""; then
+  echo "▶ 서명 인증서: $SIGN_ID"
+else
+  echo "▶ 서명 인증서 없음 → ad-hoc 서명 (업데이트마다 화면 녹화·카메라 권한을 다시 물을 수 있음)"
+  SIGN_ID="-"
+fi
 
 echo "▶ 릴리스 빌드"
 swift build -c release --arch arm64 2>&1 | grep -E "error|Compiling|Build complete" || true
@@ -15,6 +24,17 @@ BIN="$ROOT/.build/arm64-apple-macosx/release/EasyCut"
 echo "▶ 앱 번들 구성"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# 언어: 한국어(원문) + 영어 (앱 문구는 LocTable, 권한 안내문은 InfoPlist.strings)
+mkdir -p "$APP/Contents/Resources/ko.lproj" "$APP/Contents/Resources/en.lproj"
+: > "$APP/Contents/Resources/ko.lproj/InfoPlist.strings"
+# 한국어는 원문 그대로(키 = 한국어), 영어 문구표는 scripts/gen_strings.py 로 만든다
+echo '"EasyCut" = "EasyCut";' > "$APP/Contents/Resources/ko.lproj/Localizable.strings"
+python3 "$ROOT/scripts/gen_strings.py" >/dev/null && cp "$ROOT/Resources/en.lproj/Localizable.strings" "$APP/Contents/Resources/en.lproj/"
+cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
+"NSCameraUsageDescription" = "EasyCut uses the camera to record your face along with the screen.";
+"NSMicrophoneUsageDescription" = "EasyCut uses the microphone to record your voice.";
+"NSSpeechRecognitionUsageDescription" = "EasyCut uses speech recognition to turn speech in your videos into text (transcripts and captions). Recognition runs on this Mac.";
+STRINGS
 cp "$BIN" "$APP/Contents/MacOS/EasyCut"
 
 echo "▶ 내장 도구 (Whisper·ffmpeg)"
@@ -22,7 +42,7 @@ if [ -x "$ROOT/vendor/bin/whisper-cli" ] && [ -x "$ROOT/vendor/bin/ffmpeg" ]; th
   mkdir -p "$APP/Contents/Resources/bin" "$APP/Contents/Resources/licenses"
   cp "$ROOT/vendor/bin/"* "$APP/Contents/Resources/bin/"
   cp "$ROOT/vendor/licenses/"* "$APP/Contents/Resources/licenses/" 2>/dev/null || true
-  for b in "$APP/Contents/Resources/bin/"*; do codesign --force --sign - --timestamp=none "$b"; done
+  for b in "$APP/Contents/Resources/bin/"*; do codesign --force --sign "$SIGN_ID" --timestamp=none "$b"; done
 else
   echo "  (vendor/bin 없음 — ./scripts/build_deps.sh 를 먼저 실행하면 Whisper·ffmpeg가 내장됩니다)"
 fi
@@ -50,14 +70,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>3</string>
-  <key>CFBundleDevelopmentRegion</key><string>ko</string>
+  <key>CFBundleVersion</key><string>10</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSArchitecturePriority</key><array><string>arm64</string></array>
   <key>LSRequiresNativeExecution</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSCameraUsageDescription</key><string>화면 녹화와 함께 얼굴(카메라)을 녹화하기 위해 카메라를 사용합니다.</string>
+  <key>NSMicrophoneUsageDescription</key><string>녹화할 때 목소리를 함께 담기 위해 마이크를 사용합니다.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>영상 속 음성을 텍스트(대본·자막)로 바꾸기 위해 음성 인식을 사용합니다. 인식은 이 Mac 안에서 처리됩니다.</string>
   <key>CFBundleDocumentTypes</key>
   <array>
@@ -95,8 +118,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-echo "▶ 서명 (ad-hoc)"
-codesign --force --deep --sign - --timestamp=none "$APP"
+echo "▶ 앱 서명"
+codesign --force --deep --sign "$SIGN_ID" --timestamp=none "$APP"
 
 if [ "${1:-}" = "--dmg" ]; then
   echo "▶ DMG 생성"
@@ -105,6 +128,7 @@ if [ "${1:-}" = "--dmg" ]; then
   cp -R "$APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
   cp "$ROOT/scripts/설치 방법.txt" "$STAGE/설치 방법.txt"
+  cp "$ROOT/scripts/How to Install.txt" "$STAGE/How to Install.txt"
   rm -f "$ROOT/dist/EasyCut.dmg" "$ROOT/dist/EasyCut-$VERSION.dmg"
   hdiutil create -volname "EasyCut $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/EasyCut-$VERSION.dmg" >/dev/null
   echo "  → dist/EasyCut-$VERSION.dmg ($(du -h "$ROOT/dist/EasyCut-$VERSION.dmg" | cut -f1))"

@@ -35,7 +35,14 @@ final class TimelineNSView: NSView {
     let headerW: CGFloat = 116
     let rulerH: CGFloat = 26
     let captionH: CGFloat = 30
-    let trackH: CGFloat = 58
+    var trackH: CGFloat { CGFloat(store.trackHeight) }
+    /// 트랙이 낮으면 이름과 아이콘을 한 줄에 놓는다
+    private var compactHeader: Bool { trackH < 52 }
+    private func iconOrigin(track ti: Int, mute: Bool) -> NSPoint {
+        let y = rowY(track: ti)
+        if compactHeader { return NSPoint(x: mute ? 52 : 76, y: y + (trackH - 16) / 2) }
+        return NSPoint(x: mute ? 10 : 36, y: y + 30)
+    }
     let edgeW: CGFloat = 7
 
     // 드래그 상태
@@ -46,6 +53,7 @@ final class TimelineNSView: NSView {
         case captionMove(id: UUID, dt: Double)
         case captionTrim(id: UUID, left: Bool, dt: Double)
         case marquee(from: NSPoint, to: NSPoint)
+        case range(from: Double)
     }
     private var drag: Drag?
     private var mouseDownPoint: NSPoint = .zero
@@ -76,6 +84,17 @@ final class TimelineNSView: NSView {
         store.$zoom
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.zoomChanged() } }
+            .store(in: &bag)
+        store.$trackHeight
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.refreshSize()
+                    self.needsDisplay = true
+                    self.window?.invalidateCursorRects(for: self)
+                }
+            }
             .store(in: &bag)
     }
 
@@ -220,6 +239,7 @@ final class TimelineNSView: NSView {
 
     /// 기본 트랙(트랙 1) 클립을 ⌥ 없이 끄는 중이면 순서 바꾸기(끼워 넣기) 위치
     private var freeMove = false
+    private var marqueeBase: Set<UUID> = []
     private var lastPointerT: Double = 0
 
     private func reorderTarget() -> (Double, Int)? {
@@ -263,15 +283,16 @@ final class TimelineNSView: NSView {
 
         let title: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: NSColor.labelColor]
         let dim: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
-        ("자막" as NSString).draw(at: NSPoint(x: vis.minX + 10, y: rulerH + 8), withAttributes: title)
+        (L("자막") as NSString).draw(at: NSPoint(x: vis.minX + 10, y: rulerH + 8), withAttributes: title)
         let capToggle = store.project.showCaptions ? "표시" : "숨김"
-        (capToggle as NSString).draw(at: NSPoint(x: vis.minX + headerW - 38, y: rulerH + 8), withAttributes: dim)
+        (L(capToggle) as NSString).draw(at: NSPoint(x: vis.minX + headerW - 38, y: rulerH + 8), withAttributes: dim)
 
         for (ti, tr) in p.tracks.enumerated() {
             let y = rowY(track: ti)
-            (tr.name as NSString).draw(at: NSPoint(x: vis.minX + 10, y: y + 8), withAttributes: title)
-            drawIcon(tr.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", at: NSPoint(x: vis.minX + 10, y: y + 30), on: !tr.muted)
-            drawIcon(tr.hidden ? "eye.slash.fill" : "eye.fill", at: NSPoint(x: vis.minX + 36, y: y + 30), on: !tr.hidden)
+            (L(tr.name) as NSString).draw(at: NSPoint(x: vis.minX + 10, y: compactHeader ? y + (trackH - 14) / 2 : y + 8), withAttributes: title)
+            let m = iconOrigin(track: ti, mute: true), h = iconOrigin(track: ti, mute: false)
+            drawIcon(tr.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", at: NSPoint(x: vis.minX + m.x, y: m.y), on: !tr.muted)
+            drawIcon(tr.hidden ? "eye.slash.fill" : "eye.fill", at: NSPoint(x: vis.minX + h.x, y: h.y), on: !tr.hidden)
         }
         // 눈금자 왼쪽 모서리
         Theme.ruler.setFill()
@@ -289,11 +310,11 @@ final class TimelineNSView: NSView {
 
     private func headerIconHit(_ pt: NSPoint) -> (track: Int, mute: Bool)? {
         guard let ti = track(atY: pt.y), project.tracks.indices.contains(ti) else { return nil }
-        let y = rowY(track: ti)
         let lx = pt.x - visibleRect.minX
-        guard pt.y >= y + 26, pt.y <= y + 50 else { return nil }
-        if lx >= 6 && lx < 32 { return (ti, true) }
-        if lx >= 32 && lx < 58 { return (ti, false) }
+        for mute in [true, false] {
+            let o = iconOrigin(track: ti, mute: mute)
+            if NSRect(x: o.x - 4, y: o.y - 4, width: 26, height: 24).contains(NSPoint(x: lx, y: pt.y)) { return (ti, mute) }
+        }
         return nil
     }
 
@@ -406,9 +427,10 @@ final class TimelineNSView: NSView {
                 // 제목 띠
                 NSColor.black.withAlphaComponent(0.28).setFill()
                 NSRect(x: r.minX, y: r.minY, width: r.width, height: 16).fill()
-                var label = c.kind == .text ? "T  \(c.text)" : (asset?.name ?? "(없음)")
+                var label = c.kind == .text ? "T  \(c.text)" : (asset?.name ?? L("(없음)"))
                 if abs(c.speed - 1) > 0.001 { label = "⏩\(Self.speedLabel(c.speed))  " + label }
                 if asset?.words != nil { label = "💬 " + label }
+                if c.groupID != nil { label = "🔗 " + label }
                 let labelX = max(r.minX + 5, min(visibleRect.minX + headerW + 5, r.maxX - 60))
                 (label as NSString).draw(with: NSRect(x: labelX, y: r.minY + 1, width: max(0, r.maxX - labelX - 4), height: 14),
                                          options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: nameAttrs)
@@ -426,6 +448,11 @@ final class TimelineNSView: NSView {
                 } else {
                     NSColor.black.withAlphaComponent(0.4).setStroke()
                     NSBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).stroke()
+                }
+                // 그룹: 아래쪽 청록 띠
+                if c.groupID != nil {
+                    NSColor.systemTeal.setFill()
+                    NSRect(x: r.minX + 2, y: r.maxY - 4, width: max(0, r.width - 4), height: 3).fill()
                 }
             }
         }
@@ -518,10 +545,19 @@ final class TimelineNSView: NSView {
         mouseDownPoint = pt
         let vis = visibleRect
 
-        // 눈금자: 재생헤드 이동
+        // 구간(시작~끝)이 잡혀 있을 때 다른 곳을 누르면 구간을 푼다 → 모르고 ⌫ 눌러 그 구간이 지워지는 일 방지
+        // (I만 찍은 상태는 그대로 두어 I → 이동 → O 흐름은 유지)
+        if store.markRange != nil, !(pt.y - vis.minY < rulerH && abs(pt.x - x(store.time)) <= 8) {
+            store.clearMarks()
+        }
+        // 눈금자: 재생헤드를 잡으면 이동, 다른 곳을 끌면 구간 선택
         if pt.y - vis.minY < rulerH {
-            drag = .scrub
             store.player.pause()
+            if abs(pt.x - x(store.time)) <= 8 {
+                drag = .scrub
+            } else {
+                drag = .range(from: snap(t(max(pt.x, vis.minX + headerW)), excluding: nil))
+            }
             store.seek(t(max(pt.x, vis.minX + headerW)))
             return
         }
@@ -544,6 +580,7 @@ final class TimelineNSView: NSView {
             } else {
                 store.selectedCaption = nil
                 store.seek(t(pt.x))
+                drag = .range(from: snap(t(pt.x), excluding: nil))
             }
             return
         }
@@ -557,7 +594,9 @@ final class TimelineNSView: NSView {
             } else if !store.selection.contains(hit.clip.id) {
                 store.selection = [hit.clip.id]
             }
-            if hit.edge != 0 {
+            // 그룹이면 동료 클립도 함께 선택
+            store.selection = project.groupMembers(of: store.selection)
+            if hit.edge != 0 && hit.clip.groupID == nil {
                 store.selection = [hit.clip.id]
                 drag = .trim(id: hit.clip.id, left: hit.edge < 0, dt: 0)
             } else {
@@ -567,8 +606,11 @@ final class TimelineNSView: NSView {
             needsDisplay = true
             return
         }
-        // 빈 곳: 선택 해제 + 재생헤드 이동, 드래그하면 범위 선택
-        if !event.modifierFlags.contains(.shift) { store.selection = [] }
+        // 빈 곳: 선택 해제 + 재생헤드 이동. 끌면 클립 여러 개 선택 (⇧/⌘ = 기존 선택에 더하기)
+        // 시간 구간 선택은 눈금자를 끈다
+        let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        marqueeBase = additive ? store.selection : []
+        if !additive { store.selection = [] }
         store.selectedCaption = nil
         store.seek(t(pt.x))
         drag = .marquee(from: pt, to: pt)
@@ -617,18 +659,27 @@ final class TimelineNSView: NSView {
             guard let c = project.captions.first(where: { $0.id == id }) else { return }
             let tt = snap(t(pt.x), excluding: nil)
             drag = .captionTrim(id: id, left: left, dt: tt - (left ? c.start : c.end))
+        case .range(let from):
+            // 4px 이상 끌어야 구간으로 본다 (그냥 클릭은 재생헤드 이동만)
+            guard abs(pt.x - x(from)) > 4 else { return }
+            let to = snap(t(max(pt.x, visibleRect.minX + headerW)), excluding: nil)
+            // 구간을 잡으면 클립 선택은 풀어 ⌫가 구간에만 적용되게
+            if !store.selection.isEmpty { store.selection = [] }
+            store.markIn = min(from, to)
+            store.markOut = max(from, to)
+            store.seek(to)
         case .marquee(let from, _):
             drag = .marquee(from: from, to: pt)
             let r = NSRect(x: min(from.x, pt.x), y: min(from.y, pt.y), width: abs(from.x - pt.x), height: abs(from.y - pt.y))
             if r.width > 4 || r.height > 4 {
-                var sel = Set<UUID>()
+                var sel = marqueeBase
                 for (ti, tr) in project.tracks.enumerated() {
                     for c in tr.clips {
                         let cr = NSRect(x: x(c.start), y: rowY(track: ti) + 3, width: CGFloat(c.duration) * zoom, height: trackH - 6)
                         if cr.intersects(r) { sel.insert(c.id) }
                     }
                 }
-                store.selection = sel
+                store.selection = project.groupMembers(of: sel)
             }
         }
         needsDisplay = true
@@ -678,6 +729,10 @@ final class TimelineNSView: NSView {
             store.updateCaption(id, key: "captrim") { c in
                 if left { c.start = min(c.end - 0.1, max(0, c.start + dt)) } else { c.end = max(c.start + 0.1, c.end + dt) }
             }
+        case .range:
+            if let r = store.markRange {
+                store.showToast("구간 \(TimeFormat.clock(r.lowerBound)) – \(TimeFormat.clock(r.upperBound)) · ⌫ 잘라내기 · 해제는 빈 곳 클릭, X, esc")
+            }
         default:
             break
         }
@@ -702,7 +757,15 @@ final class TimelineNSView: NSView {
             menu.addItem(MenuAction.item("복제  (⌘D)") { [weak store] in store?.duplicateSelection() })
             menu.addItem(MenuAction.item("복사  (⌘C)") { [weak store] in store?.copySelection() })
             menu.addItem(.separator())
-            let speed = NSMenuItem(title: "속도", action: nil, keyEquivalent: "")
+            if store.selection.count >= 2 {
+                menu.addItem(MenuAction.item("그룹으로 묶기  (⌘G)") { [weak store] in store?.groupSelection() })
+                menu.addItem(MenuAction.item("하나로 합치기  (⌘J)") { [weak store] in store?.joinSelection() })
+            }
+            if hit.clip.groupID != nil {
+                menu.addItem(MenuAction.item("그룹 해제  (⇧⌘G)") { [weak store] in store?.ungroupSelection() })
+            }
+            menu.addItem(.separator())
+            let speed = NSMenuItem(title: L("속도"), action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for s in [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8, 12, 16, 20] {
                 let it = MenuAction.item(Self.speedLabel(s)) { [weak store] in store?.setSpeed(s) }
@@ -776,7 +839,7 @@ final class MenuAction: NSObject {
 
     static func item(_ title: String, _ a: @escaping () -> Void) -> NSMenuItem {
         let target = MenuAction(a)
-        let it = NSMenuItem(title: title, action: #selector(run), keyEquivalent: "")
+        let it = NSMenuItem(title: L(title), action: #selector(run), keyEquivalent: "")
         it.target = target
         it.representedObject = target // 유지
         return it

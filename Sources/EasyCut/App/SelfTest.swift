@@ -58,6 +58,9 @@ enum SelfTest {
     static func runAsync(_ dir: URL) async throws {
         print("1) 모델 연산")
         testTimelineOps()
+        check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
+              && !Updater.isNewer("1.2.0", than: "1.2.0") && !Updater.isNewer("1.2", than: "1.2.0") && Updater.isNewer("2.0", than: "1.99.1"),
+              "업데이트 버전 비교")
 
         print("2) 테스트 미디어 생성 (\(dir.path))")
         let speech = dir.appendingPathComponent("speech.aiff")
@@ -275,6 +278,40 @@ enum SelfTest {
         check(abs(p.duration - 3) < 1e-9, "끝 트림")
         let b = p.insert(asset: a, track: 0, at: 1.5)
         check(p.clip(b)!.start >= 1.5 && p.tracks[0].clips.count == 3, "겹침 해결: 겹친 클립 밀어내기")
+        // 영어 번역
+        check(Loc.translate("3개 파일을 가져왔습니다", force: true) == "Imported 3 file(s)", "영어: 값이 든 문장")
+        check(Loc.translate("음성 인식 중… (2/5) · 남은 시간 약 1:20", force: true) == "Recognizing speech… (2/5) · about 1:20 left", "영어: 겹친 문장")
+        check(Loc.translateKey("%lld개 클립 선택됨") == "%lld clips selected", "영어: SwiftUI 키")
+        check(Loc.translate("트랙 2", force: true) == "Track 2" && Loc.translate("무음 제거", force: true) == "Remove silences", "영어: 트랙 이름·도구")
+        check(Loc.translate("영상이름.mp4", force: true) == "영상이름.mp4", "영어: 모르는 문장은 그대로")
+        // 화면 효과
+        let base = CIImage(color: CIColor(red: 0.2, green: 0.5, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        let circ = Effects.shape(base, .circle)
+        check(circ.extent.size == CGSize(width: 720, height: 720), "모양: 원은 가운데 정사각형")
+        check(Effects.shape(base, .rounded).extent == base.extent, "모양: 둥근 사각형은 크기 유지")
+        let clicked = Effects.clicks(base, marks: [ClickMark(t: 1, x: 0.5, y: 0.5)], sourceTime: 1.2)
+        check(clicked.extent == base.extent, "클릭 강조: 크기 유지")
+        check(Effects.personBackground(base, effect: .blur).extent == base.extent, "인물 배경 흐림: 사람 없어도 안전")
+        // 그룹 · 합치기
+        var g = Project()
+        g.assets = [a]
+        let g1 = g.insert(asset: a, track: 0, at: 0)
+        let g2 = g.split(clip: g1, at: 3)!
+        let g3 = g.split(clip: g2, at: 6)!
+        g.move(clip: g3, toTrack: 0, start: 8)            // 6~10초 조각을 8초로 (2초 빈틈)
+        g.join([g1, g2, g3])
+        check(g.tracks[0].clips.count == 1 && abs(g.duration - 10) < 1e-9 && g.tracks[0].clips[0].sourceOut == 10,
+              "합치기: 잘린 조각 3개 → 원래 한 클립 (빈틈 제거)")
+        let b1 = g.insert(asset: a, track: 1, at: 0)
+        let b2 = g.insert(asset: a, track: 1, at: 12)
+        g.setSpeed(clip: b2, 2)
+        g.join([b1, b2])
+        let t1 = g.tracks[1].clips
+        check(t1.count == 2 && abs(t1[1].start - 10) < 1e-9 && t1[0].groupID != nil && t1[0].groupID == t1[1].groupID,
+              "합치기: 다른 클립은 빈틈 없이 붙이고 그룹으로")
+        check(g.groupMembers(of: [b1]) == [b1, b2], "그룹: 하나를 고르면 함께 선택")
+        g.ungroup([b1])
+        check(g.groupMembers(of: [b1]) == [b1], "그룹 해제")
         var q = Project()
         q.captions = [Caption(start: 0, end: 2, text: "a"), Caption(start: 3, end: 5, text: "b"), Caption(start: 6, end: 8, text: "c")]
         q.rippleDelete(from: 4, to: 7)
