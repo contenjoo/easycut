@@ -42,7 +42,7 @@ struct ContentView: View {
         .sheet(isPresented: $store.showSTTSettings) { STTSettingsSheet(store: store, downloader: store.downloader) }
         .sheet(isPresented: $store.showSilenceSheet) { SilenceSheet(store: store) }
         .sheet(isPresented: $store.showLinkSheet) { LinkSheet(store: store) }
-        .sheet(isPresented: $store.showClaudeSheet) { ConnectSheet() }
+        .sheet(isPresented: $store.showClaudeSheet) { ConnectSheet(ai: store.ai) }
         .sheet(isPresented: $store.showRecordSheet) { RecordSheet(rec: store.recording) }
         .alert("알림", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } })) {
             Button("확인") { store.alert = nil }

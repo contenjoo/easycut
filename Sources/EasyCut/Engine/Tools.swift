@@ -115,11 +115,18 @@ enum ClaudeLink {
         return s.contains("\"easycut\"") && s.contains(appBinary)
     }
 
-    /// 로그인 상태 확인 (아주 짧은 요청 1회)
-    static func checkLogin() async -> Bool {
-        guard let bin = AIAssistant.claudeBinary else { return false }
-        let (code, out) = await run(bin, ["-p", "--tools", "", "--no-session-persistence", "--setting-sources", "project"], stdin: "OK라고만 답해")
-        return code == 0 && !AIAssistant.isAuthError(out)
+    /// Codex에 EasyCut 연결 (codex mcp add)
+    static func connectCodex() async throws {
+        guard let bin = AgentLink.codexBinary else { throw MediaError.failed("Codex가 설치되어 있지 않습니다.") }
+        _ = await AgentLink.run(bin, ["mcp", "remove", "easycut"])
+        let (code, out) = await AgentLink.run(bin, ["mcp", "add", "easycut", "--", appBinary, "--mcp"])
+        guard code == 0 else { throw MediaError.failed("연결 실패: \(out.suffix(300))") }
+    }
+
+    static var codexConnected: Bool {
+        let f = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/config.toml")
+        guard let s = try? String(contentsOf: f, encoding: .utf8) else { return false }
+        return s.contains("[mcp_servers.easycut]") && s.contains(appBinary)
     }
 
     static func run(_ bin: String, _ args: [String], stdin: String? = nil) async -> (Int32, String) {

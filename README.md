@@ -23,7 +23,7 @@
 3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
 
 Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다.
-AI 편집은 선택 기능입니다. Claude Pro/Max 플랜 로그인(Claude Code) 또는 본인 API 키로 쓰며, API 키는 macOS 키체인에만 저장됩니다.
+AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또는 **[ChatGPT로 로그인]** 버튼 하나만 누르면 필요한 프로그램 설치부터 로그인까지 앱이 알아서 합니다(구독 계정 사용, API 키 불필요). 본인 Claude API 키로도 쓸 수 있으며 키는 macOS 키체인에만 저장됩니다.
 
 ## 소스에서 빌드
 
@@ -51,8 +51,8 @@ AI 편집은 선택 기능입니다. Claude Pro/Max 플랜 로그인(Claude Code
 | 텍스트(제목) | 화면 위 텍스트 클립, 위치·크기·색 조절 |
 | 화면 배치 | 크기·위치·불투명도, PIP(화면 속 화면), 페이드 인/아웃, 모양(원·둥근 사각형), 인물 배경 흐리게·지우기, 녹화 때 마우스 클릭 강조 |
 | 자막으로 컷 편집 | 자막 한 줄을 지우면 그 구간 영상도 삭제, 자막 목록에서 끌어 순서를 바꾸면 영상도 함께 이동, 트랙 1 클립은 끌어서 끼워 넣기(⌥+끌기 = 자유 이동) |
-| AI 편집 | "무음 다 잘라줘", "3분~5분 2배속" 처럼 말로 편집 (Claude Pro/Max 플랜 로그인 또는 API 키). 모델(Fable 5.1·Opus 5.5·Opus 5·Sonnet 5·Haiku 4.5)·추론 강도·생각 과정 보기 선택 |
-| Claude 연결(MCP) | Claude Code / Claude 데스크톱에서 앱을 직접 조작 |
+| AI 편집 | "무음 다 잘라줘", "3분~5분 2배속" 처럼 말로 편집 (Claude Pro/Max 또는 ChatGPT Plus/Pro 원클릭 로그인, 또는 API 키). 모델(Fable 5.1·Opus 5.5·Opus 5·Sonnet 5·Haiku 4.5)·추론 강도·생각 과정 보기 선택 |
+| AI 앱 연결(MCP) | Claude Code / Claude 데스크톱 / Codex에서 앱을 직접 조작 |
 | 내보내기 | MP4(H.264/HEVC), MOV(ProRes), 오디오(M4A), 4K/1080p/720p/480p, SRT 동시 저장, 장면 PNG 저장 |
 | 프로젝트 | `.easycut` 파일 저장/열기, 무제한에 가까운 실행 취소(300단계), **실시간 자동 저장**(저장 전 새 프로젝트는 복구용으로 보관 → 다음 실행 때 복구) |
 | 영어 지원 | macOS 언어가 한국어가 아니면 영어로 표시. EasyCut › 언어 / Language에서 바꿀 수 있음(다시 시작하면 적용) |
@@ -111,15 +111,17 @@ MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁�
 - 두 엔진 모두 인식되는 대로 대본이 바로바로 나타납니다.
   - 대본 탭의 **[Whisper 켜기]** 또는 엔진 설정 › Whisper › 모델 **내려받기** (Large v3 Turbo 권장, 약 574MB)
 
-## AI 편집 / Claude 연결
+## AI 편집 / AI 계정 연결
 
-- **Claude 연결 도우미** (AI 탭 또는 도구 › Claude 연결…): Claude Code 설치 → 로그인 → Claude 데스크톱/Claude Code 연결을 버튼으로 진행
-- **앱 안에서 — Claude 플랜(기본, API 키 불필요)**: Claude Code를 설치하고 터미널에서 `claude` → `/login`으로 Pro/Max 계정에 한 번 로그인해 두면, 왼쪽 **AI** 탭에서 "말 없는 부분 다 잘라줘"처럼 입력하는 것만으로 구독 플랜 사용량으로 편집합니다. (앱이 내부적으로 로그인된 Claude Code를 실행해 편집 도구만 쓰게 합니다.)
-- **앱 안에서 — API 키**: AI 탭 ⚙︎ › 연결 방식 › API 키 → 키 입력(키체인 저장). 모델은 `claude-opus-5`.
-- **Claude Code에서**: 앱을 켠 상태로 한 번만 등록
+- **원클릭 로그인** (AI 탭 또는 도구 › AI 계정 연결…): **[Claude로 로그인]**(Pro/Max) 또는 **[ChatGPT로 로그인]**(Plus/Pro · Codex)을 누르면 브라우저에서 로그인만 하면 끝입니다. Claude Code / Codex가 없으면 공식 배포본을 자동으로 설치합니다. 터미널이나 다른 설정은 필요 없습니다.
+- 로그인 후 왼쪽 **AI** 탭에서 "말 없는 부분 다 잘라줘"처럼 입력하면 구독 사용량으로 편집합니다. (앱이 로그인된 Claude Code / Codex를 내부적으로 실행해 EasyCut 편집 도구만 쓰게 합니다. 개인 설정·플러그인은 섞지 않습니다.)
+- **API 키**: AI 탭 ⚙︎ › Claude API 키 설정… (키체인 저장). ChatGPT는 AI 계정 연결 창에서 OpenAI API 키로도 로그인할 수 있습니다.
+- **다른 AI 앱에서 조작**: AI 계정 연결 창에서 Claude 데스크톱 / Claude Code / Codex에 [연결하기] 버튼 한 번. 직접 하려면:
+- **Claude Code / Codex에서**: 앱을 켠 상태로 한 번만 등록
 
   ```bash
   claude mcp add easycut -- /Applications/EasyCut.app/Contents/MacOS/EasyCut --mcp
+  codex mcp add easycut -- /Applications/EasyCut.app/Contents/MacOS/EasyCut --mcp
   ```
 
 - **Claude 데스크톱에서**: 설정 › 개발자 › 구성 편집의 `mcpServers`에 추가

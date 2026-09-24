@@ -232,7 +232,7 @@ struct AppCommands: Commands {
             Divider()
             Button("자막 추가  (C)") { store.addCaption() }
             Button("음성 인식 설정…") { store.showSTTSettings = true }.keyboardShortcut(",", modifiers: [.command, .shift])
-            Button("Claude 연결…") { store.showClaudeSheet = true }
+            Button("AI 계정 연결…") { store.showClaudeSheet = true }
         }
         CommandGroup(replacing: .help) {
             Button("단축키 보기") { store.showShortcuts = true }.keyboardShortcut("/")

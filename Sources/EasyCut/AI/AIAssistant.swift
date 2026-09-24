@@ -67,6 +67,7 @@ enum AIEffort: String, CaseIterable, Identifiable {
 
 enum AIBackend: String, CaseIterable, Identifiable {
     case plan = "Claude 플랜 (Pro/Max 로그인)"
+    case codex = "ChatGPT · Codex"
     case api = "API 키"
     var id: String { rawValue }
 }
@@ -98,12 +99,14 @@ final class AIAssistant: ObservableObject {
     /// API 방식에서 실제로 쓸 모델
     var apiModel: AIModel { AIModel.all.first { $0.id == modelID } ?? AIModel.all[2] }
     var currentModelName: String {
+        if backend == .codex { return "ChatGPT 기본 모델" }
         if backend == .plan && modelID.isEmpty { return "계정 기본 모델" }
         return (AIModel.all.first { $0.id == modelID } ?? AIModel.all[2]).name
     }
 
     private var process: Process?
     private var planSession: String?
+    private var codexThread: String?
 
     /// 설치된 Claude Code CLI (플랜 로그인으로 동작)
     nonisolated static var claudeBinary: String? {
@@ -112,7 +115,14 @@ final class AIAssistant: ObservableObject {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    var ready: Bool { backend == .plan ? Self.claudeBinary != nil : hasKey }
+    /// 로그인까지 되어 바로 쓸 수 있는지 (확인 전(.unknown)이면 설치 여부로 판단)
+    var ready: Bool {
+        switch backend {
+        case .api: return hasKey
+        case .plan: return Self.claudeBinary != nil && [.ready, .unknown].contains(AgentLink.shared.claude)
+        case .codex: return AgentLink.codexBinary != nil && [.ready, .unknown].contains(AgentLink.shared.codex)
+        }
+    }
     private var messages: [[String: Any]] = []
     private var task: Task<Void, Never>?
     unowned let store: EditorStore
@@ -143,6 +153,7 @@ final class AIAssistant: ObservableObject {
         process?.terminate()
         process = nil
         planSession = nil
+        codexThread = nil
         messages = []
         items = []
         busy = false
@@ -160,6 +171,7 @@ final class AIAssistant: ObservableObject {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !busy else { return }
         if backend == .plan { sendPlan(t); return }
+        if backend == .codex { sendCodex(t); return }
         guard let key = Keychain.load() else {
             items.append(ChatItem(role: .error, text: "Claude API 키를 먼저 설정하세요."))
             return
@@ -207,22 +219,18 @@ final class AIAssistant: ObservableObject {
         if !modelID.isEmpty { args += ["--model", modelID] }
         if effort != .auto, (AIModel.all.first { $0.id == modelID }?.supportsEffort ?? true) { args += ["--effort", effort.rawValue] }
         if let sid = planSession { args += ["--resume", sid] }
+        launch(bin, args, in: work, prompt: text, name: "Claude Code") { [weak self] in self?.handlePlanEvent($0) }
+    }
 
+    /// CLI를 띄워 한 줄씩 나오는 JSON 이벤트를 넘긴다. 프롬프트는 stdin으로 (한글 인자 깨짐 방지)
+    private func launch(_ bin: String, _ args: [String], in work: URL, prompt: String, name: String,
+                        onEvent: @escaping @MainActor ([String: Any]) -> Void) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = args
         p.currentDirectoryURL = work
-        // 사용자 플랜 로그인만 쓰도록 최소 환경으로 실행 (API 키·다른 Claude 세션 변수가 섞이지 않게)
-        let parent = ProcessInfo.processInfo.environment
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        var env: [String: String] = [
-            "HOME": home,
-            "PATH": "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-            "LANG": "ko_KR.UTF-8",
-            "SHELL": "/bin/zsh",
-        ]
-        for k in ["USER", "LOGNAME", "TMPDIR", "SSH_AUTH_SOCK", "__CF_USER_TEXT_ENCODING"] { env[k] = parent[k] }
-        p.environment = env
+        // 사용자 로그인만 쓰도록 최소 환경으로 실행 (API 키·다른 세션 변수가 섞이지 않게)
+        p.environment = AgentLink.environment
         let out = Pipe(), err = Pipe(), inp = Pipe()
         p.standardOutput = out
         p.standardError = err
@@ -233,7 +241,7 @@ final class AIAssistant: ObservableObject {
 
         final class LineBuffer: @unchecked Sendable { var data = Data() }
         let buf = LineBuffer()
-        out.fileHandleForReading.readabilityHandler = { [weak self] h in
+        out.fileHandleForReading.readabilityHandler = { h in
             let chunk = h.availableData
             guard !chunk.isEmpty else { return }
             log?.write(chunk)
@@ -242,7 +250,7 @@ final class AIAssistant: ObservableObject {
                 let line = buf.data[..<nl]
                 buf.data.removeSubrange(...nl)
                 guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { continue }
-                Task { @MainActor in self?.handlePlanEvent(obj) }
+                Task { @MainActor in onEvent(obj) }
             }
         }
         let errBuf = LineBuffer()
@@ -257,7 +265,10 @@ final class AIAssistant: ObservableObject {
                 err.fileHandleForReading.readabilityHandler = nil
                 guard let self else { return }
                 if proc.terminationStatus != 0 && proc.terminationReason != .uncaughtSignal && self.busy {
-                    let msg = String(decoding: errBuf.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                    // 시간이 찍힌 내부 로그 줄은 빼고 마지막 몇 줄만
+                    let lines = String(decoding: errBuf.data, as: UTF8.self).split(separator: "\n")
+                        .filter { $0.range(of: #"^\d{4}-\d\d-\d\dT"#, options: .regularExpression) == nil }
+                    let msg = lines.suffix(4).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
                     if !msg.isEmpty { self.report(msg) }
                 }
                 self.busy = false
@@ -267,12 +278,98 @@ final class AIAssistant: ObservableObject {
         }
         do {
             try p.run()
-            inp.fileHandleForWriting.write(Data(text.utf8))
+            inp.fileHandleForWriting.write(Data(prompt.utf8))
             try? inp.fileHandleForWriting.close()
             process = p
         } catch {
             busy = false
-            items.append(ChatItem(role: .error, text: "Claude Code 실행 실패: \(error.localizedDescription)"))
+            items.append(ChatItem(role: .error, text: "\(name) 실행 실패: \(error.localizedDescription)"))
+        }
+    }
+
+    // MARK: ChatGPT · Codex (Codex CLI 경유)
+
+    private func sendCodex(_ text: String) {
+        guard let bin = AgentLink.codexBinary else {
+            items.append(ChatItem(role: .error, text: "Codex가 설치되어 있지 않습니다. [ChatGPT로 로그인]을 눌러 주세요."))
+            return
+        }
+        items.append(ChatItem(role: .user, text: text))
+        busy = true
+        needsLogin = false
+        lastError = ""
+        status = "ChatGPT에 연결 중…"
+
+        let work = AppPaths.support.appendingPathComponent("ai-work", isDirectory: true)
+        try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        let mcpPath = AgentLink.mcpCommandPath
+        // 사용자의 개인 Codex 설정은 섞지 않고, EasyCut 편집 도구만 승인 없이 쓰게 한다
+        var cfg = ["mcp_servers.easycut.command=\"\(mcpPath)\"",
+                   "mcp_servers.easycut.args=[\"--mcp\"]",
+                   "mcp_servers.easycut.default_tools_approval_mode=\"approve\"",
+                   "sandbox_mode=\"read-only\""]
+        // 명령 실행·브라우저 등 편집과 상관없는 기본 도구는 끈다 (모르는 키는 무시되므로 -c로)
+        for f in ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "in_app_browser", "computer_use", "image_generation"] {
+            cfg.append("features.\(f)=false")
+        }
+        if effort != .auto { cfg.append("model_reasoning_effort=\"\(effort == .max ? "xhigh" : effort.rawValue)\"") }
+        var args = ["exec"]
+        if codexThread != nil { args.append("resume") }
+        args += ["--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules"]
+        for c in cfg { args += ["-c", c] }
+        var prompt = text
+        if let tid = codexThread {
+            args.append(tid)
+        } else {
+            prompt = Self.system + "\n편집 도구는 easycut MCP 서버의 도구입니다. 이 앱 편집 외의 작업(파일 수정, 명령 실행)은 하지 않습니다.\n\n사용자 요청:\n" + text
+        }
+        args.append("-")
+        launch(bin, args, in: work, prompt: prompt, name: "Codex") { [weak self] in self?.handleCodexEvent($0) }
+    }
+
+    private var lastError = ""
+
+    private func handleCodexEvent(_ e: [String: Any]) {
+        let item = e["item"] as? [String: Any] ?? [:]
+        switch e["type"] as? String {
+        case "thread.started":
+            if let tid = e["thread_id"] as? String { codexThread = tid }
+            status = "생각 중…"
+        case "item.started":
+            if item["type"] as? String == "mcp_tool_call" {
+                let name = item["tool"] as? String ?? ""
+                status = "실행: \(Self.label(name))"
+                if !name.hasPrefix("get_") && !name.hasPrefix("search_") { items.append(ChatItem(role: .tool, text: Self.label(name))) }
+            }
+        case "item.completed":
+            switch item["type"] as? String {
+            case "agent_message":
+                let t = (item["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { items.append(ChatItem(role: .assistant, text: t)) }
+                status = "생각 중…"
+            case "reasoning":
+                let t = (item["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if showThinking && !t.isEmpty { items.append(ChatItem(role: .thinking, text: t)) }
+            case "mcp_tool_call":
+                status = "생각 중…"
+            default: break
+            }
+        case "turn.completed":
+            busy = false
+            status = ""
+        case "turn.failed":
+            let msg = (e["error"] as? [String: Any])?["message"] as? String ?? "Codex 오류"
+            if msg != lastError { report(msg) }
+            lastError = msg
+            busy = false
+            status = ""
+        case "error":
+            let msg = e["message"] as? String ?? ""
+            if msg.lowercased().contains("reconnecting") { status = "다시 연결 중…"; return }
+            if !msg.isEmpty && msg != lastError { report(msg) }
+            lastError = msg
+        default:
+            break
         }
     }
 
@@ -323,14 +420,22 @@ final class AIAssistant: ObservableObject {
 
     nonisolated static func isAuthError(_ t: String) -> Bool {
         let l = t.lowercased()
-        return l.contains("authenticate") || l.contains("oauth") || l.contains("/login") || l.contains("not logged in") || l.contains("invalid api key")
+        return l.contains("authenticate") || l.contains("oauth") || l.contains("/login") || l.contains("not logged in")
+            || l.contains("invalid api key") || l.contains("401 unauthorized") || l.contains("codex login")
     }
 
     private func report(_ t: String) {
         if Self.isAuthError(t) {
             needsLogin = true
-            items.append(ChatItem(role: .error, text: "Claude 로그인이 필요합니다. 터미널에서 claude 를 실행하고 /login 으로 Pro/Max 계정에 로그인한 뒤 다시 시도하세요."))
+            if backend == .codex {
+                AgentLink.shared.codex = .loggedOut
+                items.append(ChatItem(role: .error, text: "ChatGPT 로그인이 필요합니다. [로그인]을 눌러 주세요."))
+            } else {
+                AgentLink.shared.claude = .loggedOut
+                items.append(ChatItem(role: .error, text: "Claude 로그인이 필요합니다. [로그인]을 눌러 주세요."))
+            }
             planSession = nil
+            codexThread = nil
         } else {
             items.append(ChatItem(role: .error, text: t))
         }

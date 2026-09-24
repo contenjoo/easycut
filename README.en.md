@@ -25,7 +25,7 @@ Requires an **Apple Silicon Mac (M1 or later) with macOS 14 or later**.
 3. Download the Whisper model (574 MB) with **Turn On Whisper** in the Transcript tab, and the YouTube tool (yt-dlp) with **Install YouTube Tool** in the link window — once each.
 
 The Whisper speech engine and ffmpeg (for MKV etc.) are bundled, so there is nothing else to install (no Homebrew needed).
-AI editing is optional. It works with your Claude Pro/Max plan (via Claude Code login) or your own API key; the API key is stored only in the macOS Keychain.
+AI editing is optional. Click **Log in with Claude** or **Log in with ChatGPT** in the AI tab and the app installs what it needs and logs you in (uses your subscription, no API key). Your own Claude API key also works; it is stored only in the macOS Keychain.
 
 Updates are automatic from 1.3.0 on: when a new version is released, the app tells you at launch and installs it with one click (**EasyCut › Check for Updates…**).
 
@@ -55,8 +55,8 @@ Needs Xcode Command Line Tools (Swift 5.10+), `cmake` (`brew install cmake`) and
 | Text (titles) | Text clips on top of the picture with position, size and color |
 | Layout & effects | Size, position, opacity, picture-in-picture, fades, shape (circle, rounded rectangle), person background blur/removal |
 | Cut by captions | Deleting a caption line also deletes its video; dragging captions in the list reorders the video with them; Track 1 clips can be dragged to insert-reorder (⌥+drag = free move) |
-| AI editing | Edit by talking: "cut all the silences", "2× speed from 3:00 to 5:00" (Claude Pro/Max plan login or API key). Choose the model (Fable 5.1 · Opus 5.5 · Opus 5 · Sonnet 5 · Haiku 4.5), reasoning effort and whether to show thinking |
-| Claude connection (MCP) | Control the app directly from Claude Code / Claude Desktop |
+| AI editing | Edit by talking: "cut all the silences", "2× speed from 3:00 to 5:00" (one-click Claude Pro/Max or ChatGPT Plus/Pro login, or an API key). Choose the model (Fable 5.1 · Opus 5.5 · Opus 5 · Sonnet 5 · Haiku 4.5), reasoning effort and whether to show thinking |
+| AI app connection (MCP) | Control the app directly from Claude Code / Claude Desktop / Codex |
 | Export | MP4 (H.264/HEVC), MOV (ProRes), audio (M4A), 4K/1080p/720p/480p, SRT alongside, save the current frame as PNG |
 | Projects | Save/open `.easycut` files, up to 300 undo steps, **live auto-save** (unsaved new projects are kept for recovery at the next launch) |
 | Auto update | Tells you at launch when GitHub has a new version and installs it with one click |
@@ -115,15 +115,17 @@ Files such as MKV, WebM and AVI are converted to MP4 automatically on import (ff
 - With both engines the transcript appears as it is recognized.
   - Click **Turn On Whisper** in the Transcript tab, or Engine settings › Whisper › **Download** a model (Large v3 Turbo recommended, about 574 MB).
 
-## AI editing / connecting Claude
+## AI editing / connecting AI accounts
 
-- **Claude connection helper** (AI tab or Tools › Connect Claude…): install Claude Code → log in → connect Claude Desktop/Claude Code, all with buttons.
-- **In the app — Claude plan (default, no API key)**: install Claude Code and log in once to your Pro/Max account with `claude` → `/login` in Terminal. Then just type something like "cut all the parts with no talking" in the **AI** tab and it edits using your subscription. (The app runs your logged-in Claude Code internally and lets it use only the editing tools.)
-- **In the app — API key**: AI tab ⚙︎ › Connection › API key → enter the key (stored in the Keychain). The model is `claude-opus-5`.
-- **From Claude Code**: register once while the app is running
+- **One-click login** (AI tab or Tools › Connect AI Accounts…): click **Log in with Claude** (Pro/Max) or **Log in with ChatGPT** (Plus/Pro · Codex) and finish logging in in your browser. If Claude Code / Codex is missing, the official release is installed automatically. No Terminal or other setup needed.
+- Then type something like "cut all the parts with no talking" in the **AI** tab and it edits using your subscription. (The app runs your logged-in Claude Code / Codex internally and lets it use only EasyCut's editing tools; your personal settings and plugins are not mixed in.)
+- **API key**: AI tab ⚙︎ › Set Claude API Key… (stored in the Keychain). ChatGPT can also log in with an OpenAI API key in the Connect AI Accounts window.
+- **From other AI apps**: one Connect button each for Claude Desktop / Claude Code / Codex in the Connect AI Accounts window. To do it by hand:
+- **From Claude Code / Codex**: register once while the app is running
 
   ```bash
   claude mcp add easycut -- /Applications/EasyCut.app/Contents/MacOS/EasyCut --mcp
+  codex mcp add easycut -- /Applications/EasyCut.app/Contents/MacOS/EasyCut --mcp
   ```
 
 - **From Claude Desktop**: add to `mcpServers` in Settings › Developer › Edit Config
