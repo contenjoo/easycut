@@ -1,4 +1,14 @@
-EasyCut for Windows (베타 / Beta)
+EasyCut for Windows 0.1.1 (베타 / Beta)
+
+[0.1.1 고친 점]
+• 눈금자를 끌면 언제나 구간이 선택됩니다 (Alt를 누른 채 끌면 재생헤드만 이동)
+• 무음 컷으로 잘린 부분을 재생할 때 검은 화면이 깜박이던 문제
+• 타임라인을 확대하면 글자가 옆으로 늘어나고 클릭 위치가 어긋나던 문제
+
+[Fixed in 0.1.1]
+• Dragging the ruler always selects a range (hold Alt to move only the playhead)
+• Black flashes when playback crosses silence cuts
+• Stretched text and misplaced clicks when zooming into a long timeline
 
 [설치]
 • Windows 10/11 (64비트)
