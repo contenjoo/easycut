@@ -207,8 +207,10 @@ export class Player {
     el.style.left = (this.cw - w) / 2 + c.offsetX * this.cw + "px";
     el.style.top = (this.ch - h) / 2 + c.offsetY * this.ch + "px";
     el.style.objectFit = shape === "circle" ? "cover" : "fill";
-    el.style.borderRadius = shape === "circle" ? "50%" : shape === "rounded" ? "8%" : "0";
-    el.style.border = shape === "circle" ? "2px solid rgba(255,255,255,.95)" : "none";
+    // 맥·내보내기와 같게: 원은 흰 테두리(지름의 1.8%), 둥근 사각형은 짧은 변의 8%
+    el.style.borderRadius = shape === "circle" ? "50%" : shape === "rounded" ? `${Math.min(w, h) * 0.08}px` : "0";
+    el.style.border = shape === "circle" ? `${Math.max(1.5, w * 0.018)}px solid rgba(255,255,255,.95)` : "none";
+    el.style.boxSizing = "border-box";
     const fi = c.fadeIn > 0 ? Math.min(1, (S.time - c.start) / c.fadeIn) : 1;
     const fo = c.fadeOut > 0 ? Math.min(1, (U.clipEnd(c) - S.time) / c.fadeOut) : 1;
     el.style.opacity = String(Math.max(0, c.opacity * fi * fo));

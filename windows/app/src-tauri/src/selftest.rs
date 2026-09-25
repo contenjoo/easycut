@@ -116,8 +116,18 @@ pub fn run(dir: &Path) -> i32 {
         let subs = export::has_subtitles_filter(&ff);
         if subs { c.check(true, "ffmpeg has libass (captions burn in)") } else { println!("  note: this ffmpeg has no libass → captions/text not burned in") }
     }
+    // 얼굴 카메라처럼 원 모양 작은 화면 (모양 자르기 필터 확인)
+    if let Some(a) = p.assets.iter().find(|a| a.kind == easycut_core::MediaKind::Video).cloned() {
+        let id = p.insert(&a, 1, 0.0, 5.0);
+        if let Some(c) = p.clip_mut(id) {
+            c.extra.insert("shape".into(), serde_json::json!("circle"));
+            c.scale = 0.3;
+            c.offset_x = 0.3;
+            c.offset_y = 0.3;
+        }
+    }
     let out = dir.join("export.mp4");
-    let opts = export::Options { path: out.to_string_lossy().to_string(), height: 720, burn_captions: true };
+    let opts = export::Options { path: out.to_string_lossy().to_string(), height: 720, burn_captions: true, format: "mp4".into(), range: None };
     let t0 = std::time::Instant::now();
     match export::export(&p, &opts, |_| {}, || false) {
         Ok(()) => match media::probe(&out) {
@@ -128,6 +138,20 @@ pub fn run(dir: &Path) -> i32 {
             Err(e) => c.check(false, &format!("probe export: {e}")),
         },
         Err(e) => c.check(false, &e),
+    }
+
+    println!("6b) snapshot PNG and audio-only M4A");
+    let png = dir.join("frame.png");
+    let o = export::Options { path: png.to_string_lossy().to_string(), height: 0, burn_captions: true, format: "png".into(), range: Some((1.0, 1.04)) };
+    match export::export(&p, &o, |_| {}, || false) {
+        Ok(()) => c.check(std::fs::metadata(&png).map(|m| m.len() > 1000).unwrap_or(false), "snapshot PNG written"),
+        Err(e) => c.check(false, &format!("snapshot: {e}")),
+    }
+    let m4a = dir.join("audio.m4a");
+    let o = export::Options { path: m4a.to_string_lossy().to_string(), height: 0, burn_captions: false, format: "m4a".into(), range: None };
+    match export::export(&p, &o, |_| {}, || false).and_then(|_| media::probe(&m4a)) {
+        Ok(a) => c.check(a.has_audio && a.kind == easycut_core::MediaKind::Audio, &format!("audio-only export {:.2}s", a.duration)),
+        Err(e) => c.check(false, &format!("m4a: {e}")),
     }
 
     println!("7) speech recognition");

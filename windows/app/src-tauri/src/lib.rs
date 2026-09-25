@@ -456,6 +456,19 @@ fn update_clip(app: AppHandle, st: State<AppState>, id: Id, props: HashMap<Strin
                         ("fadeIn", Some(x)) => c.fade_in = x.max(0.0),
                         ("fadeOut", Some(x)) => c.fade_out = x.max(0.0),
                         ("text", _) => c.text = v.as_str().unwrap_or("").to_string(),
+                        ("textStyle", _) => {
+                            if let Ok(st) = serde_json::from_value(v.clone()) {
+                                c.text_style = st;
+                            }
+                        }
+                        // 맥 파일 형식 그대로 (없으면 기본)
+                        ("shape" | "backgroundEffect" | "showClicks", _) => {
+                            if v.is_null() || v.as_str() == Some("none") || v.as_bool() == Some(false) {
+                                c.extra.remove(k.as_str());
+                            } else {
+                                c.extra.insert(k.clone(), v.clone());
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -498,6 +511,11 @@ fn update_project(app: AppHandle, st: State<AppState>, props: HashMap<String, Va
                     "canvasWidth" => p.canvas_width = v.as_f64().unwrap_or(p.canvas_width),
                     "canvasHeight" => p.canvas_height = v.as_f64().unwrap_or(p.canvas_height),
                     "fps" => p.fps = v.as_f64().unwrap_or(p.fps),
+                    "background" => {
+                        if let Ok(c) = serde_json::from_value(v.clone()) {
+                            p.background = c;
+                        }
+                    }
                     "showCaptions" => p.show_captions = v.as_bool().unwrap_or(p.show_captions),
                     "captionStyle" => {
                         if let Ok(s) = serde_json::from_value(v.clone()) {
@@ -1090,17 +1108,41 @@ fn cancel_job(st: State<AppState>) {
 // MARK: 내보내기
 
 #[tauri::command]
-async fn export_video(app: AppHandle, st: State<'_, AppState>, path: String, height: u32, burn_captions: bool) -> Res<()> {
+#[allow(clippy::too_many_arguments)]
+async fn export_video(app: AppHandle, st: State<'_, AppState>, path: String, height: u32, burn_captions: bool, format: Option<String>, also_srt: Option<bool>, range: Option<(f64, f64)>) -> Res<Value> {
     let project = with(&st, |e| e.project.clone());
     let cancel = st.cancel.clone();
     cancel.store(false, Ordering::SeqCst);
     let a2 = app.clone();
-    let opts = export::Options { path, height, burn_captions };
+    let opts = export::Options { path: path.clone(), height, burn_captions, format: format.unwrap_or_else(|| "mp4".into()), range };
+    let srt_text = (also_srt == Some(true) && !project.captions.is_empty()).then(|| srt::make(&project.captions));
+    let started = std::time::Instant::now();
     tauri::async_runtime::spawn_blocking(move || {
         export::export(&project, &opts, |v| job(&a2, "export", v, "내보내는 중…"), || cancel.load(Ordering::SeqCst))
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    job(&app, "export", 1.0, "");
+    if let Some(t) = srt_text {
+        let _ = std::fs::write(std::path::Path::new(&path).with_extension("srt"), t);
+    }
+    Ok(json!({ "path": path, "seconds": started.elapsed().as_secs_f64() }))
+}
+
+/// 지금 화면을 PNG로 (재생헤드 위치 한 장면)
+#[tauri::command]
+async fn snapshot_png(app: AppHandle, st: State<'_, AppState>, path: String, time: f64) -> Res<()> {
+    let project = with(&st, |e| e.project.clone());
+    let fps = if project.fps > 0.0 { project.fps } else { 30.0 };
+    let opts = export::Options { path, height: 0, burn_captions: true, format: "png".into(), range: Some((time, time + 1.0 / fps)) };
+    let _ = app;
+    tauri::async_runtime::spawn_blocking(move || export::export(&project, &opts, |_| {}, || false)).await.map_err(|e| e.to_string())?
+}
+
+/// 내보낼 크기 (화면 표시용)
+#[tauri::command]
+fn export_size(st: State<AppState>, height: u32) -> (i64, i64) {
+    with(&st, |e| export::out_size(&e.project, height))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1120,6 +1162,7 @@ pub fn run() {
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
+            snapshot_png, export_size,
             stt_models, stt_select, stt_download, export_transcript,
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,

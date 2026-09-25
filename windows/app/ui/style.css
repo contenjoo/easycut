@@ -156,3 +156,14 @@ button.danger-text { color: #ff7b7b; }
 .sumbox b.red { color: #ff6b6b; }
 .ok { color: #3fbf6a; font-size: 12px; }
 .model-row { border-bottom: 1px solid var(--line); padding: 4px 0; }
+/* 인스펙터 */
+.insp { padding: 10px; }
+.insp .ihead { font-size: 13px; margin-bottom: 4px; word-break: break-all; }
+.insp h3 { margin-top: 16px; }
+.speedgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.speedgrid button { padding: 3px 0; }
+.seg.small { margin: 0; flex: 1; }
+.seg.small button { padding: 3px 4px; font-size: 12px; }
+.quick { display: flex; flex-direction: column; gap: 4px; }
+.quick button { text-align: left; background: transparent; border-color: transparent; }
+.quick button:hover { background: var(--panel2); }

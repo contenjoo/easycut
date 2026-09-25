@@ -301,74 +301,115 @@ function renderInspector() {
   const selected = U.clips().filter((x) => S.sel.has(x.c.id));
   const cap = !selected.length && S.selCap ? p.captions.find((c) => c.id === S.selCap) : null;
   if (cap) return captionInspector(el, cap);
+  const pct = (v) => Math.round(v * 100) + "%";
+  const slider = (key, label, min, max, step, val, fmt) =>
+    `<div class="row"><label>${L(label)}</label><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"/><span class="hint" data-v="${key}">${fmt(val)}</span></div>`;
+  const speedGrid = (cur) => `<div class="speedgrid">${[0.5, 1, 1.5, 2, 3, 4, 8, 10, 16, 20].map((s) => `<button class="mini ${cur != null && Math.abs(cur - s) < 0.001 ? "primary" : ""}" data-speed="${s}">${s}x</button>`).join("")}</div>`;
+  const wireSpeeds = (ids) => el.querySelectorAll("[data-speed]").forEach((b) => (b.onclick = () => run("set_speed", { ids, speed: +b.dataset.speed })));
+
   if (selected.length === 1) {
     const { c } = selected[0];
     const a = U.asset(c.assetID);
     const isText = c.kind === "text";
-    const slider = (key, label, min, max, step, val, fmt) =>
-      `<div class="row"><label>${label}</label><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"/><span class="hint" data-v="${key}">${fmt(val)}</span></div>`;
-    const pct = (v) => Math.round(v * 100) + "%";
-    const n2 = (v) => (+v).toFixed(2);
-    el.innerHTML = `<div style="padding:10px">
-      <h3>${T("clip")}</h3><div class="hint" style="word-break:break-all">${isText ? T("text") : a?.name || ""}</div>
-      <div class="hint">${U.fmt(c.start)} · ${U.fmt(U.clipDur(c))}</div>
-      ${isText ? `<div class="row"><label>${T("textContent")}</label><textarea id="i-text" rows="2" style="flex:1"></textarea></div>` : ""}
-      ${!isText && a?.kind !== "image" ? `<h3>${T("speed")}</h3><div class="row" id="i-speeds"></div>` : ""}
-      ${!isText && a?.hasAudio ? slider("volume", T("volume"), 0, 2, 0.01, c.volume, pct) : ""}
-      ${slider("scale", T("scale"), 0.1, 3, 0.01, c.scale, pct)}
-      ${slider("offsetX", T("posX"), -1, 1, 0.01, c.offsetX, n2)}
-      ${slider("offsetY", T("posY"), -1, 1, 0.01, c.offsetY, n2)}
-      ${slider("opacity", T("opacity"), 0, 1, 0.01, c.opacity, pct)}
-      ${slider("fadeIn", T("fadeIn"), 0, 3, 0.1, c.fadeIn, (v) => (+v).toFixed(1) + "s")}
-      ${slider("fadeOut", T("fadeOut"), 0, 3, 0.1, c.fadeOut, (v) => (+v).toFixed(1) + "s")}
+    const kind = isText ? "text" : a?.kind || "video";
+    const icon = { text: "🔤", video: "🎬", audio: "🎵", image: "🖼" }[kind];
+    const shape = c.shape || "none";
+    const fmts = { volume: pct, scale: pct, opacity: pct, offsetX: (v) => (+v).toFixed(2), offsetY: (v) => (+v).toFixed(2), fadeIn: (v) => L("{}초", (+v).toFixed(1)), fadeOut: (v) => L("{}초", (+v).toFixed(1)) };
+    el.innerHTML = `<div class="insp">
+      <div class="ihead">${icon} <b>${esc(isText ? L("텍스트") : a?.name || L("클립"))}</b></div>
+      <div class="hint">${L("시작 {} · 길이 {}", U.fmt(c.start), U.fmt(U.clipDur(c)))}${c.groupID ? " · 🔗 " + L("그룹") : ""}</div>
+      ${isText ? `<h3>${L("내용")}</h3><textarea id="i-text" rows="3" style="width:100%"></textarea><div id="i-tstyle"></div>` : ""}
+      ${kind === "video" || kind === "audio" ? `<h3>${L("속도 (최대 20배)")}</h3>
+        <div class="row"><input type="range" id="i-speed" min="${Math.log(0.1)}" max="${Math.log(20)}" step="0.01" value="${Math.log(c.speed)}" style="flex:1"/><span class="hint" id="i-speed-v">${c.speed}x</span></div>
+        ${speedGrid(c.speed)}` : ""}
+      ${kind === "video" || kind === "audio" ? `<h3>${L("오디오")}</h3>${slider("volume", "볼륨", 0, 2, 0.01, c.volume, pct)}
+        <div class="row"><button class="mini" id="i-mute">${L(c.volume === 0 ? "소리 켜기" : "음소거")}</button>
+        ${a?.hasAudio ? `<button class="mini" id="i-stt">${L(a.words ? "다시 인식" : "음성 인식")}</button>` : ""}</div>` : ""}
+      ${kind !== "audio" ? `<h3>${L("화면")}</h3>
+        ${slider("scale", "크기", 0.1, 4, 0.01, c.scale, pct)}
+        ${slider("offsetX", "가로 위치", -1, 1, 0.01, c.offsetX, fmts.offsetX)}
+        ${slider("offsetY", "세로 위치", -1, 1, 0.01, c.offsetY, fmts.offsetY)}
+        ${slider("opacity", "불투명도", 0, 1, 0.01, c.opacity, pct)}
+        ${!isText ? `<div class="row"><label>${L("모양")}</label><div class="seg small">${[["none", "기본"], ["circle", "원"], ["rounded", "둥근 사각형"]].map(([v, t]) => `<button data-shape="${v}" class="${shape === v ? "on" : ""}">${L(t)}</button>`).join("")}</div></div>` : ""}
+        <div class="row"><span class="hint">${L("화면 배치")}</span><button class="mini" data-layout="full">${L("전체")}</button><button class="mini" data-layout="br">PIP ↘</button><button class="mini" data-layout="bl">PIP ↙</button></div>` : ""}
+      <h3>${L("전환 (페이드)")}</h3>
+      ${slider("fadeIn", "페이드 인", 0, 3, 0.1, c.fadeIn, fmts.fadeIn)}
+      ${slider("fadeOut", "페이드 아웃", 0, 3, 0.1, c.fadeOut, fmts.fadeOut)}
+      <hr/><div class="row"><button class="mini" id="i-split">✂ ${L("분할")}</button><button class="mini" id="i-dup">⧉ ${L("복제")}</button><button class="mini danger-text" id="i-del">🗑 ${L("삭제")}</button></div>
     </div>`;
-    const speeds = el.querySelector("#i-speeds");
-    if (speeds) {
-      for (const s of [0.5, 1, 1.5, 2, 3, 4, 8, 16, 20]) {
-        const b = document.createElement("button");
-        b.textContent = s + "x";
-        if (Math.abs(c.speed - s) < 0.001) b.classList.add("primary");
-        b.onclick = () => run("set_speed", { ids: [c.id], speed: s });
-        speeds.appendChild(b);
-      }
+    const q = (s) => el.querySelector(s);
+    if (isText) {
+      q("#i-text").value = c.text;
+      q("#i-text").onkeydown = (e) => e.stopPropagation();
+      q("#i-text").onchange = () => run("update_clip", { id: c.id, props: { text: q("#i-text").value } });
+      styleControls(q("#i-tstyle"), c.textStyle, (st) => run("update_clip", { id: c.id, props: { textStyle: st } }), true);
     }
-    const txt = el.querySelector("#i-text");
-    if (txt) { txt.value = c.text; txt.onchange = () => run("update_clip", { id: c.id, props: { text: txt.value } }); }
+    if (q("#i-speed")) {
+      q("#i-speed").oninput = (e) => (q("#i-speed-v").textContent = (Math.round(Math.exp(+e.target.value) * 100) / 100) + "x");
+      q("#i-speed").onchange = (e) => run("set_speed", { ids: [c.id], speed: Math.round(Math.exp(+e.target.value) * 100) / 100 });
+      wireSpeeds([c.id]);
+    }
+    if (q("#i-mute")) q("#i-mute").onclick = () => run("update_clip", { id: c.id, props: { volume: c.volume === 0 ? 1 : 0 } });
+    if (q("#i-stt")) q("#i-stt").onclick = () => transcribeAsset(a.id);
+    el.querySelectorAll("[data-shape]").forEach((b) => (b.onclick = () => run("update_clip", { id: c.id, props: { shape: b.dataset.shape } })));
+    el.querySelectorAll("[data-layout]").forEach((b) => (b.onclick = () => {
+      const L0 = { full: { scale: 1, offsetX: 0, offsetY: 0 }, br: { scale: 0.3, offsetX: 0.33, offsetY: 0.32 }, bl: { scale: 0.3, offsetX: -0.33, offsetY: 0.32 } }[b.dataset.layout];
+      run("update_clip", { id: c.id, props: L0 });
+    }));
+    q("#i-split").onclick = split;
+    q("#i-dup").onclick = commands.duplicate;
+    q("#i-del").onclick = () => deleteSelection(true);
     el.querySelectorAll("input[data-k]").forEach((inp) => {
       const k = inp.dataset.k;
       const out = el.querySelector(`[data-v="${k}"]`);
       inp.oninput = () => {
         c[k] = +inp.value; // 미리보기 즉시 반영
-        out.textContent = k === "volume" || k === "scale" || k === "opacity" ? pct(+inp.value) : k.startsWith("fade") ? (+inp.value).toFixed(1) + "s" : n2(inp.value);
+        out.textContent = fmts[k](+inp.value);
         player?.refresh();
       };
       inp.onchange = () => run("update_clip", { id: c.id, props: { [k]: +inp.value } });
     });
   } else if (selected.length > 1) {
-    el.innerHTML = `<div style="padding:10px"><h3>${selected.length}${T("clipsSelected")}</h3><div class="row" id="i-speeds"></div>
-      <div class="row"><button id="i-del">${T("delete")}</button></div></div>`;
-    for (const s of [0.5, 1, 1.5, 2, 4, 8, 16]) {
-      const b = document.createElement("button");
-      b.textContent = s + "x";
-      b.onclick = () => run("set_speed", { ids: [...S.sel], speed: s });
-      el.querySelector("#i-speeds").appendChild(b);
-    }
+    const ids = selected.map((x) => x.c.id);
+    el.innerHTML = `<div class="insp"><div class="ihead">▦ <b>${L("{}개 클립 선택", selected.length)}</b></div>
+      <h3>${L("속도 한꺼번에")}</h3>${speedGrid(null)}
+      <div class="row"><button class="mini" id="i-group">🔗 ${L("그룹으로 묶기")}</button><button class="mini" id="i-join">${L("하나로 합치기")}</button></div>
+      <div class="row"><button class="mini danger-text" id="i-del">🗑 ${L("삭제")}</button><button class="mini danger-text" id="i-rdel">⇤ ${L("삭제 후 당기기")}</button></div></div>`;
+    wireSpeeds(ids);
+    el.querySelector("#i-group").onclick = commands.group;
+    el.querySelector("#i-join").onclick = commands.join;
     el.querySelector("#i-del").onclick = () => deleteSelection(false);
+    el.querySelector("#i-rdel").onclick = () => deleteSelection(true);
   } else {
-    const presets = [[1920, 1080], [3840, 2160], [1280, 720], [1080, 1920], [1080, 1080], [1080, 1350]];
+    const presets = [["1920×1080 (가로 FHD)", 1920, 1080], ["3840×2160 (가로 4K)", 3840, 2160], ["1280×720 (가로 HD)", 1280, 720], ["1080×1920 (세로 쇼츠/릴스)", 1080, 1920], ["1080×1080 (정사각형)", 1080, 1080], ["1080×1350 (4:5 피드)", 1080, 1350]];
     const cur = `${p.canvasWidth}x${p.canvasHeight}`;
-    const has = presets.some(([w, h]) => `${w}x${h}` === cur);
-    el.innerHTML = `<div style="padding:10px"><h3>${T("project")}</h3>
-      <div class="row"><label>${T("canvas")}</label><select id="i-canvas">${has ? "" : `<option value="${cur}">${p.canvasWidth}×${p.canvasHeight}</option>`}
-      ${presets.map(([w, h]) => `<option value="${w}x${h}">${w}×${h}</option>`).join("")}</select></div>
-      <div class="row"><label>${T("fps")}</label><select id="i-fps">${[24, 25, 30, 50, 60].map((f) => `<option ${Math.round(p.fps) === f ? "selected" : ""}>${f}</option>`).join("")}</select></div>
-      <p class="hint">${T("selectClipHint")}</p></div>`;
+    const has = presets.some(([, w, h]) => `${w}x${h}` === cur);
+    const clipsN = U.clips().length;
+    el.innerHTML = `<div class="insp"><div class="ihead">▭ <b>${L("프로젝트")}</b></div>
+      <p class="hint">${L("클립을 선택하면 속도·볼륨·크기를 조절할 수 있습니다.")}</p>
+      <h3>${L("화면 크기")}</h3><select id="i-canvas" style="width:100%">${has ? "" : `<option value="${cur}">${p.canvasWidth}×${p.canvasHeight} (${L("원본")})</option>`}
+        ${presets.map(([t, w, h]) => `<option value="${w}x${h}">${L(t)}</option>`).join("")}</select>
+      <h3>${L("프레임 레이트")}</h3><div class="seg small">${[24, 25, 30, 50, 60].map((f) => `<button data-fps="${f}" class="${Math.round(p.fps) === f ? "on" : ""}">${f}</button>`).join("")}</div>
+      <div class="row"><label>${L("배경색")}</label><input type="color" id="i-bg" value="${hexColor(p.background)}"/></div>
+      <hr/><h3>${L("요약")}</h3>
+      <div class="hint">${L("전체 길이: {}", U.fmt(U.duration()))}<br>${L("클립: {}개 · 자막: {}개", clipsN, p.captions.length)}<br>${L("대본 단어: {}개", S.words.length)}</div>
+      <hr/><h3>${L("빠른 작업")}</h3>
+      <div class="quick"><button id="q-text">🔤 ${L("텍스트(제목) 추가")}</button><button id="q-cap">💬 ${L("자막 추가")}</button>
+      <button id="q-png">📷 ${L("현재 장면 PNG 저장")}</button><button id="q-keys">⌨ ${L("단축키 보기")}</button></div></div>`;
     el.querySelector("#i-canvas").value = cur;
     el.querySelector("#i-canvas").onchange = (e) => {
       const [w, h] = e.target.value.split("x").map(Number);
       run("update_project", { props: { canvasWidth: w, canvasHeight: h } });
     };
-    el.querySelector("#i-fps").onchange = (e) => run("update_project", { props: { fps: +e.target.value } });
+    el.querySelectorAll("[data-fps]").forEach((b) => (b.onclick = () => run("update_project", { props: { fps: +b.dataset.fps } })));
+    el.querySelector("#i-bg").onchange = (e) => {
+      const v = e.target.value;
+      run("update_project", { props: { background: { r: parseInt(v.slice(1, 3), 16) / 255, g: parseInt(v.slice(3, 5), 16) / 255, b: parseInt(v.slice(5, 7), 16) / 255, a: 1 } } });
+    };
+    el.querySelector("#q-text").onclick = addText;
+    el.querySelector("#q-cap").onclick = () => addCaption();
+    el.querySelector("#q-png").onclick = snapshot;
+    el.querySelector("#q-keys").onclick = shortcutsDialog;
   }
 }
 
@@ -433,26 +474,78 @@ async function addText() {
   if (text) run("add_text", { time: S.time, text });
 }
 
+// MARK: 내보내기 (맥 ExportSheet: 형식, 해상도, 자막 입히기, SRT, 진행률·남은 시간, 완료 창)
+
+const EXPORT_FORMATS = [["mp4", "MP4 (H.264)", "mp4"], ["hevc", "MP4 (HEVC, 용량 작음)", "mp4"], ["prores", "MOV (ProRes, 고화질)", "mov"], ["m4a", "오디오만 (M4A)", "m4a"]];
+
 async function exportDialog() {
+  if (U.duration() <= 0) return toast(L("타임라인이 비어 있습니다."));
   const box = $("#modal-box");
-  box.innerHTML = `<h2>${T("exportTitle")}</h2>
-    <div class="row"><label>${T("resolution")}</label><select id="e-res"><option value="0">${T("original")}</option><option value="2160">4K</option><option value="1080" selected>1080p</option><option value="720">720p</option></select></div>
-    <div class="row"><label><input type="checkbox" id="e-cap" checked/> ${T("burnCaptions")}</label></div>
-    <div class="btns"><button id="e-cancel">${T("cancel")}</button><button class="primary" id="e-go">${T("export")}…</button></div>`;
-  $("#modal").classList.remove("hidden");
-  $("#e-cancel").onclick = () => $("#modal").classList.add("hidden");
-  $("#e-go").onclick = async () => {
-    const height = +$("#e-res").value;
-    const burn = $("#e-cap").checked;
-    $("#modal").classList.add("hidden");
-    const base = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : "EasyCut";
-    const path = await tauri.dialog.save({ defaultPath: `${base}.mp4`, filters: [{ name: "MP4", extensions: ["mp4"] }] });
-    if (!path) return;
-    try {
-      await invoke("export_video", { path, height, burnCaptions: burn });
-      toast(T("exported"));
-    } catch (e) { showError(e); }
+  const pref = (k, d) => { try { const v = localStorage.getItem("export." + k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem("export." + k, JSON.stringify(v)); } catch (_) {} };
+  const o = { format: pref("format", "mp4"), res: pref("res", 1080), burn: pref("burn", true), srt: pref("srt", false) };
+  const p = S.project;
+  const draw = async () => {
+    const [w, h] = await invoke("export_size", { height: o.res });
+    const audio = o.format === "m4a";
+    box.innerHTML = `<h2>${L("내보내기")}</h2>
+      <div class="row"><label>${L("형식")}</label><select id="e-fmt">${EXPORT_FORMATS.map(([v, t]) => `<option value="${v}" ${o.format === v ? "selected" : ""}>${L(t)}</option>`).join("")}</select></div>
+      ${audio ? "" : `<div class="row"><label>${L("해상도")}</label><select id="e-res">
+        <option value="0">${L("프로젝트 크기 ({}×{})", p.canvasWidth, p.canvasHeight)}</option>
+        ${[[2160, "2160p (4K)"], [1080, "1080p (FHD)"], [720, "720p (HD)"], [480, "480p"]].map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></div>
+        <div class="row"><label></label><label class="hint" style="width:auto"><input type="checkbox" id="e-cap" ${o.burn ? "checked" : ""}/> ${L("자막을 영상에 입히기")}</label></div>`}
+      <div class="row"><label></label><label class="hint" style="width:auto"><input type="checkbox" id="e-srt" ${o.srt ? "checked" : ""} ${p.captions.length ? "" : "disabled"}/> ${L("SRT 자막 파일도 함께 저장")}</label></div>
+      <p class="hint">${audio ? L("길이 {}", U.fmt(U.duration())) : L("출력 {}×{} · 길이 {}", w, h, U.fmt(U.duration()))}</p>
+      <div class="btns"><button id="e-cancel">${L("취소")}</button><button class="primary" id="e-go">${L("내보내기…")}</button></div>`;
+    const q = (s) => box.querySelector(s);
+    if (q("#e-res")) q("#e-res").value = String(o.res);
+    q("#e-fmt").onchange = (e) => { o.format = e.target.value; setPref("format", o.format); draw(); };
+    if (q("#e-res")) q("#e-res").onchange = (e) => { o.res = +e.target.value; setPref("res", o.res); draw(); };
+    if (q("#e-cap")) q("#e-cap").onchange = (e) => { o.burn = e.target.checked; setPref("burn", o.burn); };
+    q("#e-srt").onchange = (e) => { o.srt = e.target.checked; setPref("srt", o.srt); };
+    q("#e-cancel").onclick = () => $("#modal").classList.add("hidden");
+    q("#e-go").onclick = go;
   };
+  const go = async () => {
+    const [, label, ext] = EXPORT_FORMATS.find((f) => f[0] === o.format);
+    const base = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : L("새 프로젝트");
+    const path = await tauri.dialog.save({ defaultPath: `${base} ${L("편집본")}.${ext}`, filters: [{ name: label, extensions: [ext] }] });
+    if (!path) return;
+    player.pause();
+    const started = performance.now();
+    box.innerHTML = `<h2>${L("내보내기")}</h2><progress id="e-pr" max="1" style="width:100%"></progress>
+      <div class="row"><span id="e-pct" class="hint">0%</span><span id="e-eta" class="hint"></span><span class="spacer"></span><button id="e-stop">${L("취소")}</button></div>`;
+    box.querySelector("#e-stop").onclick = () => invoke("cancel_job");
+    const un = await listen("job", (e) => {
+      if (e.payload.id !== "export") return;
+      const v = e.payload.value;
+      const pr = box.querySelector("#e-pr");
+      if (!pr) return;
+      pr.value = v;
+      box.querySelector("#e-pct").textContent = Math.round(v * 100) + "%";
+      if (v > 0.03 && v < 1) {
+        const el = (performance.now() - started) / 1000;
+        box.querySelector("#e-eta").textContent = " · " + L("남은 시간 약 {}", U.fmt(el / v - el).replace(/\.\d+$/, ""));
+      }
+    });
+    try {
+      await invoke("export_video", { path, height: o.res, burnCaptions: o.burn, format: o.format, alsoSrt: o.srt });
+      box.innerHTML = `<h2>✅ ${L("내보내기 완료!")}</h2><p class="hint" style="word-break:break-all">${esc(path)}</p>
+        <div class="btns"><button id="e-show">${L("탐색기에서 보기")}</button><button id="e-play">${L("재생")}</button><span class="spacer"></span><button class="primary" id="e-close">${L("닫기")}</button></div>`;
+      box.querySelector("#e-show").onclick = () => invoke("reveal_file", { path });
+      box.querySelector("#e-play").onclick = () => invoke("open_file", { path });
+      box.querySelector("#e-close").onclick = () => $("#modal").classList.add("hidden");
+    } catch (e) {
+      const msg = L(String(e?.message ?? e));
+      box.innerHTML = `<h2>${L("내보내기")}</h2><p class="hint" style="color:#ff7b7b;white-space:pre-line">${esc(msg)}</p>
+        <div class="btns"><button class="primary" id="e-close">${L("닫기")}</button></div>`;
+      box.querySelector("#e-close").onclick = () => $("#modal").classList.add("hidden");
+    } finally {
+      un();
+    }
+  };
+  await draw();
+  $("#modal").classList.remove("hidden");
 }
 
 
@@ -506,6 +599,17 @@ function jumpEdit(forward) {
   const list = [...pts].sort((a, b) => a - b);
   const t = forward ? list.find((p) => p > S.time + 0.01) : [...list].reverse().find((p) => p < S.time - 0.01);
   if (t != null) seek(t);
+}
+
+const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const hexColor = (c) => "#" + [c.r, c.g, c.b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+
+/// 재생헤드 위치 장면을 PNG로 (맥 '현재 장면 PNG로 저장')
+async function snapshot() {
+  const base = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : "EasyCut";
+  const path = await tauri.dialog.save({ defaultPath: `${base} ${U.fmt(S.time).replace(/[:.]/g, "-")}.png`, filters: [{ name: "PNG", extensions: ["png"] }] });
+  if (!path) return;
+  try { await invoke("snapshot_png", { path, time: S.time }); toast(L("장면을 저장했습니다")); } catch (e) { showError(e); }
 }
 
 function applySelect(v) {
@@ -564,6 +668,7 @@ const commands = {
   },
   paste: async () => applySelect(await run("paste_clips", { time: S.time })),
   sttSettings,
+  snapshot,
   findTranscript: focusSearch,
   selectAll: () => { S.sel = new Set(U.clips().map((x) => x.c.id)); window.dispatchEvent(new Event("selection")); },
   group: async () => {

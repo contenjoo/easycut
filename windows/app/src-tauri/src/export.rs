@@ -7,9 +7,13 @@ use std::process::Stdio;
 
 pub struct Options {
     pub path: String,
-    /// 출력 높이 (0 = 프로젝트 크기)
+    /// 출력 해상도: 짧은 변 기준 (0 = 프로젝트 크기). 맥과 같이 세로 영상의 1080p는 1080×1920
     pub height: u32,
     pub burn_captions: bool,
+    /// "mp4" (H.264) | "hevc" | "prores" | "m4a" (소리만) | "png" (한 장면)
+    pub format: String,
+    /// 이 구간만 (초)
+    pub range: Option<(f64, f64)>,
 }
 
 fn even(v: f64) -> i64 {
@@ -65,6 +69,13 @@ pub fn font_name() -> &'static str {
     if cfg!(windows) { "Malgun Gothic" } else { "Apple SD Gothic Neo" }
 }
 
+/// 스타일의 글꼴 (맥에서 만든 프로젝트의 맥 전용 글꼴은 기본 글꼴로)
+fn style_font(st: &TextStyle) -> String {
+    let f = st.font_name.trim();
+    let mac_only = f.is_empty() || f.starts_with("AppleSDGothic") || f.starts_with("Apple SD") || f.starts_with(".") || f.contains("-");
+    if mac_only { font_name().to_string() } else { f.to_string() }
+}
+
 fn style_line(name: &str, st: &TextStyle, unit: f64) -> String {
     let boxed = st.background_color.a > 0.01;
     let (border, outline_col, outline) = if boxed {
@@ -76,7 +87,7 @@ fn style_line(name: &str, st: &TextStyle, unit: f64) -> String {
     };
     format!(
         "Style: {name},{font},{size:.0},{fg},&H000000FF,{oc},&H00000000,{bold},0,0,0,100,100,0,0,{border},{outline:.1},0,5,20,20,20,1",
-        font = font_name(),
+        font = style_font(st),
         size = st.font_size * unit,
         fg = ass_color(&st.text_color),
         oc = outline_col,
@@ -119,15 +130,44 @@ fn build_ass(p: &Project, w: i64, h: i64, captions: bool) -> Option<String> {
     ))
 }
 
+/// 구간만 남긴 프로젝트 (앞뒤를 잘라 내고 0초부터)
+fn slice(p: &Project, a: f64, b: f64) -> Project {
+    let mut q = p.clone();
+    let end = q.duration() + 1.0;
+    if b < end {
+        q.ripple_delete(b, end);
+    }
+    if a > 0.0 {
+        q.ripple_delete(0.0, a);
+    }
+    q
+}
+
+/// 출력 크기: 짧은 변 기준 (0 = 프로젝트 크기)
+pub fn out_size(p: &Project, short: u32) -> (i64, i64) {
+    let (cw, ch) = (p.canvas_width.max(2.0), p.canvas_height.max(2.0));
+    if short == 0 {
+        return (even(cw), even(ch));
+    }
+    let s = short as f64 / cw.min(ch);
+    (even(cw * s), even(ch * s))
+}
+
 pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl Fn() -> bool) -> Result<(), String> {
     let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다.")?;
+    let sliced;
+    let p = match opts.range {
+        Some((a, b)) if b > a => {
+            sliced = slice(p, a, b);
+            &sliced
+        }
+        _ => p,
+    };
     let total = p.duration();
     if total <= 0.01 {
         return Err("타임라인이 비어 있습니다.".into());
     }
-    let (cw, ch) = (p.canvas_width.max(2.0), p.canvas_height.max(2.0));
-    let h = if opts.height == 0 { even(ch) } else { even(opts.height as f64) };
-    let w = even(cw * h as f64 / ch);
+    let (w, h) = out_size(p, opts.height);
     let fps = if p.fps > 0.0 { p.fps } else { 30.0 };
     let work = tools::temp_dir().join(format!("export-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&work);
@@ -135,11 +175,12 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     let mut args: Vec<String> = vec!["-y".into(), "-nostdin".into(), "-hide_banner".into(), "-v".into(), "error".into()];
     let mut graph = String::new();
     let bg = &p.background;
-    let _ = writeln!(
+    let audio_only = opts.format == "m4a";
+    let _ = if audio_only { Ok(()) } else { writeln!(
         graph,
         "color=c=0x{:02X}{:02X}{:02X}:s={w}x{h}:r={fps}:d={total:.3}[base0];",
         (bg.r * 255.0) as u8, (bg.g * 255.0) as u8, (bg.b * 255.0) as u8
-    );
+    ) };
     let mut last = "base0".to_string();
     let mut audio_labels = vec![];
     let mut input = 0usize;
@@ -154,7 +195,7 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
             }
             let src_len = c.source_out - c.source_in;
             let visual = !tr.hidden && matches!(a.kind, MediaKind::Video | MediaKind::Image);
-            let audible = !tr.muted && c.volume > 0.001 && a.has_audio && a.kind != MediaKind::Image;
+            let audible = opts.format != "png" && !tr.muted && c.volume > 0.001 && a.has_audio && a.kind != MediaKind::Image;
             if !visual && !audible {
                 continue;
             }
@@ -165,13 +206,29 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
             }
             let i = input;
             input += 1;
-            if visual && a.width > 0.0 && a.height > 0.0 {
-                let fit = (w as f64 / a.width).min(h as f64 / a.height) * c.scale;
-                let (vw, vh) = (even(a.width * fit), even(a.height * fit));
+            if visual && a.width > 0.0 && a.height > 0.0 && opts.format != "m4a" {
+                // 모양: 원은 가운데 정사각형으로 잘라 원 + 흰 테두리, 둥근 사각형은 모서리 8%
+                let shape = c.extra.get("shape").and_then(|v| v.as_str()).unwrap_or("none");
+                let (aw, ah) = if shape == "circle" { let s = a.width.min(a.height); (s, s) } else { (a.width, a.height) };
+                let fit = (w as f64 / aw).min(h as f64 / ah) * c.scale;
+                let (vw, vh) = (even(aw * fit), even(ah * fit));
                 let x = (w - vw) as f64 / 2.0 + c.offset_x * w as f64;
                 let y = (h - vh) as f64 / 2.0 + c.offset_y * h as f64;
                 let speed = if a.kind == MediaKind::Image { 1.0 } else { c.speed };
-                let mut chain = format!("[{i}:v]setpts=(PTS-STARTPTS)/{speed:.6},fps={fps},scale={vw}:{vh},format=yuva420p");
+                let crop = if shape == "circle" { "crop='min(iw,ih)':'min(iw,ih)'," } else { "" };
+                let mut chain = format!("[{i}:v]setpts=(PTS-STARTPTS)/{speed:.6},fps={fps},{crop}scale={vw}:{vh},format=yuva420p");
+                match shape {
+                    "circle" => {
+                        let rim = (vw as f64 * 0.018).max(2.0);
+                        let d = "hypot(X-W/2,Y-H/2)";
+                        let _ = write!(chain, ",format=yuva444p,geq=lum='if(lte({d},W/2-{rim:.1}),lum(X,Y),235)':cb='if(lte({d},W/2-{rim:.1}),cb(X,Y),128)':cr='if(lte({d},W/2-{rim:.1}),cr(X,Y),128)':a='if(lte({d},W/2),if(lte({d},W/2-{rim:.1}),alpha(X,Y),242),0)',format=yuva420p");
+                    }
+                    "rounded" => {
+                        let r = (vw.min(vh) as f64 * 0.08).max(2.0);
+                        let _ = write!(chain, ",format=yuva444p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='if(gt(abs(X-W/2),W/2-{r:.1})*gt(abs(Y-H/2),H/2-{r:.1}),if(lte(hypot(abs(X-W/2)-(W/2-{r:.1}),abs(Y-H/2)-(H/2-{r:.1})),{r:.1}),alpha(X,Y),0),alpha(X,Y))',format=yuva420p");
+                    }
+                    _ => {}
+                }
                 if c.opacity < 0.999 {
                     let _ = write!(chain, ",colorchannelmixer=aa={:.3}", c.opacity);
                 }
@@ -209,14 +266,18 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     }
 
     // 자막·텍스트
-    let ass = if has_subtitles_filter(&ffmpeg) { build_ass(p, w, h, opts.burn_captions) } else { None };
+    let ass = if !audio_only && has_subtitles_filter(&ffmpeg) { build_ass(p, w, h, opts.burn_captions) } else { None };
     if let Some(ass) = ass {
         std::fs::write(work.join("subs.ass"), ass).map_err(|e| e.to_string())?;
         let _ = writeln!(graph, "[{last}]subtitles=subs.ass[vsub];");
         last = "vsub".into();
     }
-    let _ = writeln!(graph, "[{last}]format=yuv420p[vout];");
-    if audio_labels.is_empty() {
+    if !audio_only {
+        let _ = writeln!(graph, "[{last}]format={}[vout];", if opts.format == "prores" { "yuv422p10le" } else { "yuv420p" });
+    }
+    if opts.format == "png" {
+        // 장면 한 장: 소리 없음
+    } else if audio_labels.is_empty() {
         let _ = writeln!(graph, "anullsrc=r=48000:cl=stereo,atrim=0:{total:.3}[aout]");
     } else {
         let _ = writeln!(graph, "{}amix=inputs={}:normalize=0:dropout_transition=0,atrim=0:{total:.3}[aout]", audio_labels.join(""), audio_labels.len());
@@ -224,12 +285,20 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     let script = work.join("graph.txt");
     std::fs::write(&script, &graph).map_err(|e| e.to_string())?;
 
-    args.extend(["-/filter_complex".into(), "graph.txt".into(), "-map".into(), "[vout]".into(), "-map".into(), "[aout]".into()]);
-    args.extend(
-        ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-r"].iter().map(|s| s.to_string()),
-    );
-    args.push(format!("{fps}"));
-    args.extend(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t"].iter().map(|s| s.to_string()));
+    args.extend(["-/filter_complex".into(), "graph.txt".into()]);
+    let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    match opts.format.as_str() {
+        "m4a" => args.extend(a(&["-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])),
+        "png" => args.extend(a(&["-map", "[vout]", "-frames:v", "1", "-update", "1"])),
+        "prores" => args.extend(a(&["-map", "[vout]", "-map", "[aout]", "-c:v", "prores_ks", "-profile:v", "2", "-c:a", "pcm_s16le"])),
+        "hevc" => args.extend(a(&["-map", "[vout]", "-map", "[aout]", "-c:v", "libx265", "-preset", "fast", "-crf", "24", "-tag:v", "hvc1", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])),
+        _ => args.extend(a(&["-map", "[vout]", "-map", "[aout]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])),
+    }
+    if !audio_only && opts.format != "png" {
+        args.push("-r".into());
+        args.push(format!("{fps}"));
+    }
+    args.push("-t".into());
     args.push(format!("{total:.3}"));
     args.extend(["-progress".into(), "pipe:1".into(), "-nostats".into(), opts.path.clone()]);
 
