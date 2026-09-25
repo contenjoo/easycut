@@ -45,13 +45,54 @@ pub fn check() -> Result<Value, String> {
     })
 }
 
-/// 설치 파일을 받아 실행 (실행 후 앱은 스스로 종료)
-pub fn install(url: &str) -> Result<(), String> {
-    let dest = tools::temp_dir().join("EasyCut-setup.exe");
-    let status = tools::command(&curl()).args(["-sL", "--fail", "-o"]).arg(&dest).arg(url).status().map_err(|e| e.to_string())?;
-    if !status.success() {
-        return Err("업데이트 파일을 받지 못했습니다.".into());
+/// 파일 받기 (curl: 윈도우 10 이상에 기본으로 들어 있다)
+pub fn download(url: &str, dest: &std::path::Path) -> Result<(), String> {
+    if let Some(d) = dest.parent() {
+        let _ = std::fs::create_dir_all(d);
     }
-    std::process::Command::new(&dest).spawn().map_err(|e| format!("설치 파일을 실행하지 못했습니다: {e}"))?;
+    let status = tools::command(&curl()).args(["-sL", "--fail", "--retry", "3", "-o"]).arg(dest).arg(url).status().map_err(|e| e.to_string())?;
+    if !status.success() || std::fs::metadata(dest).map_or(0, |m| m.len()) == 0 {
+        let _ = std::fs::remove_file(dest);
+        return Err(format!("받지 못했습니다: {url}"));
+    }
+    Ok(())
+}
+
+/// 설치 파일을 받아 둔다 (윈도우 실행 파일인지 확인)
+pub fn fetch_installer(url: &str) -> Result<PathBuf, String> {
+    let dest = tools::temp_dir().join("EasyCut-setup.exe");
+    download(url, &dest).map_err(|_| "업데이트 파일을 받지 못했습니다.".to_string())?;
+    let mut head = [0u8; 2];
+    let ok = std::fs::File::open(&dest).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head)).is_ok();
+    if !ok || &head != b"MZ" {
+        let _ = std::fs::remove_file(&dest);
+        return Err("받은 업데이트 파일이 올바르지 않습니다.".into());
+    }
+    Ok(dest)
+}
+
+/// 앱이 끝나기를 기다렸다가 조용히 설치하고 다시 연다 (reopen: 다시 열 프로젝트)
+pub fn install_and_relaunch(setup: &std::path::Path, reopen: Option<&str>) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let q = |s: &str| s.replace('\'', "''");
+    let args = reopen.map(|p| format!(" -ArgumentList '\"{}\"'", q(p))).unwrap_or_default();
+    let script = format!(
+        "Wait-Process -Id {pid} -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; \
+         $p = Start-Process -FilePath '{setup}' -ArgumentList '/S' -Wait -PassThru; \
+         Start-Process -FilePath '{exe}'{args}",
+        pid = std::process::id(),
+        setup = q(&setup.to_string_lossy()),
+        exe = q(&exe.to_string_lossy()),
+    );
+    if cfg!(windows) {
+        let ps = PathBuf::from(std::env::var_os("SystemRoot").unwrap_or("C:\\Windows".into())).join("System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+        tools::command(&ps)
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", &script])
+            .spawn()
+            .map_err(|e| format!("업데이트를 시작하지 못했습니다: {e}"))?;
+    } else {
+        // 맥에서 개발할 때는 설치 파일을 실행할 수 없으므로 여기까지만 확인
+        return Err("윈도우에서만 설치할 수 있습니다.".into());
+    }
     Ok(())
 }

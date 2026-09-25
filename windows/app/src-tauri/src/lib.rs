@@ -1,10 +1,18 @@
 //! EasyCut for Windows — Tauri 백엔드. 편집 규칙은 easycut-core, 화면은 ui/ (HTML·JS).
+mod ai;
+mod ai_tools;
+mod control;
+mod edits;
 mod export;
+mod link;
 mod media;
+mod recovery;
 mod selftest;
 mod stt;
 mod tools;
 mod update;
+
+pub use control::run_mcp;
 
 pub use selftest::run as selftest;
 
@@ -26,6 +34,8 @@ struct Editor {
     redo: Vec<Project>,
     dirty: bool,
     loudness: HashMap<Id, Vec<f32>>,
+    /// 바뀔 때마다 늘어난다 (자동 저장·복구 파일이 새로 써야 하는지 판단)
+    rev: u64,
 }
 
 impl Editor {
@@ -40,7 +50,26 @@ impl Editor {
             }
             self.redo.clear();
             self.dirty = true;
+            self.rev += 1;
         }
+    }
+
+    fn undo_step(&mut self) -> bool {
+        let Some(prev) = self.undo.pop() else { return false };
+        let cur = std::mem::replace(&mut self.project, prev);
+        self.redo.push(cur);
+        self.dirty = true;
+        self.rev += 1;
+        true
+    }
+
+    fn redo_step(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else { return false };
+        let cur = std::mem::replace(&mut self.project, next);
+        self.undo.push(cur);
+        self.dirty = true;
+        self.rev += 1;
+        true
     }
 
     fn snapshot(&self) -> Value {
@@ -66,9 +95,22 @@ impl Editor {
     }
 }
 
+/// 화면 쪽 상태 (AI가 재생헤드·선택을 알아야 할 때)
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct UiState {
+    time: f64,
+    selection: Vec<String>,
+    mark_in: Option<f64>,
+    mark_out: Option<f64>,
+    /// 음성 인식 언어 ("ko", "en", "auto" …)
+    language: String,
+}
+
 struct AppState {
     editor: Mutex<Editor>,
     cancel: Arc<AtomicBool>,
+    ui: Mutex<UiState>,
 }
 
 type Res<T> = Result<T, String>;
@@ -88,6 +130,13 @@ fn changed(app: &AppHandle, st: &State<AppState>) -> Value {
     v
 }
 
+/// 프로젝트가 바뀐 것을 화면에 알린다 (명령 밖: AI 도구, 제어 서버)
+fn emit_state(app: &AppHandle) -> Value {
+    let v = app.state::<AppState>().editor.lock().unwrap().snapshot();
+    let _ = app.emit("project", &v);
+    v
+}
+
 // MARK: 프로젝트
 
 #[tauri::command]
@@ -98,6 +147,7 @@ fn get_state(st: State<AppState>) -> Value {
 #[tauri::command]
 fn new_project(app: AppHandle, st: State<AppState>) -> Value {
     with(&st, |e| *e = Editor::default());
+    recovery::clear();
     changed(&app, &st)
 }
 
@@ -110,6 +160,7 @@ fn open_project(app: AppHandle, st: State<AppState>, path: String) -> Res<Value>
         e.project = p;
         e.path = Some(PathBuf::from(&path));
     });
+    recovery::clear();
     Ok(changed(&app, &st))
 }
 
@@ -125,30 +176,19 @@ fn save_project(app: AppHandle, st: State<AppState>, path: Option<String>) -> Re
         e.path = Some(target);
         e.dirty = false;
     });
+    recovery::clear();
     Ok(changed(&app, &st))
 }
 
 #[tauri::command]
 fn undo(app: AppHandle, st: State<AppState>) -> Value {
-    with(&st, |e| {
-        if let Some(prev) = e.undo.pop() {
-            let cur = std::mem::replace(&mut e.project, prev);
-            e.redo.push(cur);
-            e.dirty = true;
-        }
-    });
+    with(&st, |e| e.undo_step());
     changed(&app, &st)
 }
 
 #[tauri::command]
 fn redo(app: AppHandle, st: State<AppState>) -> Value {
-    with(&st, |e| {
-        if let Some(next) = e.redo.pop() {
-            let cur = std::mem::replace(&mut e.project, next);
-            e.undo.push(cur);
-            e.dirty = true;
-        }
-    });
+    with(&st, |e| e.redo_step());
     changed(&app, &st)
 }
 
@@ -451,25 +491,26 @@ fn import_srt(app: AppHandle, st: State<AppState>, path: String) -> Res<Value> {
 
 /// 소리 크기로 무음 구간 찾기. apply=false면 미리보기 구간만 돌려준다.
 #[tauri::command]
-async fn silence_ranges(app: AppHandle, st: State<'_, AppState>, settings: Option<SilenceSettings>, auto: bool, apply: bool) -> Res<Value> {
+async fn silence_ranges(app: AppHandle, settings: Option<SilenceSettings>, auto: bool, apply: bool) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || silence_blocking(&app, settings, auto, apply)).await.map_err(|e| e.to_string())?
+}
+
+fn silence_blocking(app: &AppHandle, settings: Option<SilenceSettings>, auto: bool, apply: bool) -> Res<Value> {
+    let st = app.state::<AppState>();
     let (assets, have) = with(&st, |e| {
         let used: HashSet<Id> = e.project.tracks.first().map(|t| t.clips.iter().filter_map(|c| c.asset_id).collect()).unwrap_or_default();
         let assets: Vec<_> = e.project.assets.iter().filter(|a| used.contains(&a.id) && a.has_audio).map(|a| (a.id, a.path.clone())).collect();
         (assets, e.loudness.clone())
     });
-    let a2 = app.clone();
-    let todo: Vec<_> = assets.into_iter().filter(|(id, _)| !have.contains_key(id)).collect();
-    let computed = tauri::async_runtime::spawn_blocking(move || {
-        todo.into_iter()
-            .map(|(id, path)| {
-                job(&a2, "silence", 0.0, "소리 분석 중…");
-                media::pcm(&PathBuf::from(path), 8000).map(|s| (id, loudness(&s)))
-            })
-            .collect::<Vec<_>>()
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    job(&app, "silence", 1.0, "");
+    let computed: Vec<_> = assets
+        .into_iter()
+        .filter(|(id, _)| !have.contains_key(id))
+        .map(|(id, path)| {
+            job(app, "silence", 0.0, "소리 분석 중…");
+            media::pcm(&PathBuf::from(path), 8000).map(|s| (id, loudness(&s)))
+        })
+        .collect();
+    job(app, "silence", 1.0, "");
     let mut settings = settings.unwrap_or_default();
     let v = with(&st, |e| {
         for r in computed.into_iter().flatten() {
@@ -487,7 +528,7 @@ async fn silence_ranges(app: AppHandle, st: State<'_, AppState>, settings: Optio
         json!({ "ranges": ranges.iter().map(|r| [r.start, r.end]).collect::<Vec<_>>(), "removed": removed, "threshold": settings.threshold })
     });
     if apply {
-        changed(&app, &st);
+        emit_state(app);
     }
     Ok(v)
 }
@@ -508,34 +549,37 @@ async fn download_model(app: AppHandle) -> Res<()> {
 }
 
 #[tauri::command]
-async fn transcribe(app: AppHandle, st: State<'_, AppState>, asset: Id, language: String) -> Res<Value> {
+async fn transcribe(app: AppHandle, asset: Id, language: String) -> Res<Value> {
+    let a2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || transcribe_blocking(&a2, asset, &language)).await.map_err(|e| e.to_string())??;
+    Ok(emit_state(&app))
+}
+
+fn transcribe_blocking(app: &AppHandle, asset: Id, language: &str) -> Res<()> {
+    let st = app.state::<AppState>();
     let path = with(&st, |e| e.project.assets.iter().find(|a| a.id == asset).map(|a| a.path.clone())).ok_or("파일을 찾을 수 없습니다")?;
     let cancel = st.cancel.clone();
     cancel.store(false, Ordering::SeqCst);
     let a2 = app.clone();
-    let words = tauri::async_runtime::spawn_blocking(move || {
-        stt::transcribe(
-            &PathBuf::from(path),
-            &language,
-            |v, m| job(&a2, "stt", v, &m),
-            |ws| {
-                // 인식되는 대로 대본에 바로 보이게 (실행 취소 기록은 남기지 않음)
-                let st = a2.state::<AppState>();
-                let snap = {
-                    let mut e = st.editor.lock().unwrap();
-                    if let Some(a) = e.project.assets.iter_mut().find(|a| a.id == asset) {
-                        a.words = Some(ws.to_vec());
-                    }
-                    e.snapshot()
-                };
-                let _ = a2.emit("project", snap);
-            },
-            || cancel.load(Ordering::SeqCst),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    job(&app, "stt", 1.0, "");
+    let words = stt::transcribe(
+        &PathBuf::from(path),
+        if language.is_empty() { "ko" } else { language },
+        |v, m| job(&a2, "stt", v, &m),
+        |ws| {
+            // 인식되는 대로 대본에 바로 보이게 (실행 취소 기록은 남기지 않음)
+            let st = a2.state::<AppState>();
+            let snap = {
+                let mut e = st.editor.lock().unwrap();
+                if let Some(a) = e.project.assets.iter_mut().find(|a| a.id == asset) {
+                    a.words = Some(ws.to_vec());
+                }
+                e.snapshot()
+            };
+            let _ = a2.emit("project", snap);
+        },
+        || cancel.load(Ordering::SeqCst),
+    )?;
+    job(app, "stt", 1.0, "");
     with(&st, |e| {
         // 중간에 채워 둔 대본은 되돌린 뒤 한 번의 편집으로 기록
         if let Some(a) = e.project.assets.iter_mut().find(|a| a.id == asset) {
@@ -547,7 +591,7 @@ async fn transcribe(app: AppHandle, st: State<'_, AppState>, asset: Id, language
             }
         })
     });
-    Ok(changed(&app, &st))
+    Ok(())
 }
 
 #[tauri::command]
@@ -555,12 +599,177 @@ async fn check_update() -> Res<Value> {
     tauri::async_runtime::spawn_blocking(update::check).await.map_err(|e| e.to_string())?
 }
 
+/// 업데이트: 작업을 저장(또는 복구용 파일에 보관)하고, 설치 파일을 받아 조용히 설치한 뒤 다시 연다
 #[tauri::command]
 async fn install_update(app: AppHandle, url: String) -> Res<()> {
     job(&app, "update", 0.0, "업데이트 받는 중…");
-    tauri::async_runtime::spawn_blocking(move || update::install(&url)).await.map_err(|e| e.to_string())??;
+    let a2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Res<()> {
+        let setup = update::fetch_installer(&url)?;
+        job(&a2, "update", 0.9, "설치 준비 중…");
+        recovery::save_now(&a2);
+        let reopen = {
+            let e = a2.state::<AppState>().inner().editor.lock().unwrap();
+            e.path.clone().filter(|_| !e.dirty)
+        };
+        update::install_and_relaunch(&setup, reopen.as_ref().map(|p| p.to_string_lossy()).as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     app.exit(0);
     Ok(())
+}
+
+// MARK: 자동 저장 · 복구 · 설정
+
+#[tauri::command]
+fn recovery_check() -> Option<Value> {
+    recovery::check()
+}
+
+#[tauri::command]
+fn recovery_restore(app: AppHandle, st: State<AppState>) -> Res<Value> {
+    let p = recovery::load().ok_or("복구할 작업을 읽지 못했습니다.")?;
+    with(&st, |e| {
+        *e = Editor::default();
+        e.project = p;
+        e.dirty = true;
+        e.rev = 1;
+    });
+    Ok(changed(&app, &st))
+}
+
+#[tauri::command]
+fn recovery_discard() {
+    recovery::clear();
+}
+
+/// 앱을 끝내기 전에 (저장 안 함을 고른 경우 포함) 복구용 파일을 지운다
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    recovery::clear();
+    app.exit(0);
+}
+
+#[tauri::command]
+fn get_prefs() -> Value {
+    let mut p = recovery::prefs();
+    p["autosave"] = json!(recovery::autosave_enabled());
+    p["version"] = json!(update::CURRENT);
+    p
+}
+
+#[tauri::command]
+fn set_pref(key: String, value: Value) {
+    recovery::set_pref(&key, value);
+}
+
+/// 화면 쪽 상태 알림 (재생헤드, 선택, 구간, 인식 언어)
+#[tauri::command]
+fn ui_state(st: State<AppState>, state: UiState) {
+    *st.ui.lock().unwrap() = state;
+}
+
+// MARK: AI
+
+#[tauri::command]
+fn ai_settings(app: AppHandle) -> Value {
+    ai::settings_json(&app)
+}
+
+#[tauri::command]
+fn ai_set_settings(app: AppHandle, settings: ai::Settings) -> Value {
+    ai::set_settings(&app, settings);
+    ai::settings_json(&app)
+}
+
+#[tauri::command]
+fn ai_send(app: AppHandle, text: String) {
+    ai::send(&app, &text);
+}
+
+#[tauri::command]
+fn ai_cancel(app: AppHandle) {
+    ai::cancel(&app);
+}
+
+#[tauri::command]
+fn ai_reset(app: AppHandle) {
+    ai::reset(&app);
+}
+
+#[tauri::command]
+fn ai_set_key(app: AppHandle, key: String) -> Res<Value> {
+    ai::save_key(&key)?;
+    Ok(ai::agents_json(&app))
+}
+
+#[tauri::command]
+fn ai_agents(app: AppHandle) -> Value {
+    ai::agents_json(&app)
+}
+
+#[tauri::command]
+async fn ai_refresh_agents(app: AppHandle) -> Res<Value> {
+    let a2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || ai::refresh_agents(&a2)).await.map_err(|e| e.to_string())?;
+    Ok(ai::agents_json(&app))
+}
+
+#[tauri::command]
+async fn ai_connect(app: AppHandle, provider: String) -> Res<Value> {
+    let a2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || ai::connect(&a2, provider == "codex")).await.map_err(|e| e.to_string())??;
+    Ok(ai::agents_json(&app))
+}
+
+#[tauri::command]
+async fn ai_connect_codex_key(app: AppHandle, key: String) -> Res<Value> {
+    let a2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || ai::connect_codex_with_key(&a2, &key)).await.map_err(|e| e.to_string())??;
+    Ok(ai::agents_json(&app))
+}
+
+#[tauri::command]
+fn ai_cancel_login(app: AppHandle) {
+    ai::cancel_login(&app);
+}
+
+#[tauri::command]
+fn ai_links() -> Value {
+    ai::links_json()
+}
+
+/// 다른 AI 앱에 EasyCut 연결 ("desktop" | "code" | "codex")
+#[tauri::command]
+async fn ai_link(target: String) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || match target.as_str() {
+        "desktop" => ai::link_desktop(),
+        "code" => ai::link_code(),
+        _ => ai::link_codex(),
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(ai::links_json())
+}
+
+// MARK: 링크로 가져오기
+
+#[tauri::command]
+async fn import_link(app: AppHandle, url: String, quality: String, start: Option<f64>, end: Option<f64>) -> Res<String> {
+    tauri::async_runtime::spawn_blocking(move || link::import_blocking(&app, &url, &link::Options { quality, start, end }))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn ytdlp_status() -> Value {
+    json!({ "installed": link::ytdlp().is_some() })
+}
+
+#[tauri::command]
+async fn ytdlp_update() -> Res<()> {
+    tauri::async_runtime::spawn_blocking(link::install_ytdlp).await.map_err(|e| e.to_string())?
 }
 
 /// 실행할 때 넘겨받은 파일 (탐색기에서 "EasyCut으로 열기", 끌어다 놓기로 실행)
@@ -597,16 +806,22 @@ async fn export_video(app: AppHandle, st: State<'_, AppState>, path: String, hei
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)) })
+        .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)), ui: Mutex::default() })
+        .manage(ai::Ai::default())
         .invoke_handler(tauri::generate_handler![
             get_state, new_project, open_project, save_project, undo, redo,
             import_files, add_to_timeline, remove_asset,
             split, delete_clips, ripple_delete_range, move_clips, reorder_clip, trim_clip, set_speed, update_clip, update_track, add_text, update_project,
             delete_words, update_word, remove_fillers, generate_captions, export_srt, import_srt, silence_ranges,
             whisper_status, download_model, transcribe, cancel_job, export_video, startup_files, check_update, install_update,
+            recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
+            ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
+            ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update,
         ])
         .setup(|app| {
             let _ = app.path().app_data_dir();
+            control::start(app.handle().clone());
+            recovery::start(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

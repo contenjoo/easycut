@@ -3,6 +3,11 @@
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    // 외부 AI(Claude/Codex)가 실행하는 MCP 서버 모드: 창 없이 표준 입출력으로 동작
+    if args.iter().any(|a| a == "--mcp") {
+        easycut_app::run_mcp();
+        return;
+    }
     if let Some(i) = args.iter().position(|a| a == "--selftest") {
         let dir = args.get(i + 1).map(std::path::PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("easycut-selftest"));
         std::process::exit(easycut_app::selftest(&dir));
