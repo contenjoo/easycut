@@ -232,6 +232,12 @@ export async function connectDialog() {
   let links = await invoke("ai_links").catch(() => ({}));
   let msg = "";
   const draw = () => {
+    // 다른 창(업데이트 안내 등)으로 바뀌었거나 닫혔으면 다시 그리지 않는다
+    if (drawn && (!modalBox.querySelector("#cn-close") || document.querySelector("#modal").classList.contains("hidden"))) {
+      unlisten?.();
+      return;
+    }
+    drawn = true;
     const step = (key, title) => `<div class="row"><span>${links[key] ? "✅" : "⚪"}</span><span style="flex:1">${L(title)}</span>
       <button class="mini" data-link="${key}" ${key === "code" && !links.claudeInstalled || key === "codex" && !links.codexInstalled ? "disabled" : ""}>${L(links[key] ? "다시 연결" : "연결하기")}</button></div>`;
     modalBox.innerHTML = `<h2>✨ ${L("AI 계정 연결")}</h2>
@@ -274,6 +280,7 @@ export async function connectDialog() {
   };
   // 로그인 진행 상황이 바뀌면 창도 다시 그린다
   let unlisten = null;
+  let drawn = false;
   listen("ai", (e) => { if (e.payload.type === "agents") draw(); }).then((u) => (unlisten = u));
   draw();
   showModal();

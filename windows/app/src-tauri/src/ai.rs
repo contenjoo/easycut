@@ -117,6 +117,8 @@ pub struct Ai {
     cancel: Arc<AtomicBool>,
     /// 대화를 지우면 늘어난다. 지우기 전 실행이 보낸 늦은 이벤트를 버리기 위해
     generation: AtomicU64,
+    /// 보낼 때와 중지할 때 늘어난다. 중지한 요청의 늦은 응답이 편집하지 않게
+    run_id: AtomicU64,
     claude: Mutex<AgentState>,
     codex: Mutex<AgentState>,
     login_child: Mutex<Option<Child>>,
@@ -131,6 +133,7 @@ impl Default for Ai {
             child: Mutex::default(),
             cancel: Arc::default(),
             generation: AtomicU64::new(0),
+            run_id: AtomicU64::new(0),
             claude: Mutex::new(AgentState::Unknown),
             codex: Mutex::new(AgentState::Unknown),
             login_child: Mutex::default(),
@@ -202,6 +205,7 @@ pub fn reset(app: &AppHandle) {
 pub fn cancel(app: &AppHandle) {
     let a = ai(app);
     a.cancel.store(true, Ordering::SeqCst);
+    a.run_id.fetch_add(1, Ordering::SeqCst);
     if let Some(mut c) = a.child.lock().unwrap().take() {
         let _ = c.kill();
     }
@@ -218,6 +222,7 @@ pub fn send(app: &AppHandle, text: &str) {
     }
     let backend = a.settings.lock().unwrap().backend.clone();
     a.cancel.store(false, Ordering::SeqCst);
+    a.run_id.fetch_add(1, Ordering::SeqCst);
     let app = app.clone();
     std::thread::spawn(move || match backend.as_str() {
         "codex" => send_codex(&app, &t),
@@ -235,6 +240,7 @@ fn work_dir() -> PathBuf {
 fn send_plan(app: &AppHandle, text: &str) {
     let Some(bin) = claude_binary() else {
         item(app, "error", "Claude Code가 설치되어 있지 않습니다. [Claude로 로그인]을 눌러 주세요.");
+        set_busy(app, false);
         return;
     };
     item(app, "user", text);
@@ -273,6 +279,7 @@ fn send_plan(app: &AppHandle, text: &str) {
 fn send_codex(app: &AppHandle, text: &str) {
     let Some(bin) = codex_binary() else {
         item(app, "error", "Codex가 설치되어 있지 않습니다. [ChatGPT로 로그인]을 눌러 주세요.");
+        set_busy(app, false);
         return;
     };
     item(app, "user", text);
@@ -321,6 +328,8 @@ fn send_codex(app: &AppHandle, text: &str) {
 /// CLI를 띄워 한 줄씩 나오는 JSON 이벤트를 넘긴다. 프롬프트는 stdin으로
 fn run_cli(app: &AppHandle, bin: &Path, args: &[String], work: &Path, prompt: &str, name: &str, on_event: fn(&AppHandle, &Value)) {
     let gen = ai(app).generation.load(Ordering::SeqCst);
+    let run = ai(app).run_id.load(Ordering::SeqCst);
+    let stale = || ai(app).generation.load(Ordering::SeqCst) != gen || ai(app).run_id.load(Ordering::SeqCst) != run;
     let mut child = match agent_command(bin).args(args).current_dir(work).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -347,7 +356,7 @@ fn run_cli(app: &AppHandle, bin: &Path, args: &[String], work: &Path, prompt: &s
         if let Some(l) = log.as_mut() {
             let _ = writeln!(l, "{line}");
         }
-        if ai(app).generation.load(Ordering::SeqCst) != gen {
+        if stale() {
             break;
         }
         if let Ok(v) = serde_json::from_str::<Value>(&line) {
@@ -356,7 +365,7 @@ fn run_cli(app: &AppHandle, bin: &Path, args: &[String], work: &Path, prompt: &s
     }
     let _ = err_thread.join();
     let code = ai(app).child.lock().unwrap().take().and_then(|mut c| c.wait().ok()).and_then(|s| s.code());
-    if ai(app).generation.load(Ordering::SeqCst) != gen || ai(app).cancel.load(Ordering::SeqCst) {
+    if stale() || ai(app).cancel.load(Ordering::SeqCst) {
         return;
     }
     if code.is_some_and(|c| c != 0) && ai(app).chat.lock().unwrap().busy {
@@ -532,23 +541,34 @@ fn report(app: &AppHandle, t: &str) {
 fn send_api(app: &AppHandle, text: &str) {
     let Some(key) = load_key() else {
         item(app, "error", "Claude API 키를 먼저 설정하세요.");
+        set_busy(app, false);
         return;
     };
     item(app, "user", text);
     ai(app).chat.lock().unwrap().messages.push(json!({ "role": "user", "content": text }));
     set_busy(app, true);
+    let run = ai(app).run_id.load(Ordering::SeqCst);
     api_loop(app, &key);
-    set_busy(app, false);
+    if ai(app).run_id.load(Ordering::SeqCst) == run {
+        set_busy(app, false);
+    }
 }
 
 fn api_loop(app: &AppHandle, key: &str) {
     let show_thinking = ai(app).settings.lock().unwrap().show_thinking;
+    let run = ai(app).run_id.load(Ordering::SeqCst);
+    // 중지했거나 새 요청을 보냈으면 이 실행의 결과는 버린다
+    let stale = || ai(app).run_id.load(Ordering::SeqCst) != run;
     for _ in 0..25 {
-        if ai(app).cancel.load(Ordering::SeqCst) {
+        if stale() {
             return;
         }
         status(app, "생각 중…");
-        let resp = match api_request(app, key) {
+        let resp = api_request(app, key);
+        if stale() {
+            return;
+        }
+        let resp = match resp {
             Ok(r) => r,
             Err(e) => {
                 if !ai(app).cancel.load(Ordering::SeqCst) {
@@ -598,6 +618,9 @@ fn api_loop(app: &AppHandle, key: &str) {
         }
         let mut results = vec![];
         for u in uses {
+            if stale() {
+                return;
+            }
             let name = u["name"].as_str().unwrap_or("");
             status(app, &format!("실행: {}", ai_tools::label(name)));
             let (out, is_err) = ai_tools::execute(app, name, &u["input"]);

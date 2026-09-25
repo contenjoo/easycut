@@ -562,10 +562,23 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
             let lang = app.state::<AppState>().ui.lock().unwrap().language.clone();
             for id in targets {
                 if let Err(e) = transcribe_blocking(app, id, &lang) {
+                    emit_state(app);
                     return (format!("음성 인식 실패: {e}"), true);
                 }
             }
-            (format!("음성 인식 완료: 대본 단어 {}개", project(app).timeline_words().len()), false)
+            // 자막이 없으면 대본으로 만든다 (앱에서 처음 인식할 때와 같음)
+            let caps = { let p = project(app); if p.captions.is_empty() { p.generated_captions_default() } else { vec![] } };
+            let made = caps.len();
+            if made > 0 {
+                edit(app, |p| {
+                    p.captions = caps;
+                    p.show_captions = true;
+                });
+            } else {
+                emit_state(app);
+            }
+            let words = project(app).timeline_words().len();
+            (if made > 0 { format!("음성 인식 완료: 대본 단어 {words}개, 자막 {made}개 생성") } else { format!("음성 인식 완료: 대본 단어 {words}개") }, false)
         }
 
         "undo" => {

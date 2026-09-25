@@ -1,6 +1,6 @@
 //! 자동 저장과 복구용 파일 (맥 EditorStore 자동 저장과 같은 규칙).
 //! 편집이 멈추고 1.5초 뒤: 파일이 있는 프로젝트는 그 파일에, 저장한 적 없으면 복구용 파일에 쓴다.
-use crate::{emit_state, tools, AppState};
+use crate::{tools, AppState};
 use easycut_core::Project;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -59,7 +59,8 @@ pub fn save_now(app: &AppHandle) -> bool {
             e.dirty = false;
             drop(e);
             clear();
-            emit_state(app);
+            // 화면 전체를 다시 그리지 않게 (입력 중인 글자가 지워지지 않도록) 저장됨만 알린다
+            let _ = tauri::Emitter::emit(app, "saved", serde_json::json!({ "dirty": false }));
             return true;
         }
         return false;

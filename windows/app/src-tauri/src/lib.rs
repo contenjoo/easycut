@@ -1169,11 +1169,14 @@ fn open_url(url: String) -> Res<()> {
 /// 파일이 있는 폴더를 탐색기에서 열고 그 파일을 선택
 #[tauri::command]
 fn reveal_file(path: String) -> Res<()> {
-    let r = if cfg!(windows) {
-        std::process::Command::new("explorer.exe").arg(format!("/select,{path}")).spawn()
-    } else {
-        std::process::Command::new("/usr/bin/open").args(["-R", &path]).spawn()
+    #[cfg(windows)]
+    let r = {
+        // 공백이 있는 경로도 탐색기가 알아듣게 따옴표를 직접 붙인다
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{path}\"")).spawn()
     };
+    #[cfg(not(windows))]
+    let r = std::process::Command::new("/usr/bin/open").args(["-R", &path]).spawn();
     r.map(|_| ()).map_err(|e| e.to_string())
 }
 
@@ -1210,8 +1213,9 @@ fn rec_discard(app: AppHandle) {
     record::discard(&app);
 }
 
+/// 창을 만드는 명령은 async여야 한다 (동기 명령에서 만들면 윈도우에서 멈춘다)
 #[tauri::command]
-fn rec_panel(app: AppHandle, open: bool, camera: bool) -> Res<()> {
+async fn rec_panel(app: AppHandle, open: bool, camera: bool) -> Res<()> {
     if open {
         record::open_panel(&app, camera)
     } else {
@@ -1231,7 +1235,7 @@ async fn rec_finish(app: AppHandle, camera_circle: bool, clicks: Option<Value>, 
 }
 
 #[tauri::command]
-fn rec_area(app: AppHandle, open: bool) -> Res<()> {
+async fn rec_area(app: AppHandle, open: bool) -> Res<()> {
     if open { record::open_area_picker(&app) } else { record::close_area_picker(&app); Ok(()) }
 }
 

@@ -951,6 +951,12 @@ async function init() {
   await listen("job", (e) => jobUpdate(e.payload));
   await listen("project", (e) => setState(e.payload));
   await listen("toast", (e) => toast(L(e.payload.text)));
+  // 자동 저장: 화면을 다시 그리지 않고 제목의 '편집됨'만 지운다
+  await listen("saved", () => {
+    S.dirty = false;
+    const name = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : T("newProject");
+    $("#title").textContent = name;
+  });
   // 파일을 끌어다 놓기: 타임라인 위면 그 자리에, 아니면 미디어로 가져오기
   await listen("tauri://drag-drop", (e) => {
     const paths = e.payload?.paths;
@@ -978,9 +984,10 @@ async function init() {
   reportUi();
   await initAI($("#tab-ai"), { toast, modal });
   initRecord({ toast, modal, autoTranscribe });
+  await initShell({ S, U, run, toast, commands, switchTab, isBusyRecording: isRecording });
+  // 탐색기에서 연 파일은 앱 틀이 준비된 뒤에 연다
   const files = await invoke("startup_files");
   if (files.length) importFiles(files);
-  await initShell({ S, U, run, toast, commands, switchTab, isBusyRecording: isRecording });
 }
 
 init();
