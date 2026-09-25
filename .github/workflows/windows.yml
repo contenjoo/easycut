@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # 자체 검사에서 합성 음성으로 읽고 Whisper가 알아듣는지 확인하는 문장
+  # ("Thank you for watching." 같은 영상 끝인사는 Whisper가 다른 말과 함께 들으면 빼 버려서 쓰지 않는다)
+  SELFTEST_SPEECH_TEXT: "Hello everyone. Today we are testing the video editor on Windows. When you delete words from the transcript, the video is cut as well. The captions are made from the same words."
+
 jobs:
   build:
     runs-on: windows-latest
@@ -58,13 +63,53 @@ jobs:
           npm ci
           npx tauri build
 
+      # 앱이 쓰는 것과 같은 Whisper 모델 (574MB) — 한 번 받아 캐시
+      - name: Cache Whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Roaming\com.contenjoo.easycut.windows\models
+          key: whisper-ggml-large-v3-turbo-q5_0
+
+      - name: Download Whisper model
+        run: |
+          $dir = "$env:APPDATA\com.contenjoo.easycut.windows\models"
+          $model = "$dir\ggml-large-v3-turbo-q5_0.bin"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          if (-not (Test-Path $model) -or (Get-Item $model).Length -lt 100MB) {
+            curl.exe -L --fail -s -o $model https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          Get-Item $model | Format-Table Name, Length
+
+      - name: Make test speech
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }
+          $s.SetOutputToWaveFile("$env:RUNNER_TEMP\speech.wav")
+          $s.Speak($env:SELFTEST_SPEECH_TEXT)
+          $s.Dispose()
+          Get-Item "$env:RUNNER_TEMP\speech.wav" | Format-Table Name, Length
+
       - name: Self-test on Windows
         run: |
           $env:PATH = "$PWD\windows\app\src-tauri\resources\bin;$env:PATH"
+          # 실제 음성으로 Whisper 인식 → 대본 컷까지 검사
+          $env:EASYCUT_SELFTEST_SPEECH = "$env:RUNNER_TEMP\speech.wav"
+          $env:EASYCUT_SELFTEST_SPEECH_TEXT = $env:SELFTEST_SPEECH_TEXT
           # 창 앱(GUI subsystem)이라 끝날 때까지 기다려 종료 코드를 확인한다
           $p = Start-Process windows/target/release/easycut-windows.exe -ArgumentList "--selftest", "$env:RUNNER_TEMP\selftest" -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest.txt
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0 -or -not (Select-String -Path selftest.txt -Pattern "ALL PASSED" -Quiet)) { exit 1 }
+
+      # 자체 검사가 실패하면 원인 확인용으로 테스트 음성과 결과를 남긴다
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: selftest-debug
+          path: |
+            ${{ runner.temp }}\speech.wav
+            selftest.txt
 
       - name: MCP bridge on Windows (EasyCut.exe --mcp → running app)
         run: |

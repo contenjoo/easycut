@@ -2,7 +2,8 @@
 //! GitHub Actions 윈도우 러너에서도 돌려 설치본과 같은 도구로 동작하는지 확인한다.
 use crate::{export, media, stt, tools};
 use easycut_core::silence::{auto_threshold, loudness, SilenceSettings};
-use easycut_core::{Caption, MediaKind, Project};
+use easycut_core::transcript_ops::normalized;
+use easycut_core::{deletion_ranges, Caption, MediaKind, Project};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -41,6 +42,64 @@ fn make_media(dir: &Path) -> Result<PathBuf, String> {
         out.to_str().unwrap(),
     ])?;
     Ok(out)
+}
+
+/// 실제 음성 파일을 Whisper로 인식해 읽은 문장과 비교하고, 대본에서 단어를 지워 영상이 잘리는지 본다
+fn speech_test(c: &mut Checker, speech: &Path, expected: &str) {
+    if !(stt::model_ready() && tools::find_tool("whisper-cli").is_some()) {
+        c.check(false, &format!("whisper model/engine missing ({})", stt::model_path().display()));
+        return;
+    }
+    let asset = match media::probe(speech) {
+        Ok(a) => a,
+        Err(e) => return c.check(false, &format!("probe speech: {e}")),
+    };
+    let t0 = std::time::Instant::now();
+    let words = match stt::transcribe(speech, "en", |_, _| {}, |_| {}, || false) {
+        Ok(w) => w,
+        Err(e) => return c.check(false, &format!("whisper: {e}")),
+    };
+    println!("  heard: {}", words.iter().map(|w| format!("{}[{:.1}]", w.text, w.start)).collect::<Vec<_>>().join(" "));
+    let heard: Vec<String> = words.iter().map(|w| normalized(&w.text)).collect();
+    let want: Vec<String> = expected.split_whitespace().map(normalized).filter(|w| !w.is_empty()).collect();
+    let hits = want.iter().filter(|w| heard.contains(w)).count();
+    let recall = hits as f64 / want.len().max(1) as f64;
+    c.check(!want.is_empty() && recall >= 0.7,
+        &format!("whisper recognized {hits}/{} expected words ({:.0}%) in {:.1}s", want.len(), recall * 100.0, t0.elapsed().as_secs_f64()));
+    let bad_order: Vec<String> = words
+        .windows(2)
+        .filter(|w| !(w[0].start <= w[1].start && w[0].end <= w[1].start + 1e-6))
+        .map(|w| format!("{}[{:.2}-{:.2}]>{}[{:.2}]", w[0].text, w[0].start, w[0].end, w[1].text, w[1].start))
+        .collect();
+    let outside: Vec<String> = words
+        .iter()
+        .filter(|w| !(w.start >= 0.0 && w.end > w.start && w.end <= asset.duration + 0.5))
+        .map(|w| format!("{}[{:.2}-{:.2}]", w.text, w.start, w.end))
+        .collect();
+    c.check(!words.is_empty() && bad_order.is_empty() && outside.is_empty(),
+        &format!("word timings ordered and within {:.2}s {}{}", asset.duration, bad_order.join(" "), outside.join(" ")));
+
+    // 대본 편집: 단어 3개를 지우면 그만큼 잘린다
+    let mut p = Project::default();
+    let mut a = asset.clone();
+    a.words = Some(words);
+    p.assets.push(a.clone());
+    p.insert(&a, 0, 0.0, 5.0);
+    let tw = p.timeline_words();
+    if tw.len() < 6 {
+        return c.check(false, &format!("too few words to cut ({})", tw.len()));
+    }
+    let before = p.duration();
+    let del: HashSet<String> = tw[2..5].iter().map(|w| w.id()).collect();
+    let ranges = deletion_ranges(&del, &tw);
+    let removed: f64 = ranges.iter().map(|r| r.len()).sum();
+    p.ripple_delete_ranges(&ranges);
+    let tw2 = p.timeline_words();
+    let gone = !tw2.iter().any(|w| del.contains(&w.id()));
+    c.check(gone && tw2.len() == tw.len() - 3 && (before - p.duration() - removed).abs() < 0.02,
+        &format!("delete 3 words from transcript → {removed:.2}s cut, {} words left", tw2.len()));
+    let caps = p.generated_captions_default();
+    c.check(!caps.is_empty(), &format!("captions from transcript: {} (first: {})", caps.len(), caps.first().map(|c| c.text.as_str()).unwrap_or("")));
 }
 
 pub fn run(dir: &Path) -> i32 {
@@ -182,7 +241,11 @@ pub fn run(dir: &Path) -> i32 {
     }
 
     println!("7) speech recognition");
-    if stt::model_ready() && tools::find_tool("whisper-cli").is_some() {
+    // EASYCUT_SELFTEST_SPEECH=음성 파일, EASYCUT_SELFTEST_SPEECH_TEXT=읽은 문장 이 있으면 실제 음성으로 검사한다 (CI)
+    if let Some(speech) = std::env::var_os("EASYCUT_SELFTEST_SPEECH") {
+        let expected = std::env::var("EASYCUT_SELFTEST_SPEECH_TEXT").unwrap_or_default();
+        speech_test(&mut c, Path::new(&speech), &expected);
+    } else if stt::model_ready() && tools::find_tool("whisper-cli").is_some() {
         match stt::transcribe(&sample, "en", |_, _| {}, |_| {}, || false) {
             Ok(w) => c.check(true, &format!("whisper ran ({} words on a sine tone)", w.len())),
             Err(e) => c.check(false, &format!("whisper: {e}")),

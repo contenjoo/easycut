@@ -1,6 +1,6 @@
 //! Whisper 음성 인식 (whisper-cli) 과 모델 내려받기
 use crate::{media, tools};
-use easycut_core::whisper::{fix_overlaps, parse_progress, parse_whisper_full, whisper_chunks, WhisperModel, MODELS};
+use easycut_core::whisper::{clamp_to_duration, fix_overlaps, parse_progress, parse_whisper_full, whisper_chunks, WhisperModel, MODELS};
 use easycut_core::Word;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -151,7 +151,9 @@ pub fn transcribe(
             return Err(format!("Whisper 실행 실패\n{tail}"));
         }
         let data = std::fs::read(out_base.with_extension("json")).unwrap_or_default();
-        for mut w in parse_whisper_full(&data) {
+        let mut words = parse_whisper_full(&data);
+        clamp_to_duration(&mut words, r.len() as f64 / 16000.0);
+        for mut w in words {
             w.start += offset;
             w.end += offset;
             all.push(w);
