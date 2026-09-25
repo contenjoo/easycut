@@ -343,6 +343,21 @@ enum SelfTest {
         r.reorder(clip: first, pointer: 9)
         check(abs(r.tracks[0].clips[0].sourceIn - 4) < 1e-6 && abs(r.tracks[0].clips[1].start - 6) < 1e-6 && abs(r.duration - 10) < 1e-6,
               "트랙 1 클립 끌어서 순서 바꾸기 (앞 조각을 뒤로)")
+
+        // Whisper가 마지막 세그먼트 끝(14.12초)을 오디오 길이(13.14초)보다 길게 알려 준 실제 사례
+        let json = #"{"transcription":[{"offsets":{"from":11600,"to":14120},"text":" same words","tokens":[{"text":" same","t_dtw":1175},{"text":" words","t_dtw":1222}]}]}"#
+        let raw = Transcriber.parseWhisperFull(Data(json.utf8))
+        let clamped = Transcriber.clamp(raw, to: 13.14)
+        check(raw.last.map { $0.end > 14 } == true && clamped.last.map { abs($0.end - 13.14) < 1e-9 && $0.start < 13.14 } == true,
+              "Whisper 단어 끝이 오디오 길이를 넘지 않음 (\(String(format: "%.2f", raw.last?.end ?? 0))→\(String(format: "%.2f", clamped.last?.end ?? 0))초)")
+        var z = Project()
+        var za = MediaAsset(path: "/tmp/z.mp4", name: "z", kind: .video, duration: 13.14, width: 1920, height: 1080, hasAudio: true)
+        za.words = [Word(text: "words", start: 12.07, end: 16.3)]
+        z.assets = [za]
+        z.insert(asset: za, track: 0, at: 0)
+        let lost = z.timelineWords().isEmpty
+        z.assets[0].words = Transcriber.clamp(za.words!, to: 13.14)
+        check(lost && z.timelineWords().count == 1, "영상 끝을 넘은 마지막 단어가 대본에서 사라지지 않음")
     }
 
     static func makeTestImage(to url: URL) throws {
