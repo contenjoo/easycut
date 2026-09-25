@@ -2,7 +2,8 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "windows": [
-    "main"
+    "main",
+    "recpanel"
   ],
   "permissions": [
     "core:default",

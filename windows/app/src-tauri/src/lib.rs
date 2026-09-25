@@ -6,6 +6,7 @@ mod edits;
 mod export;
 mod link;
 mod media;
+mod record;
 mod recovery;
 mod selftest;
 mod stt;
@@ -797,6 +798,53 @@ fn open_file(path: String) -> Res<()> {
     r.map(|_| ()).map_err(|e| e.to_string())
 }
 
+// MARK: 화면·얼굴 녹화
+
+#[tauri::command]
+fn rec_begin(app: AppHandle, kinds: Vec<(String, String)>) -> Res<Value> {
+    record::begin(&app, &kinds)
+}
+
+/// 녹화 조각 (본문은 바이너리, 종류는 x-kind 헤더)
+#[tauri::command]
+fn rec_chunk(app: AppHandle, request: tauri::ipc::Request) -> Res<()> {
+    let kind = request.headers().get("x-kind").and_then(|v| v.to_str().ok()).unwrap_or("screen").to_string();
+    match request.body() {
+        tauri::ipc::InvokeBody::Raw(b) => record::write_chunk(&app, &kind, b),
+        _ => Err("녹화 조각 형식이 올바르지 않습니다".into()),
+    }
+}
+
+#[tauri::command]
+fn rec_discard(app: AppHandle) {
+    record::discard(&app);
+}
+
+#[tauri::command]
+fn rec_panel(app: AppHandle, open: bool, camera: bool) -> Res<()> {
+    if open {
+        record::open_panel(&app, camera)
+    } else {
+        record::close_panel(&app);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn rec_hotkeys(app: AppHandle, on: bool) {
+    if on { record::register_hotkeys(&app) } else { record::unregister_hotkeys(&app) }
+}
+
+#[tauri::command]
+async fn rec_finish(app: AppHandle, camera_circle: bool) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn rec_folder() -> String {
+    record::folder().to_string_lossy().to_string()
+}
+
 // MARK: 링크로 가져오기
 
 #[tauri::command]
@@ -852,6 +900,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)), ui: Mutex::default() })
         .manage(ai::Ai::default())
+        .manage(record::Recorder::default())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_state, new_project, open_project, save_project, undo, redo,
             import_files, add_to_timeline, remove_asset,
@@ -861,6 +911,7 @@ pub fn run() {
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
+            rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder,
         ])
         .setup(|app| {
             let _ = app.path().app_data_dir();

@@ -60,6 +60,7 @@
   window.applyI18n = () => {
     document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = T(el.dataset.i18n)));
     document.querySelectorAll("[data-i18n-title]").forEach((el) => (el.title = T(el.dataset.i18nTitle)));
+    document.querySelectorAll("[data-l]").forEach((el) => (el.textContent = L(el.dataset.l)));
     document.documentElement.lang = lang;
   };
 })();

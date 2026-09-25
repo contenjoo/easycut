@@ -3,6 +3,7 @@ import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
 import { initAI, focusAI, connectDialog, sendAI } from "./ai.js";
 import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal } from "./shell.js";
+import { initRecord, openRecordDialog, isRecording } from "./record.js";
 
 const tauri = window.__TAURI__;
 const invoke = (cmd, args) => tauri.core.invoke(cmd, args);
@@ -303,6 +304,14 @@ async function deleteWords() {
   S.selWords.clear();
   await run("delete_words", { ids });
   toast(window.LANG === "ko" ? `${n}개 단어 삭제` : `Deleted ${n} words`);
+}
+
+/// 녹화가 끝나면 바로 음성 인식 (모델이 있을 때만. 없으면 안내)
+async function autoTranscribe(assetId) {
+  const st = await invoke("whisper_status").catch(() => ({}));
+  if (!st.engine || !st.model) return toast(L("음성 인식 모델을 받으면 대본으로 편집할 수 있습니다. [음성 인식]을 눌러 주세요."));
+  switchTab("transcript");
+  run("transcribe", { asset: assetId, language: S.language });
 }
 
 async function transcribeAll() {
@@ -631,6 +640,7 @@ const commands = {
   ai: () => switchTab("ai"),
   aiConnect: () => connectDialog(),
   shortcuts: shortcutsDialog,
+  record: () => openRecordDialog(),
   delete: () => deleteSelection(true),
   text: addText,
   silence: silenceDialog,
@@ -734,9 +744,10 @@ async function init() {
   reportUi();
   const modal = { box: modalBox(), show: showModal, hide: hideModal };
   await initAI($("#tab-ai"), { toast, modal });
+  initRecord({ toast, modal, autoTranscribe });
   const files = await invoke("startup_files");
   if (files.length) importFiles(files);
-  await initShell({ S, U, run, toast, commands, switchTab });
+  await initShell({ S, U, run, toast, commands, switchTab, isBusyRecording: isRecording });
 }
 
 init();

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>EasyCut 녹화</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none;
+      font: 13px "Segoe UI", "Malgun Gothic", sans-serif; color: #eee; }
+    #p { position: absolute; inset: 0; background: rgba(28, 29, 33, .96); border: 1px solid #3a3c42; border-radius: 14px;
+      display: flex; flex-direction: column; overflow: hidden; }
+    #drag { flex: 1; display: flex; flex-direction: column; }
+    #cam { flex: 1; background: #000; display: none; object-fit: cover; min-height: 0; }
+    #bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+    #dot { width: 12px; height: 12px; border-radius: 50%; background: #ff4d4d; flex: none; }
+    #dot.blink { animation: b 1s steps(2) infinite; }
+    #dot.paused { background: #e6a23c; }
+    @keyframes b { 50% { opacity: .2; } }
+    #t { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; flex: 1; }
+    button { background: #2b2d32; color: #eee; border: 1px solid #3a3c42; border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer; }
+    button.stop { background: #d93b3b; border-color: #d93b3b; color: #fff; }
+    #count { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 56px; font-weight: 700;
+      background: rgba(0, 0, 0, .55); }
+    #hint { font-size: 10px; color: #9a9ca3; padding: 0 12px 8px; }
+  </style>
+</head>
+<body>
+  <div id="p">
+    <div id="drag" data-tauri-drag-region>
+      <video id="cam" autoplay muted playsinline data-tauri-drag-region></video>
+      <div id="bar" data-tauri-drag-region>
+        <span id="dot"></span><span id="t" data-tauri-drag-region>00:00</span>
+        <button id="pause" title="Ctrl+Alt+P">❚❚</button>
+        <button id="stop" class="stop" title="Ctrl+Alt+S">■</button>
+      </div>
+      <div id="hint" data-tauri-drag-region></div>
+    </div>
+    <div id="count"></div>
+  </div>
+  <script src="strings.js"></script>
+  <script src="i18n.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
