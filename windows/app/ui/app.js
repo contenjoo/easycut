@@ -1,6 +1,8 @@
 // EasyCut for Windows — 화면 로직 (상태, 명령, 패널)
 import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
+import { initAI, focusAI, connectDialog, sendAI } from "./ai.js";
+import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal } from "./shell.js";
 
 const tauri = window.__TAURI__;
 const invoke = (cmd, args) => tauri.core.invoke(cmd, args);
@@ -66,7 +68,7 @@ export function toast(msg) {
 }
 
 function showError(e) {
-  toast(String(e?.message ?? e));
+  toast(L(String(e?.message ?? e)));
   console.error(e);
 }
 
@@ -86,7 +88,7 @@ function jobUpdate({ id, value, message }) {
     $("#jobs").appendChild(el);
     jobs[id] = el;
   }
-  el.querySelector(".m").textContent = message;
+  el.querySelector(".m").textContent = L(message);
   const pr = el.querySelector("progress");
   if (value > 0) pr.value = value; else pr.removeAttribute("value");
 }
@@ -140,6 +142,7 @@ export function seek(t) {
   timeline?.drawSoon();
   $("#clock").textContent = U.fmt(S.time);
   highlightWord();
+  reportUi();
 }
 
 export function onTime(t) {
@@ -147,6 +150,17 @@ export function onTime(t) {
   $("#clock").textContent = U.fmt(t);
   timeline?.playheadMoved();
   highlightWord();
+  reportUi();
+}
+
+// AI가 재생헤드·선택·구간을 알 수 있게 백엔드에 알린다 (자주 바뀌므로 묶어서)
+let uiTimer = null;
+export function reportUi() {
+  if (uiTimer) return;
+  uiTimer = setTimeout(() => {
+    uiTimer = null;
+    invoke("ui_state", { state: { time: S.time, selection: [...S.sel], markIn: S.markIn, markOut: S.markOut, language: S.language } }).catch(() => {});
+  }, 250);
 }
 
 // MARK: 미디어 탭
@@ -155,7 +169,7 @@ function renderMedia() {
   const el = $("#tab-media");
   const p = S.project;
   const kinds = { video: T("video"), audio: T("audio"), image: T("image") };
-  el.innerHTML = `<div class="row"><button class="primary" id="m-import">${T("import")}</button><span class="hint">${p?.assets.length || 0}${T("items")}</span></div>`;
+  el.innerHTML = `<div class="row"><button class="primary" id="m-import">${T("import")}</button><button id="m-link" title="Ctrl+Shift+I">🔗 ${L("링크로 가져오기")}</button><span class="hint">${p?.assets.length || 0}${T("items")}</span></div>`;
   if (!p?.assets.length) {
     el.innerHTML += `<p class="hint">${T("noMedia")}</p>`;
   } else {
@@ -178,6 +192,7 @@ function renderMedia() {
     el.appendChild(grid);
   }
   $("#m-import").onclick = importPanel;
+  $("#m-link").onclick = linkDialog;
 }
 
 // MARK: 대본 탭
@@ -330,14 +345,8 @@ function renderCaptions() {
     <div class="row"><label>${T("position")}</label><input type="range" id="c-pos" min="0.08" max="0.95" step="0.01" value="${st.positionY}"/></div>
     <div class="caplist"></div>`;
   $("#c-gen").onclick = () => run("generate_captions");
-  $("#c-imp").onclick = async () => {
-    const f = await tauri.dialog.open({ filters: [{ name: "SRT", extensions: ["srt"] }] });
-    if (f) run("import_srt", { path: f });
-  };
-  $("#c-exp").onclick = async () => {
-    const f = await tauri.dialog.save({ defaultPath: "captions.srt", filters: [{ name: "SRT", extensions: ["srt"] }] });
-    if (f) { try { await invoke("export_srt", { path: f }); toast(T("saved")); } catch (e) { showError(e); } }
-  };
+  $("#c-imp").onclick = importSrt;
+  $("#c-exp").onclick = exportSrt;
   $("#c-show").onchange = (e) => run("update_project", { props: { showCaptions: e.target.checked } });
   const setStyle = (patch) => run("update_project", { props: { captionStyle: { ...st, ...patch } } });
   $("#c-size").onchange = (e) => setStyle({ fontSize: +e.target.value });
@@ -465,7 +474,7 @@ function importFiles(paths) {
 }
 
 async function openProject(path) {
-  if (S.dirty && !(await confirmModal("EasyCut", T("unsaved"), T("open")))) return;
+  if (!(await confirmDiscard())) return;
   if (!path) {
     path = await tauri.dialog.open({ filters: [{ name: "EasyCut", extensions: ["easycut"] }] });
     if (!path) return;
@@ -478,9 +487,10 @@ async function saveProject(as = false) {
   let path = S.path;
   if (!path || as) {
     path = await tauri.dialog.save({ defaultPath: `${T("newProject")}.easycut`, filters: [{ name: "EasyCut", extensions: ["easycut"] }] });
-    if (!path) return;
+    if (!path) return false;
   }
-  if (await run("save_project", { path })) toast(T("saved"));
+  if (await run("save_project", { path })) { toast(T("saved")); return true; }
+  return false;
 }
 
 export function deleteSelection(ripple) {
@@ -576,13 +586,51 @@ function confirmModal(title, text, okLabel) {
 function switchTab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "tab-" + name));
+  if (name === "ai") setTimeout(focusAI, 0);
+}
+
+async function importSrt() {
+  const f = await tauri.dialog.open({ filters: [{ name: "SRT", extensions: ["srt"] }] });
+  if (f) run("import_srt", { path: f });
+}
+
+async function exportSrt() {
+  const f = await tauri.dialog.save({ defaultPath: "captions.srt", filters: [{ name: "SRT", extensions: ["srt"] }] });
+  if (f) { try { await invoke("export_srt", { path: f }); toast(T("saved")); } catch (e) { showError(e); } }
+}
+
+function setMark(which) {
+  S.sel.clear();
+  if (which === "in") { S.markIn = S.time; if (S.markOut != null && S.markOut < S.time) S.markOut = null; toast(L("시작 지점 (I) {}", U.fmt(S.time))); }
+  else { S.markOut = S.time; if (S.markIn != null && S.markIn > S.time) S.markIn = null; toast(L("끝 지점 (O) {}", U.fmt(S.time))); }
+  timeline.drawSoon();
+  reportUi();
 }
 
 const commands = {
   import: importPanel,
+  newProject: () => newProject(),
+  open: () => openProject(),
+  saveAs: () => saveProject(true),
+  importSrt,
+  exportSrt,
+  link: linkDialog,
   undo: () => run("undo"),
   redo: () => run("redo"),
   split,
+  deleteSel: () => deleteSelection(false),
+  deselect: () => { S.sel.clear(); S.markIn = S.markOut = null; S.selWords.clear(); render(); reportUi(); },
+  markIn: () => setMark("in"),
+  markOut: () => setMark("out"),
+  clearMarks: () => { S.markIn = S.markOut = null; timeline.drawSoon(); reportUi(); },
+  faster: () => player.faster(),
+  slower: () => player.slower(),
+  stop: () => player.pause(),
+  setRate: (r) => player.setRate(r),
+  fillers: () => run("remove_fillers"),
+  ai: () => switchTab("ai"),
+  aiConnect: () => connectDialog(),
+  shortcuts: shortcutsDialog,
   delete: () => deleteSelection(true),
   text: addText,
   silence: silenceDialog,
@@ -608,11 +656,19 @@ function onKey(e) {
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl) {
-    const map = { z: e.shiftKey ? "redo" : "undo", y: "redo", s: "save", o: null, i: "import", e: "export", "=": "zoomIn", "-": "zoomOut" };
-    if (k === "o") { e.preventDefault(); return openProject(); }
-    if (k === "n") { e.preventDefault(); return newProject(); }
-    if (k === "s" && e.shiftKey) { e.preventDefault(); return saveProject(true); }
-    if (map[k]) { e.preventDefault(); commands[map[k]](); }
+    if (e.shiftKey) {
+      const shiftMap = { i: "link", r: "transcribe", c: "captions", x: "silence", s: "saveAs", z: "redo", t: "splitAll", g: "ungroup" };
+      if (shiftMap[k] && commands[shiftMap[k]]) { e.preventDefault(); commands[shiftMap[k]](); }
+      return;
+    }
+    if (e.altKey) {
+      if (k === "r" && commands.record) { e.preventDefault(); commands.record(); }
+      return;
+    }
+    const map = { z: "undo", y: "redo", s: "save", i: "import", e: "export", "=": "zoomIn", "+": "zoomIn", "-": "zoomOut", o: "open", n: "newProject",
+      t: "split", "/": "shortcuts", d: "duplicate", a: "selectAll", c: "copy", x: "cut", v: "paste", g: "group", j: "join" };
+    if (["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); return switchTab(["media", "transcript", "captions", "ai"][+e.key - 1]); }
+    if (map[k] && commands[map[k]]) { e.preventDefault(); commands[map[k]](); }
     if (k === "backspace" || k === "delete") { e.preventDefault(); deleteSelection(true); }
     return;
   }
@@ -626,11 +682,12 @@ function onKey(e) {
       e.preventDefault();
       if (S.selWords.size && document.querySelector("#tab-transcript.on")) return deleteWords();
       return deleteSelection(false);
-    case "Escape": S.sel.clear(); S.markIn = S.markOut = null; S.selWords.clear(); render(); return;
+    case "Escape": commands.deselect(); return;
     case "KeyS": split(); return;
-    case "KeyI": S.sel.clear(); S.markIn = S.time; timeline.drawSoon(); return;
-    case "KeyO": S.sel.clear(); S.markOut = S.time; timeline.drawSoon(); return;
-    case "KeyX": S.markIn = S.markOut = null; timeline.drawSoon(); return;
+    case "KeyI": setMark("in"); return;
+    case "KeyO": setMark("out"); return;
+    case "KeyX": commands.clearMarks(); return;
+    case "KeyZ": if (e.shiftKey) timeline.fit(); return;
     case "KeyT": addText(); return;
     case "KeyK": player.pause(); return;
     case "KeyL": player.faster(); return;
@@ -641,7 +698,7 @@ function onKey(e) {
 }
 
 async function newProject() {
-  if (S.dirty && !(await confirmModal("EasyCut", T("unsaved"), T("newProj")))) return;
+  if (!(await confirmDiscard())) return;
   S.sel.clear();
   run("new_project");
 }
@@ -659,24 +716,27 @@ async function init() {
   $("#rate").onchange = (e) => player.setRate(+e.target.value);
   $("#zoom").oninput = (e) => timeline.setZoom(Math.pow(10, +e.target.value));
   window.addEventListener("keydown", onKey);
-  window.addEventListener("selection", () => { renderInspector(); timeline.drawSoon(); });
+  window.addEventListener("selection", () => { renderInspector(); timeline.drawSoon(); reportUi(); });
   await listen("job", (e) => jobUpdate(e.payload));
   await listen("project", (e) => setState(e.payload));
   await listen("tauri://drag-drop", (e) => { const paths = e.payload?.paths; if (paths?.length) importFiles(paths); });
+  // AI 도구가 화면 쪽 동작을 요청할 때 (재생헤드 이동, 재생 속도)
+  await listen("ui-command", (e) => {
+    const c = e.payload;
+    if (c.action === "seek") seek(c.time);
+    if (c.action === "speed") {
+      player.setRate(c.speed);
+      if (c.play === true && !player.playing) player.play();
+      if (c.play === false) player.pause();
+    }
+  });
   setState(await invoke("get_state"));
+  reportUi();
+  const modal = { box: modalBox(), show: showModal, hide: hideModal };
+  await initAI($("#tab-ai"), { toast, modal });
   const files = await invoke("startup_files");
   if (files.length) importFiles(files);
-  checkUpdate();
-}
-
-async function checkUpdate() {
-  try {
-    const u = await invoke("check_update");
-    if (!u || localStorage.getItem("skipUpdate") === u.version) return;
-    const ok = await confirmModal(`${T("newVersion")} ${u.version}`, `${T("currentVersion")} ${u.current}\n\n${u.notes.slice(0, 600)}`, T("update"));
-    if (ok) await invoke("install_update", { url: u.url });
-    else localStorage.setItem("skipUpdate", u.version);
-  } catch (_) {}
+  await initShell({ S, U, run, toast, commands, switchTab });
 }
 
 init();

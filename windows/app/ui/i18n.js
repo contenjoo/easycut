@@ -44,10 +44,19 @@
     unsaved: "You have unsaved changes. Continue?", open: "Open", newProj: "New", enterText: "Enter text",
     track: "Track", captionsRow: "Captions", newVersion: "A new version is available: EasyCut", currentVersion: "You have:", update: "Update", reordered: "Reordered (hold Alt while dragging to move freely)",
   };
-  const lang = (navigator.language || "ko").toLowerCase().startsWith("ko") ? "ko" : "en";
+  // 언어 메뉴에서 고른 값이 있으면 그것, 아니면 윈도우 언어
+  let pick = "";
+  try { pick = localStorage.getItem("uiLang") || ""; } catch (_) {}
+  const lang = pick === "ko" || pick === "en" ? pick : (navigator.language || "ko").toLowerCase().startsWith("ko") ? "ko" : "en";
   const dict = lang === "ko" ? ko : en;
   window.LANG = lang;
   window.T = (k) => dict[k] ?? ko[k] ?? k;
+  // 한국어 원문을 키로 쓰는 문구 (맥 앱 LocTable과 같은 방식). {}는 차례로 값이 들어간다
+  window.L = (k, ...args) => {
+    let s = lang === "ko" ? k : (window.EN?.[k] ?? k);
+    for (const a of args) s = s.replace("{}", a);
+    return s;
+  };
   window.applyI18n = () => {
     document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = T(el.dataset.i18n)));
     document.querySelectorAll("[data-i18n-title]").forEach((el) => (el.title = T(el.dataset.i18nTitle)));

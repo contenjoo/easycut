@@ -168,6 +168,8 @@ pub fn agents_json(app: &AppHandle) -> Value {
         "codex": *a.codex.lock().unwrap(),
         "loginUrl": *a.login_url.lock().unwrap(),
         "hasKey": load_key().is_some(),
+        "claudeInstalled": claude_binary().is_some(),
+        "codexInstalled": codex_binary().is_some(),
         "needsLogin": a.chat.lock().unwrap().needs_login,
         "busy": a.chat.lock().unwrap().busy,
     })

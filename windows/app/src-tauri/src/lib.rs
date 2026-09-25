@@ -616,7 +616,7 @@ async fn install_update(app: AppHandle, url: String) -> Res<()> {
     })
     .await
     .map_err(|e| e.to_string())??;
-    app.exit(0);
+    force_quit(&app);
     Ok(())
 }
 
@@ -648,6 +648,14 @@ fn recovery_discard() {
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     recovery::clear();
+    force_quit(&app);
+}
+
+/// 창 닫기 확인을 다시 띄우지 않도록 창을 먼저 없애고 끝낸다
+fn force_quit(app: &AppHandle) {
+    for w in app.webview_windows().values() {
+        let _ = w.destroy();
+    }
     app.exit(0);
 }
 
@@ -753,6 +761,42 @@ async fn ai_link(target: String) -> Res<Value> {
     Ok(ai::links_json())
 }
 
+/// 브라우저로 주소 열기 (http/https만)
+#[tauri::command]
+fn open_url(url: String) -> Res<()> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("열 수 없는 주소입니다".into());
+    }
+    let r = if cfg!(windows) {
+        std::process::Command::new("explorer.exe").arg(&url).spawn()
+    } else {
+        std::process::Command::new("/usr/bin/open").arg(&url).spawn()
+    };
+    r.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// 파일이 있는 폴더를 탐색기에서 열고 그 파일을 선택
+#[tauri::command]
+fn reveal_file(path: String) -> Res<()> {
+    let r = if cfg!(windows) {
+        std::process::Command::new("explorer.exe").arg(format!("/select,{path}")).spawn()
+    } else {
+        std::process::Command::new("/usr/bin/open").args(["-R", &path]).spawn()
+    };
+    r.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// 파일을 기본 프로그램으로 열기
+#[tauri::command]
+fn open_file(path: String) -> Res<()> {
+    let r = if cfg!(windows) {
+        std::process::Command::new("explorer.exe").arg(&path).spawn()
+    } else {
+        std::process::Command::new("/usr/bin/open").arg(&path).spawn()
+    };
+    r.map(|_| ()).map_err(|e| e.to_string())
+}
+
 // MARK: 링크로 가져오기
 
 #[tauri::command]
@@ -816,7 +860,7 @@ pub fn run() {
             whisper_status, download_model, transcribe, cancel_job, export_video, startup_files, check_update, install_update,
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
-            ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update,
+            ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
         ])
         .setup(|app| {
             let _ = app.path().app_data_dir();

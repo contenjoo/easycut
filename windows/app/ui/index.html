@@ -32,10 +32,12 @@
         <button data-tab="media" class="on" data-i18n="media">미디어</button>
         <button data-tab="transcript" data-i18n="transcript">대본</button>
         <button data-tab="captions" data-i18n="captionsTab">자막</button>
+        <button data-tab="ai">✨ AI</button>
       </nav>
       <div id="tab-media" class="tab on"></div>
       <div id="tab-transcript" class="tab"></div>
       <div id="tab-captions" class="tab"></div>
+      <div id="tab-ai" class="tab ai-tab"></div>
     </section>
 
     <section id="center">
@@ -55,8 +57,8 @@
         <button data-cmd="fwd5" title="Shift+→">+5s</button>
         <button data-cmd="end" title="End">⏭</button>
         <select id="rate" title="J / K / L">
-          <option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option>
-          <option value="2">2x</option><option value="4">4x</option><option value="8">8x</option><option value="16">16x</option>
+          <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option><option value="8">8x</option><option value="16">16x</option>
         </select>
         <span id="dur">00:00.00</span>
       </div>
@@ -81,6 +83,7 @@
   <div id="modal" class="hidden"><div class="box" id="modal-box"></div></div>
   <div id="jobs"></div>
 
+  <script src="strings.js"></script>
   <script src="i18n.js"></script>
   <script type="module" src="app.js"></script>
 </body>
