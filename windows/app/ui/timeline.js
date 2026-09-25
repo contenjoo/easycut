@@ -159,6 +159,7 @@ export class Timeline {
         ctx.fillStyle = COLORS[kind];
         this.round(cx, y, cw, h, 5);
         ctx.fill();
+        this.media(c, a, kind, cx, y, cw, h, x0, x1);
         ctx.globalAlpha = 1;
         // 대본이 있으면 단어 자리 표시
         if (a?.words && kind !== "text") {
@@ -227,6 +228,44 @@ export class Timeline {
     ctx.fillRect(px - 0.5, 0, 2, H);
     ctx.beginPath();
     ctx.moveTo(px - 6, RULER - 10); ctx.lineTo(px + 7, RULER - 10); ctx.lineTo(px + 0.5, RULER); ctx.closePath(); ctx.fill();
+  }
+
+  /// 클립 안에 장면 그림(영상·사진)과 파형(소리)을 그린다
+  media(c, a, kind, cx, y, cw, h, x0, x1) {
+    const m = a && S.media?.[a.id];
+    if (!m || kind === "text") return;
+    const ctx = this.ctx;
+    ctx.save();
+    this.round(cx, y, cw, h, 5);
+    ctx.clip();
+    const body = y + 16, bh = h - 16;
+    const thumbs = m.thumbs.filter((t) => t.img.complete && t.img.naturalWidth);
+    if (thumbs.length && bh > 10) {
+      const tw = Math.max(20, (bh * thumbs[0].img.naturalWidth) / thumbs[0].img.naturalHeight);
+      const start = Math.max(cx, x0 - ((x0 - cx) % tw));
+      for (let tx = start; tx < Math.min(cx + cw, x1); tx += tw) {
+        const src = kind === "image" ? 0 : c.sourceIn + ((tx - cx + tw / 2) / S.zoom) * c.speed;
+        let best = thumbs[0];
+        for (const t of thumbs) if (Math.abs(t.t - src) < Math.abs(best.t - src)) best = t;
+        ctx.globalAlpha = 0.55;
+        ctx.drawImage(best.img, tx, body, tw, bh);
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (m.peaks?.length && a.hasAudio) {
+      // 아래쪽 절반에 파형 (50ms 단위)
+      const base = y + h - 2, amp = kind === "audio" ? bh - 4 : bh * 0.45;
+      ctx.fillStyle = kind === "audio" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.35)";
+      const px0 = Math.max(cx, x0), px1 = Math.min(cx + cw, x1);
+      for (let px = px0; px < px1; px += 2) {
+        const s0 = c.sourceIn + ((px - cx) / S.zoom) * c.speed, s1 = c.sourceIn + ((px + 2 - cx) / S.zoom) * c.speed;
+        let v = 0;
+        for (let i = Math.floor(s0 / 0.05); i <= Math.floor(s1 / 0.05) && i < m.peaks.length; i++) v = Math.max(v, m.peaks[i] || 0);
+        const hh = Math.max(1, Math.sqrt(v) * amp);
+        ctx.fillRect(px, base - hh, 1.5, hh);
+      }
+    }
+    ctx.restore();
   }
 
   ruler(x0, W) {

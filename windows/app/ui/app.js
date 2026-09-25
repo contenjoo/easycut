@@ -110,8 +110,34 @@ function jobUpdate({ id, value, message }) {
 
 // MARK: 상태 반영
 
+// MARK: 미디어 그림 · 파형 (타임라인 클립과 미디어 칸에 그린다)
+
+S.media = {};
+let mediaQueue = Promise.resolve();
+function loadMedia() {
+  for (const a of S.project?.assets || []) {
+    if (S.media[a.id] || S.missing?.includes(a.id)) continue;
+    const m = (S.media[a.id] = { thumbs: [], peaks: null });
+    mediaQueue = mediaQueue.then(async () => {
+      try {
+        const count = a.kind === "video" ? Math.max(2, Math.min(60, Math.round(a.duration / 4))) : 1;
+        const list = a.kind === "audio" ? [] : await invoke("media_thumbs", { asset: a.id, count });
+        m.thumbs = list.map(([t, path]) => { const img = new Image(); img.onload = () => { timeline?.drawSoon(); renderMediaThumb(a.id); }; img.src = tauri.core.convertFileSrc(path); return { t, img }; });
+        if (a.hasAudio) { m.peaks = await invoke("media_peaks", { asset: a.id }); timeline?.drawSoon(); }
+      } catch (_) {}
+    });
+  }
+}
+
+function renderMediaThumb(id) {
+  const th = S.media[id]?.thumbs[Math.floor((S.media[id].thumbs.length - 1) / 3)];
+  const el = document.querySelector(`.asset[data-id="${id}"] .thumb`);
+  if (el && th?.img.complete) el.style.backgroundImage = `url("${th.img.src}")`;
+}
+
 export function setState(v) {
   S.project = v.project;
+  S.missing = v.missing || [];
   S.words = v.words || [];
   S.path = v.path;
   S.dirty = v.dirty;
@@ -122,6 +148,7 @@ export function setState(v) {
   const wid = new Set(S.words.map((w) => w.id));
   S.selWords = new Set([...S.selWords].filter((id) => wid.has(id)));
   render();
+  loadMedia();
 }
 
 export async function run(cmd, args) {
@@ -194,8 +221,17 @@ function renderMedia() {
       const d = document.createElement("div");
       d.className = "asset";
       d.title = a.path;
-      d.innerHTML = `<div class="k">${kinds[a.kind] || a.kind}${a.duration ? " · " + U.fmt(a.duration) : ""}${a.words ? " · 💬" : ""}</div><div class="n"></div>
+      const missing = S.missing.includes(a.id);
+      d.dataset.id = a.id;
+      d.innerHTML = `<div class="thumb ${a.kind}">${a.kind === "audio" ? "🎵" : ""}</div>
+        <div class="k">${kinds[a.kind] || a.kind}${a.duration ? " · " + U.fmt(a.duration) : ""}${a.words ? " · 💬" : ""}</div><div class="n"></div>
+        ${missing ? `<div class="miss">⚠ ${L("파일 없음")} <button class="mini relink">${L("다시 연결…")}</button></div>` : ""}
         <div class="row"><button class="add">＋</button><button class="rm">✕</button></div>`;
+      if (missing) d.querySelector(".relink").onclick = async (e) => {
+        e.stopPropagation();
+        const f = await tauri.dialog.open({ title: a.name, filters: [{ name: a.name, extensions: [a.name.split(".").pop() || "*", "mp4", "mov", "mkv", "mp3", "wav", "m4a", "png", "jpg"] }] });
+        if (f) run("relink_asset", { asset: a.id, path: f });
+      };
       d.querySelector(".n").textContent = a.name;
       d.querySelector(".add").title = T("addToTimeline");
       d.querySelector(".rm").title = T("remove");
@@ -206,6 +242,7 @@ function renderMedia() {
       grid.appendChild(d);
     }
     el.appendChild(grid);
+    for (const a of p.assets) renderMediaThumb(a.id);
   }
   $("#m-import").onclick = importPanel;
   $("#m-link").onclick = linkDialog;
@@ -812,6 +849,7 @@ async function init() {
   window.addEventListener("selection", () => { renderInspector(); timeline.drawSoon(); reportUi(); });
   await listen("job", (e) => jobUpdate(e.payload));
   await listen("project", (e) => setState(e.payload));
+  await listen("toast", (e) => toast(L(e.payload.text)));
   await listen("tauri://drag-drop", (e) => { const paths = e.payload?.paths; if (paths?.length) importFiles(paths); });
   // AI 도구가 화면 쪽 동작을 요청할 때 (재생헤드 이동, 재생 속도)
   await listen("ui-command", (e) => {

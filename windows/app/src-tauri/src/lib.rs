@@ -99,8 +99,11 @@ impl Editor {
                         "asset": w.asset_id, "word": w.word.id, "filler": fillers.contains(&id) })
             })
             .collect();
+        // 파일이 없는 미디어 (다른 컴퓨터에서 만든 프로젝트, 옮기거나 지운 파일)
+        let missing: Vec<Id> = self.project.assets.iter().filter(|a| !std::path::Path::new(&a.path).exists()).map(|a| a.id).collect();
         json!({
             "words": words,
+            "missing": missing,
             "project": self.project,
             "path": self.path.as_ref().map(|p| p.to_string_lossy().to_string()),
             "dirty": self.dirty,
@@ -176,7 +179,106 @@ fn open_project(app: AppHandle, st: State<AppState>, path: String) -> Res<Value>
         e.path = Some(PathBuf::from(&path));
     });
     recovery::clear();
+    restore_assets(&app, PathBuf::from(&path).parent().map(PathBuf::from));
     Ok(changed(&app, &st))
+}
+
+/// 열자마자: 없는 파일은 프로젝트 폴더에서 같은 이름을 찾아 다시 잇고, 변환본이 지워졌으면 원본으로 다시 만든다 (맥과 같음)
+fn restore_assets(app: &AppHandle, dir: Option<PathBuf>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let st = app.state::<AppState>();
+        let assets: Vec<_> = st.editor.lock().unwrap().project.assets.iter().filter(|a| !std::path::Path::new(&a.path).exists()).cloned().collect();
+        let mut fixed = vec![];
+        for a in assets {
+            let file = std::path::Path::new(&a.path.replace('\\', "/")).file_name().map(|f| f.to_os_string());
+            // 1) 원본이 있으면 변환본을 다시 만든다
+            if let Some(orig) = a.original_path.as_ref().filter(|o| std::path::Path::new(o).exists()) {
+                if let Ok((na, _)) = prepare_media(&app, std::path::Path::new(orig)) {
+                    fixed.push((a.id, na.path));
+                    continue;
+                }
+            }
+            // 2) 프로젝트 폴더(와 그 안 폴더 하나)에서 같은 이름
+            if let (Some(d), Some(f)) = (dir.as_ref(), file) {
+                let mut cands = vec![d.join(&f)];
+                if let Ok(rd) = std::fs::read_dir(d) {
+                    cands.extend(rd.flatten().filter(|e| e.path().is_dir()).map(|e| e.path().join(&f)));
+                }
+                if let Some(found) = cands.into_iter().find(|p| p.is_file()) {
+                    fixed.push((a.id, found.to_string_lossy().to_string()));
+                }
+            }
+        }
+        if fixed.is_empty() {
+            return;
+        }
+        {
+            let mut e = st.editor.lock().unwrap();
+            for (id, path) in &fixed {
+                if let Some(a) = e.project.assets.iter_mut().find(|a| a.id == *id) {
+                    a.path = path.clone();
+                }
+            }
+            e.dirty = true;
+            e.rev += 1;
+        }
+        emit_state(&app);
+        let _ = app.emit("toast", json!({ "text": format!("없는 파일 {}개를 다시 연결했습니다", fixed.len()) }));
+    });
+}
+
+/// 미디어의 작은 장면 그림들 [(시간, 파일 경로)]
+#[tauri::command]
+async fn media_thumbs(st: State<'_, AppState>, asset: Id, count: usize) -> Res<Vec<(f64, String)>> {
+    let a = with(&st, |e| e.project.assets.iter().find(|a| a.id == asset).cloned()).ok_or("미디어가 없습니다")?;
+    if a.kind == MediaKind::Audio {
+        return Ok(vec![]);
+    }
+    let id = asset.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        media::thumbnails(&id, std::path::Path::new(&a.path), if a.kind == MediaKind::Image { 0.0 } else { a.duration }, if a.kind == MediaKind::Image { 1 } else { count.clamp(1, 120) })
+            .into_iter()
+            .map(|(t, p)| (t, p.to_string_lossy().to_string()))
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// 파형 (50ms마다 0~1)
+#[tauri::command]
+async fn media_peaks(st: State<'_, AppState>, asset: Id) -> Res<Vec<f32>> {
+    let a = with(&st, |e| e.project.assets.iter().find(|a| a.id == asset).cloned()).ok_or("미디어가 없습니다")?;
+    if !a.has_audio {
+        return Ok(vec![]);
+    }
+    tauri::async_runtime::spawn_blocking(move || media::peaks(std::path::Path::new(&a.path))).await.map_err(|e| e.to_string())?
+}
+
+/// 없는 파일을 사용자가 고른 파일로 다시 잇기 (같은 미디어 id 유지)
+#[tauri::command]
+async fn relink_asset(app: AppHandle, asset: Id, path: String) -> Res<Value> {
+    let a2 = app.clone();
+    let (na, _) = tauri::async_runtime::spawn_blocking(move || prepare_media(&a2, std::path::Path::new(&path))).await.map_err(|e| e.to_string())??;
+    {
+        let st = app.state::<AppState>();
+        let mut e = st.editor.lock().unwrap();
+        e.apply(|p| {
+            if let Some(a) = p.assets.iter_mut().find(|a| a.id == asset) {
+                a.path = na.path.clone();
+                a.original_path = na.original_path.clone();
+                if na.width > 0.0 {
+                    a.width = na.width;
+                    a.height = na.height;
+                }
+                if na.duration > 0.0 {
+                    a.duration = na.duration;
+                }
+            }
+        });
+    }
+    Ok(emit_state(&app))
 }
 
 #[tauri::command]
@@ -209,18 +311,42 @@ fn redo(app: AppHandle, st: State<AppState>) -> Value {
 
 // MARK: 가져오기
 
+/// 파일 하나 가져올 준비: 필요하면 H.264 MP4로 바꾼 뒤 정보 읽기. (미디어, 안에 있던 자막)
+fn prepare_media(app: &AppHandle, path: &std::path::Path) -> Res<(easycut_core::MediaAsset, Vec<Caption>)> {
+    if !media::needs_conversion(path) {
+        return Ok((media::probe(path)?, vec![]));
+    }
+    let cancel = app.state::<AppState>().cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
+    let a2 = app.clone();
+    let r = media::convert(path, |v, m| job(&a2, "convert", v, &m), || cancel.load(Ordering::SeqCst));
+    job(app, "convert", 1.0, "");
+    let (out, caps) = r?;
+    let mut a = media::probe(&out)?;
+    a.name = media::name_of(path);
+    a.original_path = Some(path.to_string_lossy().to_string());
+    Ok((a, caps))
+}
+
 #[tauri::command]
 async fn import_files(app: AppHandle, st: State<'_, AppState>, paths: Vec<String>) -> Res<Value> {
+    let a2 = app.clone();
     let probed = tauri::async_runtime::spawn_blocking(move || {
-        paths.iter().map(|p| media::probe(&PathBuf::from(p))).collect::<Vec<_>>()
+        paths.iter().map(|p| prepare_media(&a2, &PathBuf::from(p))).collect::<Vec<_>>()
     })
     .await
     .map_err(|e| e.to_string())?;
     let mut errors = vec![];
     let mut added = vec![];
+    let mut subs: Vec<Caption> = vec![];
     for r in probed {
         match r {
-            Ok(a) => added.push(a),
+            Ok((a, c)) => {
+                if subs.is_empty() {
+                    subs = c;
+                }
+                added.push(a)
+            }
             Err(e) => errors.push(e),
         }
     }
@@ -239,6 +365,10 @@ async fn import_files(app: AppHandle, st: State<'_, AppState>, paths: Vec<String
                 if was_empty {
                     auto_place(p, a);
                 }
+            }
+            // 영상 안에 있던 자막은 자막이 없을 때만
+            if p.captions.is_empty() && !subs.is_empty() {
+                p.captions = subs.clone();
             }
         });
     });
@@ -1162,7 +1292,7 @@ pub fn run() {
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
-            snapshot_png, export_size,
+            snapshot_png, export_size, relink_asset, media_thumbs, media_peaks,
             stt_models, stt_select, stt_download, export_transcript,
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,

@@ -154,6 +154,23 @@ pub fn run(dir: &Path) -> i32 {
         Err(e) => c.check(false, &format!("m4a: {e}")),
     }
 
+    println!("6c) convert MKV, thumbnails, waveform");
+    if let Some(ff) = tools::find_tool("ffmpeg") {
+        let mkv = dir.join("sample.mkv");
+        let _ = tools::command(&ff).args(["-y", "-v", "error", "-i"]).arg(&sample).args(["-c", "copy"]).arg(&mkv).status();
+        c.check(media::needs_conversion(&mkv), "MKV needs conversion");
+        match media::convert(&mkv, |_, _| {}, || false).and_then(|(p, _)| media::probe(&p)) {
+            Ok(a) => c.check(a.kind == easycut_core::MediaKind::Video && a.duration > 9.0, &format!("MKV converted to MP4 ({:.1}s)", a.duration)),
+            Err(e) => c.check(false, &format!("convert: {e}")),
+        }
+    }
+    let thumbs = media::thumbnails("selftest", &sample, 10.0, 3);
+    c.check(thumbs.len() == 3, &format!("{} thumbnails", thumbs.len()));
+    match media::peaks(&sample) {
+        Ok(p) => c.check(p.len() > 150 && p.iter().any(|v| *v > 0.01), &format!("waveform {} peaks", p.len())),
+        Err(e) => c.check(false, &format!("peaks: {e}")),
+    }
+
     println!("7) speech recognition");
     if stt::model_ready() && tools::find_tool("whisper-cli").is_some() {
         match stt::transcribe(&sample, "en", |_, _| {}, |_| {}, || false) {

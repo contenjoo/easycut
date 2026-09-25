@@ -244,12 +244,22 @@ pub fn import_blocking(app: &AppHandle, link: &str, o: &Options) -> Result<Strin
     let r = download(link, o, |v, m| job(&a2, "link", v, &m), || cancel.load(Ordering::SeqCst));
     job(app, "link", 1.0, "");
     let r = r?;
-    let mut asset = media::probe(&r.file)?;
+    // VP9·AV1 등 편집에 맞지 않는 코덱이면 H.264로 바꿔서 가져온다
+    let mut asset = if media::needs_conversion(&r.file) {
+        let (out, _) = media::convert(&r.file, |v, m| job(app, "convert", v, &m), || cancel.load(Ordering::SeqCst))?;
+        job(app, "convert", 1.0, "");
+        let mut a = media::probe(&out)?;
+        a.original_path = Some(r.file.to_string_lossy().to_string());
+        a
+    } else {
+        media::probe(&r.file)?
+    };
     if !r.title.is_empty() {
         let ext = r.file.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
         asset.name = format!("{}.{ext}", r.title);
     }
-    let caps = r.srt.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).map(|t| srt::parse(&t)).unwrap_or_default();
+    let caps: Vec<_> = r.srt.as_ref().and_then(|p| std::fs::read_to_string(p).ok()).map(|t| srt::parse(&t)).unwrap_or_default()
+        .into_iter().map(|mut c| { c.text = media::strip_tags(&c.text); c }).collect();
     let name = asset.name.clone();
     {
         let mut e = st.editor.lock().unwrap();
