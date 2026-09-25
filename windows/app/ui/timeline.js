@@ -1,7 +1,9 @@
 // 타임라인 (캔버스): 눈금자 · 자막 줄 · 트랙 · 클립 · 재생헤드
 import { S, U, seek, run, toast } from "./app.js";
 
-const HEADER = 110, RULER = 24, CAPH = 26, TRACKH = 54, EDGE = 7;
+const HEADER = 110, RULER = 24, CAPH = 26, EDGE = 7;
+/// 트랙 높이 (맥처럼 조절 가능)
+const th = () => S.trackH || 54;
 const COLORS = { video: "#4a6fb5", audio: "#3f8f6a", image: "#9a6b3c", text: "#7b4fb3" };
 
 export class Timeline {
@@ -31,11 +33,11 @@ export class Timeline {
   // 좌표
   x(t) { return HEADER + t * S.zoom; }
   t(x) { return Math.max(0, (x - HEADER) / S.zoom); }
-  rowY(ti) { return RULER + CAPH + (S.project.tracks.length - 1 - ti) * TRACKH; }
+  rowY(ti) { return RULER + CAPH + (S.project.tracks.length - 1 - ti) * th(); }
   trackAt(y) {
     const rel = y - RULER - CAPH;
     if (rel < 0) return null;
-    const row = Math.floor(rel / TRACKH);
+    const row = Math.floor(rel / th());
     const ti = S.project.tracks.length - 1 - row;
     return ti >= 0 && ti < S.project.tracks.length ? ti : null;
   }
@@ -61,7 +63,7 @@ export class Timeline {
   refresh() {
     if (!S.project) return;
     const w = Math.max(this.sc.clientWidth, this.x(U.duration() + 30) + 200);
-    const h = Math.max(this.sc.clientHeight, RULER + CAPH + S.project.tracks.length * TRACKH + TRACKH);
+    const h = Math.max(this.sc.clientHeight, RULER + CAPH + S.project.tracks.length * th() + th());
     const dpr = window.devicePixelRatio || 1;
     // 너무 큰 캔버스는 보이는 폭만큼만 만들어 스크롤 위치로 옮겨 그린다
     // (옮긴 캔버스가 내용 끝을 넘으면 스크롤 폭이 계속 늘어나므로 화면 폭을 넘지 않게)
@@ -84,7 +86,8 @@ export class Timeline {
   }
 
   playheadMoved() {
-    // 재생 중엔 재생헤드를 따라 스크롤
+    // 재생 중엔 재생헤드를 따라 스크롤 (끌 수 있음)
+    if (S.follow === false) return this.drawSoon();
     const px = this.x(S.time);
     const vis0 = this.sc.scrollLeft, vis1 = vis0 + this.sc.clientWidth;
     if (px > vis1 - 40 || px < vis0 + HEADER) this.sc.scrollLeft = Math.max(0, px - HEADER - 40);
@@ -109,9 +112,9 @@ export class Timeline {
     p.tracks.forEach((tr, ti) => {
       const y = this.rowY(ti);
       ctx.fillStyle = ti % 2 ? "#212226" : "#1c1d21";
-      ctx.fillRect(x0, y, W, TRACKH);
+      ctx.fillRect(x0, y, W, th());
       ctx.fillStyle = "#2c2e33";
-      ctx.fillRect(x0, y + TRACKH - 1, W, 1);
+      ctx.fillRect(x0, y + th() - 1, W, 1);
     });
     ctx.fillStyle = "#26222e";
     ctx.fillRect(x0, RULER, W, CAPH);
@@ -141,7 +144,7 @@ export class Timeline {
         const { c, ti } = this.displayed(c0, ti0);
         const cx = this.x(c.start), cw = Math.max(2, U.clipDur(c) * S.zoom);
         if (cx > x1 || cx + cw < x0) continue;
-        const y = this.rowY(ti) + 3, h = TRACKH - 6;
+        const y = this.rowY(ti) + 3, h = th() - 6;
         const a = U.asset(c.assetID);
         const kind = c.kind === "text" ? "text" : a?.kind || "video";
         ctx.globalAlpha = tr.hidden ? 0.4 : 1;
@@ -165,7 +168,13 @@ export class Timeline {
         let name = c.kind === "text" ? "T  " + c.text : a?.name || "?";
         if (Math.abs(c.speed - 1) > 0.001) name = `⏩${c.speed}x  ` + name;
         if (a?.words) name = "💬 " + name;
+        if (c.groupID) name = "🔗 " + name;
         this.label(name, Math.max(cx + 5, Math.min(x0 + HEADER + 5, cx + cw - 60)), y + 12, cw - 10, "#fff");
+        // 그룹 표시: 아래쪽 청록 띠
+        if (c.groupID) {
+          ctx.fillStyle = "#2bb3a3";
+          ctx.fillRect(cx + 2, y + h - 4, cw - 4, 3);
+        }
         if (S.sel.has(c.id)) {
           ctx.strokeStyle = "#fff";
           ctx.lineWidth = 2;
@@ -191,7 +200,7 @@ export class Timeline {
     // 끼워 넣기 위치
     if (this.insertAt != null) {
       ctx.fillStyle = "#ffd34d";
-      ctx.fillRect(this.x(this.insertAt) - 1.5, this.rowY(0) - 2, 3, TRACKH + 4);
+      ctx.fillRect(this.x(this.insertAt) - 1.5, this.rowY(0) - 2, 3, th() + 4);
     }
     if (this.drag?.type === "marquee" && this.drag.moved) {
       const { sx, sy, cx, cy } = this.drag;
@@ -241,11 +250,14 @@ export class Timeline {
     p.tracks.forEach((tr, ti) => {
       const y = this.rowY(ti);
       ctx.fillStyle = "#e8e8ea";
-      ctx.fillText(U.trackName(tr.name), x0 + 10, y + 20);
+      // 트랙이 낮으면 이름과 아이콘을 한 줄에
+      const compact = th() < 52;
+      const iy = compact ? y + th() / 2 + 5 : y + 42;
+      ctx.fillText(U.trackName(tr.name), x0 + 10, compact ? iy : y + 20);
       ctx.fillStyle = tr.muted ? "#ff6b6b" : "#9a9ca3";
-      ctx.fillText(tr.muted ? "🔇" : "🔊", x0 + 10, y + 42);
+      ctx.fillText(tr.muted ? "🔇" : "🔊", x0 + (compact ? 56 : 10), iy);
       ctx.fillStyle = tr.hidden ? "#ff6b6b" : "#9a9ca3";
-      ctx.fillText(tr.hidden ? "🚫" : "👁", x0 + 34, y + 42);
+      ctx.fillText(tr.hidden ? "🚫" : "👁", x0 + (compact ? 80 : 34), iy);
     });
     ctx.fillStyle = "#2a2b30";
     ctx.fillRect(x0, 0, HEADER, RULER);
@@ -297,7 +309,7 @@ export class Timeline {
     const ti = this.trackAt(py);
     if (ti == null) return null;
     const y = this.rowY(ti);
-    if (py < y + 3 || py > y + TRACKH - 3) return null;
+    if (py < y + 3 || py > y + th() - 3) return null;
     const t = this.t(px);
     const c = S.project.tracks[ti].clips.find((c) => t >= c.start && t <= U.clipEnd(c));
     if (!c) return null;
@@ -307,8 +319,11 @@ export class Timeline {
   }
 
   snap(t, exclude) {
+    if (S.snapping === false) return t;
     const cands = [0, S.time];
     for (const { c } of U.clips()) if (c.id !== exclude && !S.sel.has(c.id)) cands.push(c.start, U.clipEnd(c));
+    if (S.markIn != null) cands.push(S.markIn);
+    if (S.markOut != null) cands.push(S.markOut);
     const tol = 8 / S.zoom;
     let best = t, d = tol;
     for (const v of cands) if (Math.abs(v - t) < d) { d = Math.abs(v - t); best = v; }
@@ -339,8 +354,9 @@ export class Timeline {
       if (ti != null) {
         const lx = x - sl;
         const tr = S.project.tracks[ti];
-        if (lx < 30) run("update_track", { index: ti, muted: !tr.muted, hidden: tr.hidden });
-        else if (lx < 56) run("update_track", { index: ti, muted: tr.muted, hidden: !tr.hidden });
+        const [m0, h0] = th() < 52 ? [52, 76] : [6, 30];
+        if (lx >= m0 && lx < m0 + 24) run("update_track", { index: ti, muted: !tr.muted, hidden: tr.hidden });
+        else if (lx >= h0 && lx < h0 + 24) run("update_track", { index: ti, muted: tr.muted, hidden: !tr.hidden });
       }
       return;
     }
@@ -357,7 +373,9 @@ export class Timeline {
       } else if (!S.sel.has(h.c.id)) {
         S.sel = new Set([h.c.id]);
       }
-      if (h.edge) {
+      // 그룹이면 동료 클립도 함께 선택
+      S.sel = U.groupMembers(S.sel);
+      if (h.edge && !h.c.groupID) {
         S.sel = new Set([h.c.id]);
         this.drag = { type: "trim", id: h.c.id, left: h.edge < 0, dt: 0 };
       } else {
@@ -434,13 +452,13 @@ export class Timeline {
       const sel = new Set(d.base);
       const rx0 = Math.min(d.sx, x), rx1 = Math.max(d.sx, x), ry0 = Math.min(d.sy, y), ry1 = Math.max(d.sy, y);
       S.project.tracks.forEach((tr, ti) => {
-        const cy0 = this.rowY(ti) + 3, cy1 = cy0 + TRACKH - 6;
+        const cy0 = this.rowY(ti) + 3, cy1 = cy0 + th() - 6;
         for (const c of tr.clips) {
           const cx0 = this.x(c.start), cx1 = this.x(U.clipEnd(c));
           if (cx1 >= rx0 && cx0 <= rx1 && cy1 >= ry0 && cy0 <= ry1) sel.add(c.id);
         }
       });
-      S.sel = sel;
+      S.sel = U.groupMembers(sel);
       window.dispatchEvent(new Event("selection"));
       this.drawSoon();
     }

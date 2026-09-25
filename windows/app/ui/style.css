@@ -113,3 +113,4 @@ hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
 .shortcuts td { padding: 3px 6px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .shortcuts td:first-child { width: 42%; }
 kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-family: inherit; font-size: 11px; }
+#tl-toolbar button.on { border-color: var(--accent); color: #9cc2ff; }

@@ -18,6 +18,9 @@ const R = {
   circle: true,
 };
 
+// 권한 창을 닫지 않고 두면 끝나지 않으므로 정해진 시간까지만 기다린다
+const within = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(L("시간이 초과되었습니다."))), ms))]);
+
 const pref = (k, d) => { try { const v = localStorage.getItem("rec." + k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem("rec." + k, JSON.stringify(v)); } catch (_) {} };
 
@@ -43,7 +46,7 @@ export async function openRecordDialog() {
   // 장치 이름을 보려면 먼저 한 번 권한이 필요하다
   let cams = [], mics = [];
   try {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(() => navigator.mediaDevices.getUserMedia({ audio: true }));
+    const s = await within(navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(() => navigator.mediaDevices.getUserMedia({ audio: true })), 8000);
     s.getTracks().forEach((t) => t.stop());
   } catch (_) {}
   try {
@@ -95,11 +98,11 @@ export async function openRecordDialog() {
 
 // MARK: 시작 · 일시정지 · 정지
 
-function pickMime(kind) {
-  const cand = kind === "system"
-    ? ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
-    : ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1,opus", "video/mp4",
-       "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+/// 녹화 형식. 창 녹화는 창 크기가 바뀔 수 있어(H.264 MP4는 중간에 크기가 바뀌면 깨진다) WebM으로
+function pickMime(kind, resizable = false) {
+  const mp4 = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1,opus", "video/mp4"];
+  const webm = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  const cand = kind === "system" ? ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"] : resizable ? [...webm, ...mp4] : [...mp4, ...webm];
   const found = cand.find((m) => MediaRecorder.isTypeSupported(m)) || "";
   return { mime: found, ext: found.startsWith("video/mp4") || found.startsWith("audio/mp4") ? "mp4" : "webm" };
 }
@@ -123,16 +126,16 @@ async function start(o) {
   const streams = [display];
   let mic = null, cam = null;
   try {
-    if (o.useMic) { mic = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: o.micId ? { exact: o.micId } : undefined, echoCancellation: false, noiseSuppression: true } }); streams.push(mic); }
+    if (o.useMic) { mic = await within(navigator.mediaDevices.getUserMedia({ audio: { deviceId: o.micId ? { exact: o.micId } : undefined, echoCancellation: false, noiseSuppression: true } }), 10000); streams.push(mic); }
   } catch (e) { api.toast(L("마이크를 켜지 못했습니다: {}", e?.message || e)); }
   try {
-    if (o.useCamera) { cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: o.cameraId ? { exact: o.cameraId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }); streams.push(cam); }
+    if (o.useCamera) { cam = await within(navigator.mediaDevices.getUserMedia({ video: { deviceId: o.cameraId ? { exact: o.cameraId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }), 10000); streams.push(cam); }
   } catch (e) { api.toast(L("카메라를 켜지 못했습니다: {}", e?.message || e)); }
   R.streams = streams;
 
   // 화면 파일: 화면 영상 + 마이크. 컴퓨터 소리는 따로(트랙 3)
   const screenStream = new MediaStream([...display.getVideoTracks(), ...(mic ? mic.getAudioTracks() : [])]);
-  const plan = [{ kind: "screen", stream: screenStream, ...pickMime("screen") }];
+  const plan = [{ kind: "screen", stream: screenStream, ...pickMime("screen", o.target === "window") }];
   if (cam) plan.push({ kind: "camera", stream: new MediaStream(cam.getVideoTracks()), ...pickMime("camera") });
   const sysTracks = display.getAudioTracks();
   if (sysTracks.length) plan.push({ kind: "system", stream: new MediaStream(sysTracks), ...pickMime("system") });

@@ -61,6 +61,7 @@
     document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = T(el.dataset.i18n)));
     document.querySelectorAll("[data-i18n-title]").forEach((el) => (el.title = T(el.dataset.i18nTitle)));
     document.querySelectorAll("[data-l]").forEach((el) => (el.textContent = L(el.dataset.l)));
+    document.querySelectorAll("[data-l-title]").forEach((el) => (el.title = L(el.dataset.lTitle)));
     document.documentElement.lang = lang;
   };
 })();

@@ -2,7 +2,9 @@
 import { S, U, onTime } from "./app.js";
 
 const src = (path) => window.__TAURI__.core.convertFileSrc(path);
-const RATES = [0.5, 1, 1.5, 2, 4, 8, 16];
+// 맥 앱과 같은 속도 단계. 16배를 넘으면 영상 요소는 16배로 돌리고 시계만 더 빨리 가며 따라잡는다
+export const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8, 10, 12, 16, 20];
+const SHUTTLE = [1, 2, 4, 8, 16, 20];
 
 export class Player {
   constructor(box, stage) {
@@ -94,18 +96,28 @@ export class Player {
   }
 
   setRate(r) {
-    this.rate = r;
-    document.querySelector("#rate").value = String(r);
+    this.rate = Math.min(20, Math.max(0.25, r));
+    const sel = document.querySelector("#rate");
+    if (![...sel.options].some((o) => +o.value === this.rate)) sel.add(new Option(`${this.rate}x`, String(this.rate)));
+    sel.value = String(this.rate);
     this.update(true);
   }
 
+  /// L: 멈춰 있으면 1배속 재생, 재생 중이면 2·4·8·16·20배
   faster() {
     if (!this.playing) { this.setRate(1); this.play(); return; }
-    this.setRate(RATES.find((r) => r > this.rate) ?? 16);
+    this.setRate(SHUTTLE.find((r) => r > this.rate + 0.01) ?? 20);
   }
 
+  /// J: 한 단계 느리게 (멈춰 있으면 재생)
   slower() {
-    this.setRate([...RATES].reverse().find((r) => r < this.rate) ?? 0.5);
+    this.setRate([...SHUTTLE].reverse().find((r) => r < this.rate - 0.01) ?? 0.5);
+    if (!this.playing) this.play();
+  }
+
+  /// ] / [ : 속도 한 단계
+  stepRate(up) {
+    this.setRate(up ? SPEEDS.find((r) => r > this.rate + 0.01) ?? 20 : [...SPEEDS].reverse().find((r) => r < this.rate - 0.01) ?? 0.25);
   }
 
   element(c, a) {

@@ -37,6 +37,8 @@ struct Editor {
     loudness: HashMap<Id, Vec<f32>>,
     /// 바뀔 때마다 늘어난다 (자동 저장·복구 파일이 새로 써야 하는지 판단)
     rev: u64,
+    /// 복사한 클립 (트랙, 클립)
+    clipboard: Vec<(usize, easycut_core::Clip)>,
 }
 
 impl Editor {
@@ -340,6 +342,88 @@ fn set_speed(app: AppHandle, st: State<AppState>, ids: Vec<Id>, speed: f64) -> V
             }
         })
     });
+    changed(&app, &st)
+}
+
+/// 편집 결과와 새로 고를 클립 id
+fn with_selection(app: &AppHandle, st: &State<AppState>, ids: Vec<Id>, message: String) -> Value {
+    let mut v = changed(app, st);
+    v["select"] = json!(ids);
+    v["message"] = json!(message);
+    v
+}
+
+#[tauri::command]
+fn duplicate_clips(app: AppHandle, st: State<AppState>, ids: Vec<Id>) -> Value {
+    let set: HashSet<Id> = ids.into_iter().collect();
+    let new = with(&st, |e| {
+        let mut out = vec![];
+        e.apply(|p| out = p.duplicate(&set));
+        out
+    });
+    with_selection(&app, &st, new, String::new())
+}
+
+#[tauri::command]
+fn copy_clips(st: State<AppState>, ids: Vec<Id>) -> usize {
+    let set: HashSet<Id> = ids.into_iter().collect();
+    with(&st, |e| {
+        e.clipboard = e.project.clips_with_tracks(&set);
+        e.clipboard.len()
+    })
+}
+
+#[tauri::command]
+fn paste_clips(app: AppHandle, st: State<AppState>, time: f64) -> Value {
+    let new = with(&st, |e| {
+        let items = e.clipboard.clone();
+        let mut out = vec![];
+        e.apply(|p| out = p.paste(&items, time));
+        out
+    });
+    with_selection(&app, &st, new, String::new())
+}
+
+#[tauri::command]
+fn group_clips(app: AppHandle, st: State<AppState>, ids: Vec<Id>, on: bool) -> Value {
+    let set: HashSet<Id> = ids.into_iter().collect();
+    let sel = with(&st, |e| {
+        if on {
+            e.apply(|p| {
+                p.group(&set);
+            });
+        } else {
+            e.apply(|p| p.ungroup(&set));
+        }
+        e.project.group_members(&set).into_iter().collect::<Vec<_>>()
+    });
+    with_selection(&app, &st, sel, String::new())
+}
+
+#[tauri::command]
+fn join_clips(app: AppHandle, st: State<AppState>, ids: Vec<Id>) -> Value {
+    let set: HashSet<Id> = ids.into_iter().collect();
+    let (r, sel) = with(&st, |e| {
+        let mut r = (0, 0);
+        e.apply(|p| r = p.join(&set));
+        let alive: HashSet<Id> = e.project.tracks.iter().flat_map(|t| &t.clips).map(|c| c.id).collect();
+        let keep: HashSet<Id> = set.intersection(&alive).copied().collect();
+        (r, e.project.group_members(&keep).into_iter().collect::<Vec<_>>())
+    });
+    let mut parts = vec![];
+    if r.0 > 0 {
+        parts.push(format!("잘린 조각 {}곳을 하나로 합침", r.0));
+    }
+    if r.1 > 0 {
+        parts.push(format!("나머지 {}개는 빈틈 없이 붙여 그룹으로 묶음", r.1));
+    }
+    let msg = if parts.is_empty() { "합칠 수 있는 클립이 없습니다 (같은 트랙에서 이웃한 클립을 선택하세요)".to_string() } else { parts.join(", ") };
+    with_selection(&app, &st, sel, msg)
+}
+
+#[tauri::command]
+fn tracks_edit(app: AppHandle, st: State<AppState>, action: String) -> Value {
+    with(&st, |e| e.apply(|p| if action == "add" { p.add_track() } else { p.remove_empty_tracks() }));
     changed(&app, &st)
 }
 
@@ -911,6 +995,7 @@ pub fn run() {
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
+            duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
             rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder,
         ])
         .setup(|app| {

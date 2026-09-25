@@ -26,6 +26,9 @@ export const S = {
   markOut: null,
   zoom: 40,
   silencePreview: [],
+  snapping: localStorage.getItem("snapping") !== "0",
+  follow: localStorage.getItem("followPlayhead") !== "0",
+  trackH: +(localStorage.getItem("trackHeight") || 54),
   language: localStorage.getItem("sttLanguage") || (window.LANG === "ko" ? "ko" : "en"),
 };
 
@@ -51,6 +54,13 @@ export const U = {
     return (h ? h + ":" : "") + `${mm}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
   },
   trackName: (n) => (window.LANG === "ko" ? n : n.replace(/^트랙 (\d+)$/, "Track $1")),
+  /// 선택에 그룹 동료를 더한 집합
+  groupMembers: (ids) => {
+    const all = U.clips().map((x) => x.c);
+    const gs = new Set(all.filter((c) => ids.has(c.id) && c.groupID).map((c) => c.groupID));
+    if (!gs.size) return ids;
+    return new Set([...ids, ...all.filter((c) => gs.has(c.groupID)).map((c) => c.id)]);
+  },
   markRange: () => (S.markIn != null && S.markOut != null && Math.abs(S.markOut - S.markIn) > 0.02
     ? [Math.min(S.markIn, S.markOut), Math.max(S.markIn, S.markOut)] : null),
 };
@@ -608,6 +618,38 @@ async function exportSrt() {
   if (f) { try { await invoke("export_srt", { path: f }); toast(T("saved")); } catch (e) { showError(e); } }
 }
 
+function syncToggles() {
+  $("#snap-btn")?.classList.toggle("on", S.snapping);
+  $("#follow-btn")?.classList.toggle("on", S.follow);
+}
+
+function setTrackH(h) {
+  S.trackH = Math.max(34, Math.min(120, h));
+  localStorage.setItem("trackHeight", String(S.trackH));
+  timeline.refresh();
+}
+
+/// 이전 / 다음 편집점 (클립 경계, 구간 표시)
+function jumpEdit(forward) {
+  const pts = new Set([0, U.duration()]);
+  for (const { c } of U.clips()) { pts.add(c.start); pts.add(U.clipEnd(c)); }
+  if (S.markIn != null) pts.add(S.markIn);
+  if (S.markOut != null) pts.add(S.markOut);
+  const list = [...pts].sort((a, b) => a - b);
+  const t = forward ? list.find((p) => p > S.time + 0.01) : [...list].reverse().find((p) => p < S.time - 0.01);
+  if (t != null) seek(t);
+}
+
+function applySelect(v) {
+  if (v?.select) {
+    S.sel = new Set(v.select);
+    window.dispatchEvent(new Event("selection"));
+  }
+  if (v?.message) toast(L(v.message));
+}
+
+const selIds = () => [...S.sel];
+
 function setMark(which) {
   S.sel.clear();
   if (which === "in") { S.markIn = S.time; if (S.markOut != null && S.markOut < S.time) S.markOut = null; toast(L("시작 지점 (I) {}", U.fmt(S.time))); }
@@ -641,6 +683,52 @@ const commands = {
   aiConnect: () => connectDialog(),
   shortcuts: shortcutsDialog,
   record: () => openRecordDialog(),
+  duplicate: async () => { if (S.sel.size) applySelect(await run("duplicate_clips", { ids: selIds() })); },
+  copy: async () => {
+    if (!S.sel.size) return;
+    const n = await invoke("copy_clips", { ids: selIds() });
+    toast(L("{}개 클립 복사", n));
+  },
+  cut: async () => {
+    if (!S.sel.size) return;
+    await invoke("copy_clips", { ids: selIds() });
+    deleteSelection(false);
+  },
+  paste: async () => applySelect(await run("paste_clips", { time: S.time })),
+  selectAll: () => { S.sel = new Set(U.clips().map((x) => x.c.id)); window.dispatchEvent(new Event("selection")); },
+  group: async () => {
+    if (S.sel.size < 2) return toast(L("묶을 클립을 2개 이상 선택하세요 (빈 곳을 끌거나 Shift/Ctrl+클릭)"));
+    applySelect(await run("group_clips", { ids: selIds(), on: true }));
+    toast(L("{}개 클립을 그룹으로 묶었습니다 (Ctrl+Shift+G 해제)", S.sel.size));
+  },
+  ungroup: async () => {
+    if (!U.clips().some((x) => S.sel.has(x.c.id) && x.c.groupID)) return toast(L("그룹으로 묶인 클립을 선택하세요"));
+    await run("group_clips", { ids: selIds(), on: false });
+    toast(L("그룹을 풀었습니다"));
+  },
+  join: async () => {
+    if (S.sel.size < 2) return toast(L("합칠 클립을 2개 이상 선택하세요"));
+    applySelect(await run("join_clips", { ids: selIds() }));
+  },
+  splitAll: () => { run("split", { time: S.time, ids: [] }); toast(L("분할")); },
+  toggleSnap: () => {
+    S.snapping = !S.snapping;
+    localStorage.setItem("snapping", S.snapping ? "1" : "0");
+    toast(L(S.snapping ? "스냅 켬" : "스냅 끔"));
+    syncToggles();
+  },
+  toggleFollow: () => {
+    S.follow = !S.follow;
+    localStorage.setItem("followPlayhead", S.follow ? "1" : "0");
+    toast(L(S.follow ? "재생헤드 따라가기 켬" : "재생헤드 따라가기 끔"));
+    syncToggles();
+  },
+  trackBigger: () => setTrackH(S.trackH + 12),
+  trackSmaller: () => setTrackH(S.trackH - 12),
+  prevEdit: () => jumpEdit(false),
+  nextEdit: () => jumpEdit(true),
+  addTrack: () => run("tracks_edit", { action: "add" }),
+  cleanTracks: () => run("tracks_edit", { action: "clean" }),
   delete: () => deleteSelection(true),
   text: addText,
   silence: silenceDialog,
@@ -664,7 +752,8 @@ function onKey(e) {
   const tag = e.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   const ctrl = e.ctrlKey || e.metaKey;
-  const k = e.key.toLowerCase();
+  // 글자 키는 자판 배치·Alt 조합과 상관없이 물리 키로 (Ctrl+Alt+R이 다른 글자로 바뀌는 경우)
+  const k = e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.code === "Slash" ? "/" : e.code === "Equal" ? "=" : e.code === "Minus" ? "-" : e.key.toLowerCase();
   if (ctrl) {
     if (e.shiftKey) {
       const shiftMap = { i: "link", r: "transcribe", c: "captions", x: "silence", s: "saveAs", z: "redo", t: "splitAll", g: "ungroup" };
@@ -682,10 +771,18 @@ function onKey(e) {
     if (k === "backspace" || k === "delete") { e.preventDefault(); deleteSelection(true); }
     return;
   }
+  // Alt+숫자: 속도 바로 고르기 (맥 ⌥0~9와 같은 표)
+  if (e.altKey && /^Digit\d$/.test(e.code)) {
+    const table = [20, 1, 2, 3, 4, 5, 8, 10, 12, 16];
+    player.setRate(table[+e.code.slice(5)]);
+    toast(L("재생 속도 {}", player.rate + "x"));
+    e.preventDefault();
+    return;
+  }
   switch (e.code) {
     case "Space": e.preventDefault(); player.toggle(); return;
-    case "ArrowLeft": e.preventDefault(); seek(S.time - (e.shiftKey ? 5 : 1)); return;
-    case "ArrowRight": e.preventDefault(); seek(S.time + (e.shiftKey ? 5 : 1)); return;
+    case "ArrowLeft": e.preventDefault(); player.pause(); seek(S.time - (e.shiftKey ? 5 : 1)); return;
+    case "ArrowRight": e.preventDefault(); player.pause(); seek(S.time + (e.shiftKey ? 5 : 1)); return;
     case "Home": seek(0); return;
     case "End": seek(U.duration()); return;
     case "Delete": case "Backspace":
@@ -702,8 +799,15 @@ function onKey(e) {
     case "KeyK": player.pause(); return;
     case "KeyL": player.faster(); return;
     case "KeyJ": player.slower(); return;
-    case "Comma": seek(S.time - 1 / (S.project?.fps || 30)); return;
-    case "Period": seek(S.time + 1 / (S.project?.fps || 30)); return;
+    case "Comma": player.pause(); seek(S.time - 1 / (S.project?.fps || 30)); return;
+    case "Period": player.pause(); seek(S.time + 1 / (S.project?.fps || 30)); return;
+    case "ArrowUp": e.preventDefault(); jumpEdit(false); return;
+    case "ArrowDown": e.preventDefault(); jumpEdit(true); return;
+    case "BracketRight": player.stepRate(true); toast(L("재생 속도 {}", player.rate + "x")); return;
+    case "BracketLeft": player.stepRate(false); toast(L("재생 속도 {}", player.rate + "x")); return;
+    case "Backslash": player.setRate(1); toast(L("1배속")); return;
+    case "KeyN": commands.toggleSnap(); return;
+    case "KeyC": if (commands.addCaption) commands.addCaption(); return;
   }
 }
 
@@ -741,6 +845,7 @@ async function init() {
     }
   });
   setState(await invoke("get_state"));
+  syncToggles();
   reportUi();
   const modal = { box: modalBox(), show: showModal, hide: hideModal };
   await initAI($("#tab-ai"), { toast, modal });
