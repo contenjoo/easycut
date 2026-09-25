@@ -5,10 +5,9 @@
 //   node render.mjs ko stills 5,11.2,33.8          # PNGs in stills/ for checking a moment
 //   ffmpeg -i video-ko.mp4 -i music.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k \
 //          -af volume=-3.5dB -shortest -movflags +faststart ../easycut-promo.mp4
-//   node render.mjs ko stills 7 && python3 poster.py stills/ko-7.00.png ../poster.jpg "소개 영상 보기 · 53초"
 //
 // Needs playwright-core (PLAYWRIGHT_CORE=/path/to/playwright-core/index.mjs, or installed next to this file),
-// Google Chrome (CHROME=...), ffmpeg, and Python with numpy + Pillow. Fonts: Noto Sans KR installed.
+// Google Chrome (CHROME=...), ffmpeg, and Python with numpy. Fonts: Noto Sans KR installed.
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
