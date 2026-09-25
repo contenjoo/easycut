@@ -313,7 +313,8 @@ enum Transcriber {
                 progress(base + span * v, label)
             }
             let data = try Data(contentsOf: URL(fileURLWithPath: outBase + ".json"))
-            words += parseWhisperFull(data).map { Word(text: $0.text, start: $0.start + offset, end: $0.end + offset) }
+            let length = Double(slice.count) / Double(sampleRate)
+            words += clamp(parseWhisperFull(data), to: length).map { Word(text: $0.text, start: $0.start + offset, end: $0.end + offset) }
             partial?(fixOverlaps(words))
         }
         progress(1, "완료")
@@ -451,6 +452,17 @@ enum Transcriber {
             }
         }
         return words
+    }
+
+    /// 단어 시간을 조각 길이 안으로 자른다. Whisper는 마지막 세그먼트 끝을 오디오보다 길게 알려 주기도 해서,
+    /// 그대로 두면 마지막 단어가 미디어 밖으로 나가 대본에서 사라질 수 있다.
+    static func clamp(_ w: [Word], to length: Double) -> [Word] {
+        w.map { word in
+            var n = word
+            n.start = min(max(0, n.start), max(0, length - 0.02))
+            n.end = min(max(n.end, n.start + 0.02), max(length, n.start + 0.02))
+            return n
+        }
     }
 
     static func fixOverlaps(_ w: [Word]) -> [Word] {
