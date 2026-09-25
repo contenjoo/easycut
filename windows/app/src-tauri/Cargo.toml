@@ -21,4 +21,5 @@ easycut-core = { path = "../../crates/easycut-core" }
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
 ureq = { version = "2", features = ["json"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

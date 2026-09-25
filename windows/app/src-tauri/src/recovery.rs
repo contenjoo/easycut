@@ -91,3 +91,12 @@ pub fn start(app: AppHandle) {
         }
     });
 }
+
+/// 최근 프로젝트 (맨 앞이 가장 최근, 10개까지)
+pub fn add_recent(path: &str) {
+    let mut list: Vec<String> = prefs()["recent"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    list.retain(|p| p != path);
+    list.insert(0, path.to_string());
+    list.truncate(10);
+    set_pref("recent", json!(list));
+}

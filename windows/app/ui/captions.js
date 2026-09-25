@@ -1,4 +1,6 @@
 // 자막 탭과 자막 인스펙터 (맥 Panels.swift CaptionsPanel / CaptionRow / TextStyleControls)
+import { startDrag } from "./drag.js";
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 export const FONTS = ["Malgun Gothic", "Gulim", "Dotum", "Batang", "Gungsuh", "NanumGothic", "NanumMyeongjo", "NanumBarunGothic", "NanumSquare", "Noto Sans KR", "Pretendard", "Segoe UI", "Arial"];
@@ -84,7 +86,6 @@ export function styleControls(el, style, onChange, showPosition) {
 
 // MARK: 자막 탭
 
-let dragFrom = null;
 export function renderCaptions(el) {
   const { S, U, run } = X;
   const p = S.project;
@@ -125,9 +126,8 @@ export function renderCaptions(el) {
   caps.forEach((c, i) => {
     const row = document.createElement("div");
     row.className = "c" + (S.selCap === c.id ? " sel" : "");
-    row.draggable = true;
     row.dataset.id = c.id;
-    row.innerHTML = `<div class="tm" title="${L("여기로 이동")}">${U.fmt(c.start)}<br><span class="hint">${U.fmt(c.end)}</span></div><textarea rows="1"></textarea>
+    row.innerHTML = `<div class="grip" title="${L("끌어서 순서 바꾸기 (영상도 함께 옮겨집니다)")}">⋮⋮</div><div class="tm" title="${L("여기로 이동")}">${U.fmt(c.start)}<br><span class="hint">${U.fmt(c.end)}</span></div><textarea rows="1"></textarea>
       <button class="del" title="${L(S.capCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제")}">${S.capCutsVideo ? "✂" : "✕"}</button>`;
     const ta = row.querySelector("textarea");
     ta.value = c.text;
@@ -139,19 +139,31 @@ export function renderCaptions(el) {
     row.querySelector(".del").onclick = () => deleteCaptions([c.id]);
     row.oncontextmenu = (e) => { e.preventDefault(); X.captionMenu(e.clientX, e.clientY, c); };
     // 끌어서 순서 바꾸기 → 영상 구간도 함께 이동
-    row.ondragstart = (e) => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; };
-    row.ondragover = (e) => { e.preventDefault(); row.classList.add("drop"); };
-    row.ondragleave = () => row.classList.remove("drop");
-    row.ondrop = (e) => {
+    row.querySelector(".grip").onmousedown = (e) => {
       e.preventDefault();
-      row.classList.remove("drop");
-      const r = row.getBoundingClientRect();
-      const to = e.clientY > r.top + r.height / 2 ? i + 1 : i;
-      if (dragFrom != null && to !== dragFrom && to !== dragFrom + 1) {
-        run("move_caption", { from: dragFrom, to });
-        X.toast(L("순서를 바꿨습니다"));
-      }
-      dragFrom = null;
+      let to = null;
+      const rows = [...list.querySelectorAll(".c")];
+      const target = (y) => {
+        rows.forEach((r) => r.classList.remove("drop", "drop-top"));
+        for (let k = 0; k < rows.length; k++) {
+          const r = rows[k].getBoundingClientRect();
+          if (y < r.top + r.height / 2) { rows[k].classList.add("drop-top"); return k; }
+        }
+        rows[rows.length - 1]?.classList.add("drop");
+        return rows.length;
+      };
+      startDrag(e, {
+        label: c.text.slice(0, 24),
+        onMove: (x, y) => (to = target(y)),
+        onDrop: () => {
+          rows.forEach((r) => r.classList.remove("drop", "drop-top"));
+          if (to != null && to !== i && to !== i + 1) {
+            run("move_caption", { from: i, to });
+            X.toast(L("순서를 바꿨습니다"));
+          }
+        },
+        onCancel: () => rows.forEach((r) => r.classList.remove("drop", "drop-top")),
+      });
     };
     list.appendChild(row);
   });

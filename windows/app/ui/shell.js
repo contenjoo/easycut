@@ -47,7 +47,7 @@ export async function initShell(a) {
 
 // MARK: 메뉴 막대 (가속키는 등록하지 않는다: 글자 입력칸의 Ctrl+C/V/Z를 가로채지 않도록. 단축키는 app.js가 처리)
 
-async function buildMenu() {
+export async function buildMenu() {
   const M = tauri.menu;
   if (!M) return;
   const item = (text, action, key) => M.MenuItem.new({ text: key ? `${L(text)}\t${key}` : L(text), action });
@@ -63,6 +63,9 @@ async function buildMenu() {
     items: await Promise.all([
       item("새 프로젝트", c.newProject, "Ctrl+N"),
       item("프로젝트 열기…", c.open, "Ctrl+O"),
+      M.Submenu.new({ text: L("최근 프로젝트"), items: await Promise.all((prefs.recent || []).length
+        ? [...prefs.recent.map((p) => item(p.split(/[\\/]/).pop().replace(/\.easycut$/, "") + "   —   " + p, () => c.openPath(p))), sep(), item("목록 지우기", async () => { await invoke("set_pref", { key: "recent", value: [] }); buildMenu(); })]
+        : [M.MenuItem.new({ text: L("없음"), enabled: false })]) }),
       sep(),
       item("미디어 가져오기…", c.import, "Ctrl+I"),
       item("링크로 가져오기 (유튜브 등)…", linkDialog, "Ctrl+Shift+I"),

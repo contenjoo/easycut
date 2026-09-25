@@ -13,11 +13,11 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.danger { background: #c0392b; border-color: #c0392b; color: #fff; }
 input, select, textarea { background: #17181b; color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; font: inherit; }
 input[type=range] { padding: 0; }
-body { display: grid; grid-template-rows: 44px 1fr 290px; }
+body { display: grid; grid-template-rows: 44px 1fr 5px var(--tl-h, 290px); }
 #toolbar { display: flex; justify-content: space-between; align-items: center; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); gap: 8px; }
 #toolbar .group { display: flex; gap: 6px; align-items: center; }
 .title { color: var(--dim); margin-left: 8px; }
-#main { display: grid; grid-template-columns: 330px 1fr 280px; min-height: 0; }
+#main { display: grid; grid-template-columns: var(--left-w, 330px) 5px 1fr 5px var(--right-w, 280px); min-height: 0; }
 .panel { background: var(--panel); min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 #left { border-right: 1px solid var(--line); }
 #right { border-left: 1px solid var(--line); overflow-y: auto; }
@@ -169,3 +169,25 @@ button.danger-text { color: #ff7b7b; }
 .quick button:hover { background: var(--panel2); }
 .asset .thumb { height: 64px; border-radius: 5px; background: #111 center/cover no-repeat; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
 .asset .miss { color: #e6a23c; font-size: 11px; margin-top: 4px; }
+/* 미리보기 아래 */
+#center { grid-template-rows: 1fr 30px 42px; }
+#scrub { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-top: 1px solid var(--line); }
+#scrub input { flex: 1; }
+#transport { flex-wrap: nowrap; overflow: hidden; }
+#transport .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+#transport #vol { width: 80px; }
+#transport #rate-slider { width: 90px; }
+#cc-btn.on { border-color: var(--accent); }
+#empty-hint { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+#speed-badge { position: absolute; top: 10px; left: 10px; background: rgba(59,130,246,.85); color: #fff; border-radius: 12px; padding: 3px 10px; font-size: 12px; display: none; z-index: 5; }
+.drag-ghost { position: fixed; z-index: 80; pointer-events: none; background: rgba(59,130,246,.9); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 12px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+.caplist .c { grid-template-columns: 14px 70px 1fr 26px; }
+.caplist .c .grip { color: var(--dim); cursor: grab; font-size: 10px; line-height: 2.4; }
+.caplist .c.drop-top { box-shadow: inset 0 2px 0 var(--accent); }
+
+.vsplit { cursor: col-resize; background: var(--line); opacity: .4; }
+.hsplit { cursor: row-resize; background: var(--line); opacity: .4; }
+.vsplit:hover, .hsplit:hover, body.resizing .vsplit, body.resizing .hsplit { opacity: 1; background: var(--accent); }
+body.resizing, body.resizing * { user-select: none; }
+body.resizing.v * { cursor: col-resize !important; }

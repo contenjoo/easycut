@@ -179,6 +179,7 @@ fn open_project(app: AppHandle, st: State<AppState>, path: String) -> Res<Value>
         e.path = Some(PathBuf::from(&path));
     });
     recovery::clear();
+    recovery::add_recent(&path);
     restore_assets(&app, PathBuf::from(&path).parent().map(PathBuf::from));
     Ok(changed(&app, &st))
 }
@@ -289,6 +290,7 @@ fn save_project(app: AppHandle, st: State<AppState>, path: Option<String>) -> Re
     });
     let target = target.ok_or("저장할 위치가 없습니다.")?;
     std::fs::write(&target, json.map_err(|e| e.to_string())?).map_err(|e| format!("저장 실패: {e}"))?;
+    recovery::add_recent(&target.to_string_lossy());
     with(&st, |e| {
         e.path = Some(target);
         e.dirty = false;
@@ -329,7 +331,7 @@ fn prepare_media(app: &AppHandle, path: &std::path::Path) -> Res<(easycut_core::
 }
 
 #[tauri::command]
-async fn import_files(app: AppHandle, st: State<'_, AppState>, paths: Vec<String>) -> Res<Value> {
+async fn import_files(app: AppHandle, st: State<'_, AppState>, paths: Vec<String>, place: Option<(usize, f64)>) -> Res<Value> {
     let a2 = app.clone();
     let probed = tauri::async_runtime::spawn_blocking(move || {
         paths.iter().map(|p| prepare_media(&a2, &PathBuf::from(p))).collect::<Vec<_>>()
@@ -352,9 +354,16 @@ async fn import_files(app: AppHandle, st: State<'_, AppState>, paths: Vec<String
     }
     with(&st, |e| {
         let was_empty = e.project.duration() <= 0.0;
+        let mut cursor = place.map_or(0.0, |x| x.1);
         e.apply(|p| {
             for a in &added {
-                if p.assets.iter().any(|x| x.path == a.path) {
+                if let Some(ex) = p.assets.iter().find(|x| x.path == a.path || x.original_path.as_deref() == a.original_path.as_deref().or(Some(&a.path))).cloned() {
+                    // 이미 있는 미디어: 끌어다 놓았으면 그 자리에만 놓는다
+                    if let Some((ti, _)) = place {
+                        let id = p.insert(&ex, ti, cursor, 5.0);
+                        p.resolve_overlaps(ti, Some(id));
+                        cursor = p.clip(id).map_or(cursor, |c| c.end());
+                    }
                     continue;
                 }
                 p.assets.push(a.clone());
@@ -362,7 +371,12 @@ async fn import_files(app: AppHandle, st: State<'_, AppState>, paths: Vec<String
                     p.canvas_width = a.width;
                     p.canvas_height = a.height;
                 }
-                if was_empty {
+                if let Some((ti, _)) = place {
+                    // 타임라인에 끌어다 놓은 자리부터 차례로
+                    let id = p.insert(a, ti, cursor, 5.0);
+                    p.resolve_overlaps(ti, Some(id));
+                    cursor = p.clip(id).map_or(cursor, |c| c.end());
+                } else if was_empty {
                     auto_place(p, a);
                 }
             }
@@ -390,13 +404,14 @@ fn auto_place(p: &mut Project, a: &easycut_core::MediaAsset) {
 }
 
 #[tauri::command]
-fn add_to_timeline(app: AppHandle, st: State<AppState>, asset: Id, time: Option<f64>) -> Value {
+fn add_to_timeline(app: AppHandle, st: State<AppState>, asset: Id, time: Option<f64>, track: Option<usize>) -> Value {
     with(&st, |e| {
         let Some(a) = e.project.assets.iter().find(|x| x.id == asset).cloned() else { return };
         e.apply(|p| match time {
             Some(t) => {
-                let ti = if a.kind == MediaKind::Audio { 2 } else { 0 };
-                p.insert(&a, ti, t, 5.0);
+                let ti = track.unwrap_or(if a.kind == MediaKind::Audio { 2 } else { 0 });
+                let id = p.insert(&a, ti, t, 5.0);
+                p.resolve_overlaps(ti, Some(id));
             }
             None => auto_place(p, &a),
         });
@@ -1022,6 +1037,10 @@ fn get_prefs() -> Value {
     let mut p = recovery::prefs();
     p["autosave"] = json!(recovery::autosave_enabled());
     p["version"] = json!(update::CURRENT);
+    // 없는 파일은 최근 목록에서 뺀다
+    if let Some(list) = p["recent"].as_array().cloned() {
+        p["recent"] = json!(list.into_iter().filter(|v| v.as_str().is_some_and(|s| std::path::Path::new(s).is_file())).collect::<Vec<_>>());
+    }
     p
 }
 
@@ -1278,6 +1297,18 @@ fn export_size(st: State<AppState>, height: u32) -> (i64, i64) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 이미 열려 있으면 그 창으로 파일을 넘기고 앞으로 가져온다 (탐색기에서 두 번 연 경우)
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let files: Vec<String> = args.iter().skip(1).filter(|a| !a.starts_with('-') && std::path::Path::new(a).is_file()).cloned().collect();
+            if !files.is_empty() {
+                let _ = app.emit("open-files", files);
+            }
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)), ui: Mutex::default() })
         .manage(ai::Ai::default())

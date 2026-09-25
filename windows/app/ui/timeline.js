@@ -606,6 +606,16 @@ export class Timeline {
     emptyMenu(e.clientX, e.clientY, this.t(x));
   }
 
+  /// 화면 좌표 → 타임라인 (시간, 트랙). 타임라인 밖이면 null
+  pointAt(clientX, clientY) {
+    const r = this.sc.getBoundingClientRect();
+    if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
+    const { x, y } = this.pos({ clientX, clientY });
+    if (x - this.sc.scrollLeft < HEADER) return null;
+    const ti = this.trackAt(y);
+    return { t: this.snap(this.t(x)), ti: ti ?? 0 };
+  }
+
   /// 자막 줄에서 누른 자막 (edge: -1 왼쪽 끝, 1 오른쪽 끝, 0 가운데)
   captionHit(px, py) {
     if (py < RULER + 3 || py > RULER + CAPH - 3) return null;

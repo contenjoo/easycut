@@ -2,11 +2,12 @@
 import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
 import { initAI, focusAI, connectDialog, sendAI } from "./ai.js";
-import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal, ask } from "./shell.js";
+import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal, ask, buildMenu } from "./shell.js";
 import { initRecord, openRecordDialog, isRecording } from "./record.js";
 import { initCaptions, renderCaptions as renderCaptionsTab, captionInspector, addCaption, deleteCaptions, generateCaptions, styleControls } from "./captions.js";
 import { showMenu } from "./menu.js";
-import { initTranscript, renderTranscript as renderTranscriptTab, highlightWord, deleteWords, transcribeTimeline, transcribeAsset, silenceDialog, sttSettings, focusSearch, selectRange, fixSelectedWord } from "./transcript.js";
+import { startDrag } from "./drag.js";
+import { initTranscript, renderTranscript as renderTranscriptTab, highlightWord, deleteWords, transcribeTimeline, transcribeAsset, silenceDialog, sttSettings, focusSearch, selectRange, fixSelectedWord, exportTxt } from "./transcript.js";
 import { SPEEDS } from "./player.js";
 
 const tauri = window.__TAURI__;
@@ -30,6 +31,7 @@ export const S = {
   markOut: null,
   zoom: 40,
   silencePreview: [],
+  volume: +(localStorage.getItem("previewVolume") ?? 1),
   snapping: localStorage.getItem("snapping") !== "0",
   follow: localStorage.getItem("followPlayhead") !== "0",
   trackH: +(localStorage.getItem("trackHeight") || 54),
@@ -110,6 +112,36 @@ function jobUpdate({ id, value, message }) {
 
 // MARK: 상태 반영
 
+// MARK: 칸 크기 조절 (왼쪽·오른쪽 패널 너비, 타임라인 높이) — 기억해 둔다
+
+function initSplitters() {
+  const root = document.documentElement;
+  const get = (k, d) => +(localStorage.getItem("pane." + k) || d);
+  const set = (k, v) => { root.style.setProperty(`--${k}`, v + "px"); localStorage.setItem("pane." + k, String(v)); };
+  set("left-w", get("left-w", 330));
+  set("right-w", get("right-w", 280));
+  set("tl-h", get("tl-h", 290));
+  document.querySelectorAll("[data-split]").forEach((h) => {
+    h.onmousedown = (e) => {
+      e.preventDefault();
+      const kind = h.dataset.split;
+      const sx = e.clientX, sy = e.clientY;
+      const start = { left: get("left-w", 330), right: get("right-w", 280), timeline: get("tl-h", 290) }[kind];
+      document.body.classList.add("resizing");
+      const move = (ev) => {
+        if (kind === "left") set("left-w", Math.max(240, Math.min(620, start + ev.clientX - sx)));
+        if (kind === "right") set("right-w", Math.max(220, Math.min(520, start - (ev.clientX - sx))));
+        if (kind === "timeline") set("tl-h", Math.max(150, Math.min(innerHeight - 260, start - (ev.clientY - sy))));
+        timeline?.refresh();
+        player?.refresh();
+      };
+      const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); document.body.classList.remove("resizing"); };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    };
+  });
+}
+
 // MARK: 미디어 그림 · 파형 (타임라인 클립과 미디어 칸에 그린다)
 
 S.media = {};
@@ -176,20 +208,30 @@ function render() {
   timeline?.refresh();
   player?.refresh();
   $("#dur").textContent = U.fmt(U.duration());
+  $("#cc-btn")?.classList.toggle("on", !!S.project?.showCaptions);
+  showTime();
+}
+
+/// 시계와 탐색 막대
+function showTime() {
+  $("#clock").textContent = U.fmt(S.time);
+  const d = U.duration();
+  const bar = $("#scrub-bar");
+  if (bar && document.activeElement !== bar) bar.value = d > 0 ? S.time / d : 0;
 }
 
 export function seek(t) {
   S.time = Math.max(0, Math.min(t, U.duration()));
   player?.seek(S.time);
   timeline?.drawSoon();
-  $("#clock").textContent = U.fmt(S.time);
+  showTime();
   highlightWord();
   reportUi();
 }
 
 export function onTime(t) {
   S.time = t;
-  $("#clock").textContent = U.fmt(t);
+  showTime();
   timeline?.playheadMoved();
   highlightWord();
   reportUi();
@@ -239,6 +281,17 @@ function renderMedia() {
       d.querySelector(".rm").onclick = () => run("remove_asset", { asset: a.id });
       d.ondblclick = () => run("add_to_timeline", { asset: a.id, time: S.time });
       d.oncontextmenu = (e) => { e.preventDefault(); mediaMenu(e.clientX, e.clientY, a); };
+      // 타임라인으로 끌어다 놓기
+      d.onmousedown = (e) => {
+        if (e.target.closest("button")) return;
+        startDrag(e, {
+          label: a.name,
+          onDrop: (x, y) => {
+            const at = timeline.pointAt(x, y);
+            if (at) run("add_to_timeline", { asset: a.id, time: at.t, track: a.kind === "audio" && at.ti === 0 ? 2 : at.ti });
+          },
+        });
+      };
       grid.appendChild(d);
     }
     el.appendChild(grid);
@@ -461,10 +514,10 @@ async function importPanel() {
   if (files?.length) importFiles(files);
 }
 
-function importFiles(paths) {
+function importFiles(paths, place = null) {
   const projects = paths.filter((p) => p.toLowerCase().endsWith(".easycut"));
   if (projects.length) return openProject(projects[0]);
-  run("import_files", { paths });
+  run("import_files", { paths, place });
 }
 
 async function openProject(path) {
@@ -474,7 +527,7 @@ async function openProject(path) {
     if (!path) return;
   }
   S.sel.clear();
-  await run("open_project", { path });
+  if (await run("open_project", { path })) buildMenu();
 }
 
 async function saveProject(as = false) {
@@ -483,7 +536,7 @@ async function saveProject(as = false) {
     path = await tauri.dialog.save({ defaultPath: `${T("newProject")}.easycut`, filters: [{ name: "EasyCut", extensions: ["easycut"] }] });
     if (!path) return false;
   }
-  if (await run("save_project", { path })) { toast(T("saved")); return true; }
+  if (await run("save_project", { path })) { toast(T("saved")); if (as || !S.path) buildMenu(); return true; }
   return false;
 }
 
@@ -671,6 +724,7 @@ const commands = {
   import: importPanel,
   newProject: () => newProject(),
   open: () => openProject(),
+  openPath: (p) => openProject(p),
   saveAs: () => saveProject(true),
   importSrt,
   exportSrt,
@@ -706,6 +760,7 @@ const commands = {
   paste: async () => applySelect(await run("paste_clips", { time: S.time })),
   sttSettings,
   snapshot,
+  exportTranscript: () => exportTxt(),
   findTranscript: focusSearch,
   selectAll: () => { S.sel = new Set(U.clips().map((x) => x.c.id)); window.dispatchEvent(new Event("selection")); },
   group: async () => {
@@ -722,6 +777,9 @@ const commands = {
     if (S.sel.size < 2) return toast(L("합칠 클립을 2개 이상 선택하세요"));
     applySelect(await run("join_clips", { ids: selIds() }));
   },
+  prevFrame: () => { player.pause(); seek(S.time - 1 / (S.project?.fps || 30)); },
+  nextFrame: () => { player.pause(); seek(S.time + 1 / (S.project?.fps || 30)); },
+  toggleCaptions: () => run("update_project", { props: { showCaptions: !S.project.showCaptions } }),
   splitAll: () => { run("split", { time: S.time, ids: [] }); toast(L("분할")); },
   toggleSnap: () => {
     S.snapping = !S.snapping;
@@ -839,18 +897,37 @@ async function init() {
   window.addEventListener("error", (e) => toast("JS: " + e.message));
   window.addEventListener("unhandledrejection", (e) => toast("JS: " + (e.reason?.message ?? e.reason)));
   applyI18n();
+  initSplitters();
   timeline = new Timeline($("#timeline"), $("#tl-scroll"));
   player = new Player($("#canvas"), $("#stage"));
   document.querySelectorAll("[data-cmd]").forEach((b) => (b.onclick = () => commands[b.dataset.cmd]?.()));
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
   $("#rate").onchange = (e) => player.setRate(+e.target.value);
+  $("#rate-slider").oninput = (e) => player.setRate(Math.round(Math.exp(+e.target.value) * 100) / 100);
+  $("#scrub-bar").oninput = (e) => seek(+e.target.value * U.duration());
+  $("#vol").value = S.volume;
+  $("#vol").oninput = (e) => {
+    S.volume = +e.target.value;
+    localStorage.setItem("previewVolume", String(S.volume));
+    $("#vol-ic").textContent = S.volume === 0 ? "🔇" : "🔊";
+    player.update(false);
+  };
+  $("#vol-ic").textContent = S.volume === 0 ? "🔇" : "🔊";
   $("#zoom").oninput = (e) => timeline.setZoom(Math.pow(10, +e.target.value));
   window.addEventListener("keydown", onKey);
   window.addEventListener("selection", () => { renderInspector(); timeline.drawSoon(); reportUi(); });
   await listen("job", (e) => jobUpdate(e.payload));
   await listen("project", (e) => setState(e.payload));
   await listen("toast", (e) => toast(L(e.payload.text)));
-  await listen("tauri://drag-drop", (e) => { const paths = e.payload?.paths; if (paths?.length) importFiles(paths); });
+  // 파일을 끌어다 놓기: 타임라인 위면 그 자리에, 아니면 미디어로 가져오기
+  await listen("tauri://drag-drop", (e) => {
+    const paths = e.payload?.paths;
+    if (!paths?.length) return;
+    const pos = e.payload.position;
+    const at = pos ? timeline.pointAt(pos.x / devicePixelRatio, pos.y / devicePixelRatio) : null;
+    importFiles(paths, at ? [at.ti, at.t] : null);
+  });
+  await listen("open-files", (e) => { if (e.payload?.length) importFiles(e.payload); });
   // AI 도구가 화면 쪽 동작을 요청할 때 (재생헤드 이동, 재생 속도)
   await listen("ui-command", (e) => {
     const c = e.payload;

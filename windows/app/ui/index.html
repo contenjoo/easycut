@@ -41,6 +41,7 @@
       <div id="tab-ai" class="tab ai-tab"></div>
     </section>
 
+    <div class="vsplit" data-split="left"></div>
     <section id="center">
       <div id="stage">
         <div id="canvas">
@@ -48,24 +49,39 @@
           <img id="still" alt="" />
           <div id="overlay"></div>
         </div>
-        <div id="empty-hint" data-i18n="dropHint">영상, 오디오, 사진을 여기로 끌어다 놓으세요</div>
+        <div id="empty-hint"><div style="font-size:34px">🎞</div><div data-i18n="dropHint">영상, 오디오, 사진을 여기로 끌어다 놓으세요</div>
+          <div class="hint" data-l="또는 Ctrl+I 로 가져오기">또는 Ctrl+I 로 가져오기</div><button data-cmd="import" class="primary" data-l="미디어 가져오기…">미디어 가져오기…</button></div>
+        <div id="speed-badge"></div>
+      </div>
+      <div id="scrub">
+        <span id="clock">00:00.00</span>
+        <input id="scrub-bar" type="range" min="0" max="1" step="0.001" value="0" />
+        <span id="dur">00:00.00</span>
       </div>
       <div id="transport">
-        <span id="clock">00:00.00</span>
-        <button data-cmd="start" title="Home">⏮</button>
-        <button data-cmd="back5" title="Shift+←">−5s</button>
-        <button data-cmd="play" id="playBtn" class="primary" title="Space">▶</button>
-        <button data-cmd="fwd5" title="Shift+→">+5s</button>
-        <button data-cmd="end" title="End">⏭</button>
+        <button data-cmd="start" data-l-title="처음으로 (Home)">⏮</button>
+        <button data-cmd="back5" data-l-title="5초 뒤로 (Shift+←)">−5s</button>
+        <button data-cmd="prevFrame" data-l-title="이전 프레임 (,)">‹</button>
+        <button data-cmd="play" id="playBtn" class="primary" data-l-title="재생/일시정지 (Space)">▶</button>
+        <button data-cmd="nextFrame" data-l-title="다음 프레임 (.)">›</button>
+        <button data-cmd="fwd5" data-l-title="5초 앞으로 (Shift+→)">+5s</button>
+        <button data-cmd="end" data-l-title="끝으로 (End)">⏭</button>
+        <span class="sep"></span>
+        <button id="cc-btn" data-cmd="toggleCaptions" data-l-title="미리보기 자막 표시">💬</button>
+        <span id="vol-ic" data-l-title="미리보기 볼륨">🔊</span><input id="vol" type="range" min="0" max="1" step="0.01" value="1" />
+        <span class="sep"></span>
+        <span data-l-title="재생 속도 (최대 20배속) — [ 느리게, ] 빠르게, \ 1배속">🐇</span>
         <select id="rate" title="J / K / L · [ ] \">
           <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option><option value="6">6x</option><option value="8">8x</option><option value="10">10x</option><option value="12">12x</option><option value="16">16x</option><option value="20">20x</option>
         </select>
-        <span id="dur">00:00.00</span>
+        <input id="rate-slider" type="range" min="-1.386" max="2.996" step="0.01" value="0" />
       </div>
     </section>
 
+    <div class="vsplit" data-split="right"></div>
     <section id="right" class="panel"><div id="inspector"></div></section>
   </main>
+  <div class="hsplit" data-split="timeline"></div>
 
   <section id="timeline-wrap">
     <div id="tl-toolbar">

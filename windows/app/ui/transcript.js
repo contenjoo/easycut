@@ -290,7 +290,7 @@ export function highlightWord(force) {
   }
 }
 
-async function exportTxt() {
+export async function exportTxt() {
   const base = X.S.path ? X.S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : L("대본");
   const f = await window.__TAURI__.dialog.save({ defaultPath: `${base}.txt`, filters: [{ name: "TXT", extensions: ["txt"] }] });
   if (!f) return;

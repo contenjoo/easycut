@@ -100,6 +100,11 @@ export class Player {
     const sel = document.querySelector("#rate");
     if (![...sel.options].some((o) => +o.value === this.rate)) sel.add(new Option(`${this.rate}x`, String(this.rate)));
     sel.value = String(this.rate);
+    const sl = document.querySelector("#rate-slider");
+    if (sl && document.activeElement !== sl) sl.value = Math.log(this.rate);
+    // 1배속이 아니면 미리보기에 표시
+    const badge = document.querySelector("#speed-badge");
+    if (badge) { badge.textContent = this.rate === 1 ? "" : L("{} 재생", this.rate + "x"); badge.style.display = this.rate === 1 ? "none" : ""; }
     this.update(true);
   }
 
@@ -172,8 +177,9 @@ export class Player {
       if (visual && a.width && a.height) this.place(el, c, a);
       if (el.tagName !== "IMG") {
         const want = c.sourceIn + (t - c.start) * c.speed;
-        el.muted = tr.muted || c.volume <= 0.001;
-        el.volume = Math.min(1, c.volume);
+        const vol = c.volume * (S.volume ?? 1);
+        el.muted = tr.muted || vol <= 0.001;
+        el.volume = Math.min(1, vol);
         const rate = Math.min(16, Math.max(0.0625, this.rate * c.speed));
         if (Math.abs(el.playbackRate - rate) > 0.001) el.playbackRate = rate;
         if (hard || Math.abs(el.currentTime - want) > 0.35 * Math.max(1, rate)) {
