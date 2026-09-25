@@ -22,3 +22,7 @@ EasyCut for Windows 0.1.1 (베타 / Beta)
 
 [Install]
 • Windows 10/11 (64-bit). Run the setup .exe; if SmartScreen appears, click "More info" → "Run anyway".
+
+[소식 / Announcement]
+• 한국어: https://github.com/contenjoo/easycut/blob/main/docs/announcements/windows-beta.md
+• English: https://github.com/contenjoo/easycut/blob/main/docs/announcements/windows-beta.en.md
