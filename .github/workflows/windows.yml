@@ -12,7 +12,8 @@ permissions:
 
 env:
   # 자체 검사에서 합성 음성으로 읽고 Whisper가 알아듣는지 확인하는 문장
-  SELFTEST_SPEECH_TEXT: "Hello everyone. Today we are testing the video editor on Windows. When you delete words from the transcript, the video is cut as well. Thank you for watching."
+  # ("Thank you for watching." 같은 영상 끝인사는 Whisper가 다른 말과 함께 들으면 빼 버려서 쓰지 않는다)
+  SELFTEST_SPEECH_TEXT: "Hello everyone. Today we are testing the video editor on Windows. When you delete words from the transcript, the video is cut as well. The captions are made from the same words."
 
 jobs:
   build:
