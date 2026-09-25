@@ -8,6 +8,8 @@
 
 윈도우 버전(베타): [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases?q=Windows&expanded=true) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
 
+만든 곳: [주식회사 오늘배움](https://learntoday.kr/services) — 주이즈·JooShow 등 오늘배움이 만든 다른 서비스도 이 페이지에서 볼 수 있습니다.
+
 https://github.com/user-attachments/assets/c82c022a-1c3b-4895-94b8-a49f6609b6f9
 
 ![대본 편집 — 음성 인식된 대본, 자막, 타임라인](docs/screenshots/transcript.jpg)
