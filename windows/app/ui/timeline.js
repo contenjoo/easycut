@@ -257,8 +257,13 @@ export class Timeline {
     if (m.peaks?.length && a.hasAudio) {
       // 아래쪽 절반에 파형 (50ms 단위)
       const base = y + h - 2, amp = kind === "audio" ? bh - 4 : bh * 0.45;
-      ctx.fillStyle = kind === "audio" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.35)";
       const px0 = Math.max(cx, x0), px1 = Math.min(cx + cw, x1);
+      if (kind !== "audio") {
+        // 장면 그림 위에서도 보이게 아래쪽을 어둡게
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillRect(px0, base - amp, px1 - px0, amp + 2);
+      }
+      ctx.fillStyle = kind === "audio" ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.8)";
       for (let px = px0; px < px1; px += 2) {
         const s0 = c.sourceIn + ((px - cx) / S.zoom) * c.speed, s1 = c.sourceIn + ((px + 2 - cx) / S.zoom) * c.speed;
         let v = 0;

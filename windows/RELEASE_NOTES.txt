@@ -1,4 +1,25 @@
-EasyCut for Windows 0.1.1 (베타 / Beta)
+EasyCut for Windows 0.2.0 (베타 / Beta)
+
+맥 버전의 기능을 윈도우에도 넣었습니다.
+• AI 편집: "말 없는 부분 잘라줘"처럼 말로 편집 (Claude 또는 ChatGPT 계정으로 버튼 하나 로그인, API 키도 가능). Claude 데스크톱·Claude Code·Codex에서도 EasyCut 조작
+• 화면·얼굴 녹화: 전체 화면·창·영역, 원 모양 얼굴 카메라, 마이크·컴퓨터 소리, 일시정지, 마우스 클릭 강조
+• 자동 업데이트: 새 버전이 나오면 알려 주고, 작업을 저장한 뒤 조용히 설치하고 다시 엽니다
+• 유튜브 등 링크로 가져오기, 자동 저장·복구, 메뉴 막대, 오른쪽 클릭 메뉴
+• 편집: 복제·복사·붙여넣기, 그룹·합치기, 스냅, 편집점 이동, 20배속, 타임라인 장면 그림·파형
+• 대본·자막: 대본 검색, 7개 언어·모델 선택, 무음 컷 설정, 자막 순서 바꾸기·스타일·글꼴
+• 내보내기: HEVC·ProRes·소리만(M4A), 480p, SRT 함께 저장, 현재 장면 PNG
+• MKV·AVI 등은 가져올 때 자동 변환, 없는 파일 다시 연결
+
+[New in 0.2.0]
+• AI editing (Claude or ChatGPT login, or an API key) and control from Claude Desktop / Claude Code / Codex
+• Screen and face recording (full screen, window, or area; round face cam; mic and computer audio; pause; click highlights)
+• Automatic updates that save your work, install silently and reopen
+• Link import (YouTube etc.), autosave and recovery, menu bar, right-click menus
+• Editing: duplicate/copy/paste, group/join, snapping, edit-point jumps, 20× playback, timeline thumbnails and waveforms
+• Transcript and captions: search, 7 languages and 3 models, silence-cut settings, caption reorder, styles and fonts
+• Export: HEVC, ProRes, audio-only M4A, 480p, SRT alongside, frame as PNG
+• MKV/AVI etc. converted on import; relink missing files
+
 
 [0.1.1 고친 점]
 • 눈금자를 끌면 언제나 구간이 선택됩니다 (Alt를 누른 채 끌면 재생헤드만 이동)

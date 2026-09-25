@@ -97,17 +97,26 @@ function jobUpdate({ id, value, message }) {
     delete jobs[id];
     return;
   }
+  // 내보내기는 내보내기 창에서 보여 준다
+  if (id === "export" && !$("#modal").classList.contains("hidden")) return;
   if (!el) {
     el = document.createElement("div");
     el.className = "job";
-    el.innerHTML = `<div class="m"></div><progress max="1"></progress><div class="row"><button class="c">${T("cancel")}</button></div>`;
+    el.innerHTML = `<div class="m"></div><progress max="1"></progress><div class="row"><span class="hint eta"></span><span class="spacer"></span><button class="c">${T("cancel")}</button></div>`;
     el.querySelector(".c").onclick = () => invoke("cancel_job");
     $("#jobs").appendChild(el);
     jobs[id] = el;
+    el._t0 = performance.now();
   }
   el.querySelector(".m").textContent = L(message);
   const pr = el.querySelector("progress");
   if (value > 0) pr.value = value; else pr.removeAttribute("value");
+  // 남은 시간 (맥처럼)
+  const eta = el.querySelector(".eta");
+  if (value > 0.03 && value < 1) {
+    const sec = (performance.now() - el._t0) / 1000;
+    eta.textContent = `${Math.round(value * 100)}% · ` + L("남은 시간 약 {}", U.fmt(sec / value - sec).replace(/\.\d+$/, ""));
+  } else eta.textContent = "";
 }
 
 // MARK: 상태 반영
