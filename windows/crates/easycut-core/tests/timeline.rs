@@ -329,3 +329,23 @@ fn whisper_full_json() {
         Some(0.45)
     );
 }
+
+#[test]
+fn whisper_words_clamped_to_audio_length() {
+    // Whisper가 마지막 세그먼트 끝(14.12초)을 오디오 길이(13.14초)보다 길게 알려 준 실제 사례
+    let mut w = vec![Word::new("same", 11.6, 12.07), Word::new("words", 12.07, 14.12), Word::new("ghost", 13.5, 13.9)];
+    whisper::clamp_to_duration(&mut w, 13.14);
+    assert!(close(w[0].end, 12.07), "안쪽 단어는 그대로");
+    assert!(close(w[1].start, 12.07) && close(w[1].end, 13.14), "끝은 오디오 길이로");
+    assert!(w[2].start <= 13.14 && w[2].end <= 13.14 + 1e-9 && w[2].end > w[2].start, "밖에서 시작한 단어도 안으로");
+
+    // 자르지 않으면 가운데 시점(14.2초)이 클립(13.14초) 밖이라 대본에서 사라진다
+    let mut a = video(13.14);
+    a.words = Some(vec![Word::new("words", 12.07, 16.3)]);
+    let mut p = Project::default();
+    p.assets = vec![a.clone()];
+    p.insert(&a, 0, 0.0, 5.0);
+    assert!(p.timeline_words().is_empty());
+    whisper::clamp_to_duration(p.assets[0].words.as_mut().unwrap(), 13.14);
+    assert_eq!(p.timeline_words().len(), 1);
+}

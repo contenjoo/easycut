@@ -171,6 +171,15 @@ pub fn fix_overlaps(w: Vec<Word>) -> Vec<Word> {
     out
 }
 
+/// 단어 시간을 조각 길이 안으로 자른다. Whisper는 마지막 세그먼트 끝을 오디오보다 길게 알려 주기도 해서,
+/// 그대로 두면 마지막 단어가 미디어 밖으로 나가 대본에서 사라질 수 있다.
+pub fn clamp_to_duration(words: &mut [Word], duration: f64) {
+    for w in words {
+        w.start = w.start.clamp(0.0, (duration - 0.02).max(0.0));
+        w.end = w.end.clamp(w.start + 0.02, duration.max(w.start + 0.02));
+    }
+}
+
 /// whisper-cli stderr 한 줄에서 "progress = N%" 읽기
 pub fn parse_progress(line: &str) -> Option<f64> {
     let i = line.find("progress =")?;
