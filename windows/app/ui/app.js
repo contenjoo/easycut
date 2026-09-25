@@ -2,8 +2,11 @@
 import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
 import { initAI, focusAI, connectDialog, sendAI } from "./ai.js";
-import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal } from "./shell.js";
+import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal, ask } from "./shell.js";
 import { initRecord, openRecordDialog, isRecording } from "./record.js";
+import { initCaptions, renderCaptions as renderCaptionsTab, captionInspector, addCaption, deleteCaptions, generateCaptions, styleControls } from "./captions.js";
+import { showMenu } from "./menu.js";
+import { SPEEDS } from "./player.js";
 
 const tauri = window.__TAURI__;
 const invoke = (cmd, args) => tauri.core.invoke(cmd, args);
@@ -198,6 +201,7 @@ function renderMedia() {
       d.querySelector(".add").onclick = () => run("add_to_timeline", { asset: a.id, time: null });
       d.querySelector(".rm").onclick = () => run("remove_asset", { asset: a.id });
       d.ondblclick = () => run("add_to_timeline", { asset: a.id, time: S.time });
+      d.oncontextmenu = (e) => { e.preventDefault(); mediaMenu(e.clientX, e.clientY, a); };
       grid.appendChild(d);
     }
     el.appendChild(grid);
@@ -227,7 +231,7 @@ function renderTranscript() {
   $("#t-run").onclick = transcribeAll;
   $("#t-del").onclick = deleteWords;
   $("#t-fill").onclick = () => run("remove_fillers");
-  $("#t-cap").onclick = () => run("generate_captions");
+  $("#t-cap").onclick = () => generateCaptions();
   const box = $("#transcript");
   if (!S.words.length) {
     box.innerHTML = `<p class="hint" style="white-space:pre-line">${T("noTranscript")}</p>`;
@@ -316,6 +320,82 @@ async function deleteWords() {
   toast(window.LANG === "ko" ? `${n}개 단어 삭제` : `Deleted ${n} words`);
 }
 
+// MARK: 오른쪽 클릭 메뉴 (맥 TimelineView / Panels / TranscriptView 메뉴)
+
+const speedItems = (cur, apply) => SPEEDS.map((s) => ({ label: `${s}x`, checked: Math.abs(cur - s) < 0.001, action: () => apply(s) }));
+
+export function clipMenu(x, y, clip) {
+  if (!S.sel.has(clip.id)) { S.sel = U.groupMembers(new Set([clip.id])); window.dispatchEvent(new Event("selection")); }
+  const a = U.asset(clip.assetID);
+  const many = S.sel.size >= 2;
+  showMenu(x, y, [
+    { label: L("재생헤드에서 분할"), key: "S", action: split },
+    { label: L("복제"), key: "Ctrl+D", action: commands.duplicate },
+    { label: L("복사"), key: "Ctrl+C", action: commands.copy },
+    { sep: true },
+    many && { label: L("그룹으로 묶기"), key: "Ctrl+G", action: commands.group },
+    many && { label: L("하나로 합치기"), key: "Ctrl+J", action: commands.join },
+    clip.groupID && { label: L("그룹 해제"), key: "Ctrl+Shift+G", action: commands.ungroup },
+    (many || clip.groupID) && { sep: true },
+    clip.kind === "media" && a?.kind !== "image" && { label: L("속도"), items: speedItems(clip.speed, (s) => run("set_speed", { ids: [...S.sel], speed: s })) },
+    a?.hasAudio && { label: L(a.words ? "음성 다시 인식" : "음성 인식 (STT)"), action: () => transcribeAsset(a.id) },
+    { sep: true },
+    { label: L("삭제"), key: "Delete", action: () => deleteSelection(false) },
+    { label: L("삭제 후 빈틈 메우기"), key: "Ctrl+Delete", action: () => deleteSelection(true) },
+  ]);
+}
+
+export function captionMenu(x, y, c) {
+  S.selCap = c.id;
+  S.sel.clear();
+  window.dispatchEvent(new Event("selection"));
+  showMenu(x, y, [
+    { label: L("자막 편집"), action: () => { switchTab("captions"); render(); } },
+    { label: L("자막과 영상 함께 삭제"), action: () => deleteCaptions([c.id], true) },
+    { label: L("자막만 삭제 (영상 유지)"), action: () => deleteCaptions([c.id], false) },
+  ]);
+}
+
+export function emptyMenu(x, y, t) {
+  showMenu(x, y, [
+    { label: L("붙여넣기"), key: "Ctrl+V", action: () => { seek(t); commands.paste(); } },
+    { sep: true },
+    { label: L("여기에 텍스트 추가"), action: () => { seek(t); addText(); } },
+    { label: L("여기에 자막 추가"), action: () => addCaption(t) },
+    { label: L("모든 트랙 분할"), key: "Ctrl+Shift+T", action: () => { seek(t); commands.splitAll(); } },
+    { sep: true },
+    { label: L("트랙 추가"), action: commands.addTrack },
+    { label: L("빈 트랙 정리"), action: commands.cleanTracks },
+  ]);
+}
+
+function mediaMenu(x, y, a) {
+  showMenu(x, y, [
+    { label: L("타임라인에 추가"), action: () => run("add_to_timeline", { asset: a.id, time: null }) },
+    { label: L("재생헤드 위치에 추가"), action: () => run("add_to_timeline", { asset: a.id, time: S.time }) },
+    a.hasAudio && { label: L(a.words ? "음성 다시 인식" : "음성 인식 (STT)"), action: () => transcribeAsset(a.id) },
+    { sep: true },
+    { label: L("탐색기에서 보기"), action: () => invoke("reveal_file", { path: a.originalPath || a.path }) },
+    { label: L("프로젝트에서 제거"), danger: true, action: () => run("remove_asset", { asset: a.id }) },
+  ]);
+}
+
+/// 모델이 없으면 받을지 묻고, 한 미디어만 음성 인식
+async function ensureWhisper() {
+  const st = await invoke("whisper_status");
+  if (!st.engine || !st.ffmpeg) { toast(T("engineMissing")); return false; }
+  if (st.model) return true;
+  const ok = await confirmModal(T("whisperTitle"), T("whisperHint"), T("download"));
+  if (!ok) return false;
+  try { await invoke("download_model"); return true; } catch (e) { showError(e); return false; }
+}
+
+async function transcribeAsset(id) {
+  if (!(await ensureWhisper())) return;
+  switchTab("transcript");
+  await run("transcribe", { asset: id, language: S.language });
+}
+
 /// 녹화가 끝나면 바로 음성 인식 (모델이 있을 때만. 없으면 안내)
 async function autoTranscribe(assetId) {
   const st = await invoke("whisper_status").catch(() => ({}));
@@ -345,56 +425,7 @@ async function transcribeAll() {
 // MARK: 자막 탭
 
 function renderCaptions() {
-  const el = $("#tab-captions");
-  const p = S.project;
-  if (!p) return;
-  const st = p.captionStyle;
-  const hex = (c) => "#" + [c.r, c.g, c.b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
-  el.innerHTML = `
-    <div class="row">
-      <button class="primary" id="c-gen">${T("makeCaptions")}</button>
-      <button id="c-imp">${T("importSrt")}</button><button id="c-exp">${T("exportSrt")}</button>
-    </div>
-    <div class="row"><label><input type="checkbox" id="c-show" ${p.showCaptions ? "checked" : ""}/> ${T("showCaptions")}</label></div>
-    <h3>${T("captionStyle")}</h3>
-    <div class="row"><label>${T("size")}</label><input type="range" id="c-size" min="20" max="120" value="${st.fontSize}"/></div>
-    <div class="row"><label>${T("color")}</label><input type="color" id="c-color" value="${hex(st.textColor)}"/>
-      <label>${T("background")}</label><input type="checkbox" id="c-bg" ${st.backgroundColor.a > 0.01 ? "checked" : ""}/>
-      <label>${T("outline")}</label><input type="checkbox" id="c-ol" ${st.outline ? "checked" : ""}/></div>
-    <div class="row"><label>${T("position")}</label><input type="range" id="c-pos" min="0.08" max="0.95" step="0.01" value="${st.positionY}"/></div>
-    <div class="caplist"></div>`;
-  $("#c-gen").onclick = () => run("generate_captions");
-  $("#c-imp").onclick = importSrt;
-  $("#c-exp").onclick = exportSrt;
-  $("#c-show").onchange = (e) => run("update_project", { props: { showCaptions: e.target.checked } });
-  const setStyle = (patch) => run("update_project", { props: { captionStyle: { ...st, ...patch } } });
-  $("#c-size").onchange = (e) => setStyle({ fontSize: +e.target.value });
-  $("#c-color").onchange = (e) => {
-    const v = e.target.value;
-    setStyle({ textColor: { r: parseInt(v.slice(1, 3), 16) / 255, g: parseInt(v.slice(3, 5), 16) / 255, b: parseInt(v.slice(5, 7), 16) / 255, a: 1 } });
-  };
-  $("#c-bg").onchange = (e) => setStyle({ backgroundColor: { r: 0, g: 0, b: 0, a: e.target.checked ? 0.6 : 0 } });
-  $("#c-ol").onchange = (e) => setStyle({ outline: e.target.checked });
-  $("#c-pos").onchange = (e) => setStyle({ positionY: +e.target.value });
-  const list = el.querySelector(".caplist");
-  if (!p.captions.length) {
-    list.innerHTML = `<p class="hint">${T("noCaptions")}</p>`;
-    return;
-  }
-  p.captions.forEach((c, i) => {
-    const row = document.createElement("div");
-    row.className = "c";
-    row.innerHTML = `<div class="tm">${U.fmt(c.start)}<br>${U.fmt(c.end)}</div><textarea rows="1"></textarea><button title="${T("delete")}">✕</button>`;
-    const ta = row.querySelector("textarea");
-    ta.value = c.text;
-    row.querySelector(".tm").onclick = () => seek(c.start);
-    ta.onchange = () => {
-      const caps = p.captions.map((x, k) => (k === i ? { ...x, text: ta.value } : x));
-      run("update_project", { props: { captions: caps } });
-    };
-    row.querySelector("button").onclick = () => run("update_project", { props: { captions: p.captions.filter((_, k) => k !== i) } });
-    list.appendChild(row);
-  });
+  renderCaptionsTab($("#tab-captions"));
 }
 
 // MARK: 오른쪽 인스펙터
@@ -404,6 +435,8 @@ function renderInspector() {
   const p = S.project;
   if (!p) return;
   const selected = U.clips().filter((x) => S.sel.has(x.c.id));
+  const cap = !selected.length && S.selCap ? p.captions.find((c) => c.id === S.selCap) : null;
+  if (cap) return captionInspector(el, cap);
   if (selected.length === 1) {
     const { c } = selected[0];
     const a = U.asset(c.assetID);
@@ -517,8 +550,10 @@ export function deleteSelection(ripple) {
   if (r && S.sel.size === 0) {
     S.markIn = S.markOut = null;
     run("ripple_delete_range", { start: r[0], end: r[1] });
+    toast(L("구간 삭제"));
     return;
   }
+  if (!S.sel.size && S.selCap) return deleteCaptions([S.selCap]);
   if (!S.sel.size) return;
   const ids = [...S.sel];
   S.sel.clear();
@@ -602,7 +637,7 @@ function confirmModal(title, text, okLabel) {
   });
 }
 
-function switchTab(name) {
+export function switchTab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.id === "tab-" + name));
   if (name === "ai") setTimeout(focusAI, 0);
@@ -733,7 +768,8 @@ const commands = {
   text: addText,
   silence: silenceDialog,
   transcribe: transcribeAll,
-  captions: () => run("generate_captions"),
+  captions: () => generateCaptions(),
+  addCaption: () => addCaption(),
   save: () => saveProject(),
   export: exportDialog,
   play: () => player.toggle(),
@@ -844,6 +880,7 @@ async function init() {
       if (c.play === false) player.pause();
     }
   });
+  initCaptions({ S, U, run, invoke, seek, toast, switchTab, render, commands, ask, captionMenu, selectionChanged: () => window.dispatchEvent(new Event("selection")) });
   setState(await invoke("get_state"));
   syncToggles();
   reportUi();

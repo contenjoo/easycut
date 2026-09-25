@@ -557,6 +557,69 @@ fn generate_captions(app: AppHandle, st: State<AppState>) -> Res<Value> {
     Ok(changed(&app, &st))
 }
 
+// MARK: 자막 편집
+
+#[tauri::command]
+fn add_caption(app: AppHandle, st: State<AppState>, time: f64) -> Value {
+    let c = Caption::new(time, time + 3.0, "새 자막");
+    let id = c.id;
+    with(&st, |e| e.apply(|p| p.captions.push(c)));
+    let mut v = changed(&app, &st);
+    v["caption"] = json!(id);
+    v
+}
+
+/// 자막 삭제. with_video면 그 말이 나오는 영상 구간도 함께 잘라낸다
+#[tauri::command]
+fn delete_captions(app: AppHandle, st: State<AppState>, ids: Vec<Id>, with_video: bool) -> Value {
+    let set: HashSet<Id> = ids.into_iter().collect();
+    let total = with(&st, |e| {
+        let ranges: Vec<_> = if with_video { set.iter().filter_map(|id| e.project.span_of_caption(*id)).collect() } else { vec![] };
+        let total: f64 = easycut_core::merge_default(&ranges).iter().map(|r| r.len()).sum();
+        e.apply(|p| edits::delete_captions(p, &set, with_video));
+        total
+    });
+    let mut v = changed(&app, &st);
+    v["message"] = json!(if with_video { format!("자막 {}개와 영상 {:.1}초 삭제", set.len(), total) } else { format!("자막 {}개 삭제 (영상 유지)", set.len()) });
+    v
+}
+
+/// 자막 순서 바꾸기: 시간순 from번째 자막을 그 영상 구간째 to번째 앞으로
+#[tauri::command]
+fn move_caption(app: AppHandle, st: State<AppState>, from: usize, to: usize) -> Value {
+    with(&st, |e| e.apply(|p| edits::move_caption(p, from, to)));
+    changed(&app, &st)
+}
+
+#[tauri::command]
+fn update_caption(app: AppHandle, st: State<AppState>, id: Id, text: Option<String>, start: Option<f64>, end: Option<f64>) -> Value {
+    with(&st, |e| {
+        e.apply(|p| {
+            if let Some(c) = p.captions.iter_mut().find(|c| c.id == id) {
+                if let Some(t) = text {
+                    c.text = t;
+                }
+                if let Some(v) = start {
+                    c.start = v.max(0.0);
+                }
+                if let Some(v) = end {
+                    c.end = v;
+                }
+                if c.end < c.start + 0.1 {
+                    c.end = c.start + 0.1;
+                }
+            }
+        })
+    });
+    changed(&app, &st)
+}
+
+#[tauri::command]
+fn clear_captions(app: AppHandle, st: State<AppState>) -> Value {
+    with(&st, |e| e.apply(|p| p.captions.clear()));
+    changed(&app, &st)
+}
+
 #[tauri::command]
 fn export_srt(st: State<AppState>, path: String) -> Res<()> {
     let text = with(&st, |e| srt::make(&e.project.captions));
@@ -995,6 +1058,7 @@ pub fn run() {
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
+            add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
             rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder,
         ])

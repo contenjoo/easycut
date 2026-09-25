@@ -1,5 +1,5 @@
 // 타임라인 (캔버스): 눈금자 · 자막 줄 · 트랙 · 클립 · 재생헤드
-import { S, U, seek, run, toast } from "./app.js";
+import { S, U, seek, run, toast, clipMenu, captionMenu, emptyMenu, switchTab } from "./app.js";
 
 const HEADER = 110, RULER = 24, CAPH = 26, EDGE = 7;
 /// 트랙 높이 (맥처럼 조절 가능)
@@ -21,6 +21,7 @@ export class Timeline {
     window.addEventListener("mousemove", (e) => this.move(e));
     window.addEventListener("mouseup", (e) => this.up(e));
     canvas.addEventListener("dblclick", (e) => this.dbl(e));
+    canvas.addEventListener("contextmenu", (e) => this.context(e));
     scroller.addEventListener("scroll", () => this.drawSoon());
     scroller.addEventListener("wheel", (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -129,12 +130,19 @@ export class Timeline {
 
     // 자막
     ctx.font = "11px -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif";
-    for (const c of p.captions) {
+    for (const c0 of p.captions) {
+      const c = this.displayedCaption(c0);
       const cx = this.x(c.start), cw = Math.max(2, (c.end - c.start) * S.zoom);
       if (cx > x1 || cx + cw < x0) continue;
-      ctx.fillStyle = "#8d5bd1";
+      ctx.fillStyle = S.selCap === c.id ? "#a97be8" : "#8d5bd1";
       this.round(cx, RULER + 4, cw, CAPH - 8, 4);
       ctx.fill();
+      if (S.selCap === c.id) {
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        this.round(cx + 0.5, RULER + 4.5, cw - 1, CAPH - 9, 4);
+        ctx.stroke();
+      }
       this.label(c.text, cx + 4, RULER + 17, cw - 8, "#fff");
     }
 
@@ -360,10 +368,25 @@ export class Timeline {
       }
       return;
     }
+    // 자막 줄: 누르면 선택, 끌면 이동, 가장자리를 끌면 길이 조절. 빈 곳은 재생헤드 이동 + 구간 선택
     if (y < RULER + CAPH) {
-      seek(this.t(x));
+      const ch = this.captionHit(x, y);
+      if (ch) {
+        S.sel.clear();
+        S.selCap = ch.c.id;
+        this.drag = { type: ch.edge ? "capTrim" : "capMove", id: ch.c.id, left: ch.edge < 0, sx: x, dt: 0 };
+        window.dispatchEvent(new Event("selection"));
+      } else {
+        S.selCap = null;
+        const tx = this.t(x);
+        seek(tx);
+        this.drag = { type: "range", from: this.snap(tx), sx: x };
+        window.dispatchEvent(new Event("selection"));
+      }
+      this.drawSoon();
       return;
     }
+    S.selCap = null;
     const h = this.hit(x, y);
     if (h) {
       if (e.ctrlKey || e.metaKey) {
@@ -405,6 +428,19 @@ export class Timeline {
       S.markIn = Math.min(d.from, to);
       S.markOut = Math.max(d.from, to);
       seek(to);
+      return;
+    }
+    if (d.type === "capMove" || d.type === "capTrim") {
+      const c = S.project.captions.find((k) => k.id === d.id);
+      if (!c) return;
+      if (d.type === "capMove") {
+        const ns = this.snap(Math.max(0, c.start + (x - d.sx) / S.zoom));
+        d.dt = ns - c.start;
+      } else {
+        const tt = this.snap(this.t(x));
+        d.dt = tt - (d.left ? c.start : c.end);
+      }
+      this.drawSoon();
       return;
     }
     if (d.type === "move") {
@@ -470,6 +506,14 @@ export class Timeline {
     const ins = this.insertAt;
     this.insertAt = null;
     if (!d) return;
+    if ((d.type === "capMove" || d.type === "capTrim") && Math.abs(d.dt) > 1e-3) {
+      const c = S.project.captions.find((k) => k.id === d.id);
+      if (c) {
+        if (d.type === "capMove") run("update_caption", { id: c.id, start: Math.max(0, c.start + d.dt), end: Math.max(0, c.start + d.dt) + (c.end - c.start) });
+        else if (d.left) run("update_caption", { id: c.id, start: Math.min(c.end - 0.1, Math.max(0, c.start + d.dt)) });
+        else run("update_caption", { id: c.id, end: Math.max(c.start + 0.1, c.end + d.dt) });
+      }
+    }
     if (d.type === "range" && U.markRange()) {
       const r = U.markRange();
       toast(`${T("range")} ${U.fmt(r[0])} – ${U.fmt(r[1])} · ${T("rangeHint")}`);
@@ -495,7 +539,51 @@ export class Timeline {
 
   dbl(e) {
     const { x, y } = this.pos(e);
+    const ch = y >= RULER && y < RULER + CAPH ? this.captionHit(x, y) : null;
+    if (ch) {
+      S.selCap = ch.c.id;
+      seek(ch.c.start);
+      switchTab("captions");
+      window.dispatchEvent(new Event("selection"));
+      return;
+    }
     const h = this.hit(x, y);
     if (h) seek(h.c.start);
+  }
+
+  /// 오른쪽 클릭: 클립 / 자막 / 빈 곳 메뉴
+  context(e) {
+    e.preventDefault();
+    if (!S.project) return;
+    const { x, y } = this.pos(e);
+    if (x - this.sc.scrollLeft < HEADER || y < RULER) return;
+    if (y < RULER + CAPH) {
+      const ch = this.captionHit(x, y);
+      if (ch) return captionMenu(e.clientX, e.clientY, ch.c);
+      return emptyMenu(e.clientX, e.clientY, this.t(x));
+    }
+    const h = this.hit(x, y);
+    if (h) return clipMenu(e.clientX, e.clientY, h.c);
+    emptyMenu(e.clientX, e.clientY, this.t(x));
+  }
+
+  /// 자막 줄에서 누른 자막 (edge: -1 왼쪽 끝, 1 오른쪽 끝, 0 가운데)
+  captionHit(px, py) {
+    if (py < RULER + 3 || py > RULER + CAPH - 3) return null;
+    const t = this.t(px);
+    const c = S.project.captions.find((c) => t >= c.start && t <= c.end);
+    if (!c) return null;
+    const xs = this.x(c.start), xe = this.x(c.end);
+    const z = Math.min(EDGE, (xe - xs) / 3);
+    return { c, edge: px - xs < z ? -1 : xe - px < z ? 1 : 0 };
+  }
+
+  /// 끌고 있는 자막은 옮겨질 자리에 그린다
+  displayedCaption(c) {
+    const d = this.drag;
+    if (!d || d.id !== c.id || !d.dt) return c;
+    if (d.type === "capMove") return { ...c, start: c.start + d.dt, end: c.end + d.dt };
+    if (d.type === "capTrim") return d.left ? { ...c, start: Math.min(c.end - 0.1, c.start + d.dt) } : { ...c, end: Math.max(c.start + 0.1, c.end + d.dt) };
+    return c;
   }
 }
