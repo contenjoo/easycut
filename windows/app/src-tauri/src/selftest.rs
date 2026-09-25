@@ -126,6 +126,16 @@ pub fn run(dir: &Path) -> i32 {
             c.offset_y = 0.3;
         }
     }
+    // 녹화처럼 마우스 클릭 강조 (자막 굽기 필터로 그린다)
+    if let Some(sid) = p.tracks[0].clips.first().map(|c| c.id) {
+        let aid = p.clip(sid).and_then(|c| c.asset_id);
+        if let Some(a) = p.assets.iter_mut().find(|a| Some(a.id) == aid) {
+            a.extra.insert("clicks".into(), serde_json::json!([{ "t": 1.0, "x": 0.5, "y": 0.5 }, { "t": 2.0, "x": 0.2, "y": 0.3 }]));
+        }
+        if let Some(c) = p.clip_mut(sid) {
+            c.extra.insert("showClicks".into(), serde_json::json!(true));
+        }
+    }
     let out = dir.join("export.mp4");
     let opts = export::Options { path: out.to_string_lossy().to_string(), height: 720, burn_captions: true, format: "mp4".into(), range: None };
     let t0 = std::time::Instant::now();

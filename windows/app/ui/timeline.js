@@ -1,5 +1,5 @@
 // 타임라인 (캔버스): 눈금자 · 자막 줄 · 트랙 · 클립 · 재생헤드
-import { S, U, seek, run, toast, clipMenu, captionMenu, emptyMenu, switchTab } from "./app.js";
+import { S, U, seek, run, toast, clipMenu, captionMenu, emptyMenu, switchTab, rangeInfo } from "./app.js";
 
 const HEADER = 110, RULER = 24, CAPH = 26, EDGE = 7;
 /// 트랙 높이 (맥처럼 조절 가능)
@@ -24,7 +24,8 @@ export class Timeline {
     canvas.addEventListener("contextmenu", (e) => this.context(e));
     scroller.addEventListener("scroll", () => this.drawSoon());
     scroller.addEventListener("wheel", (e) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
+      // Ctrl 또는 Alt + 휠 = 확대/축소 (맥의 ⌘/⌥ + 스크롤)
+      if (!(e.ctrlKey || e.metaKey || e.altKey)) return;
       e.preventDefault();
       this.setZoom(S.zoom * (1 - e.deltaY * 0.002), e);
     }, { passive: false });
@@ -221,6 +222,7 @@ export class Timeline {
     }
 
     this.ruler(x0, W);
+    rangeInfo();
     this.headers(x0, st, H);
     // 재생헤드
     const px = this.x(S.time);

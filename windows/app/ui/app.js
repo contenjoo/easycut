@@ -509,7 +509,8 @@ async function importPanel() {
   if (!tauri.dialog) return toast("dialog plugin missing");
   const files = await tauri.dialog.open({
     multiple: true,
-    filters: [{ name: "Media", extensions: ["mp4", "mov", "m4v", "mkv", "webm", "avi", "wmv", "mp3", "wav", "m4a", "aac", "flac", "png", "jpg", "jpeg", "gif", "bmp", "webp"] }],
+    filters: [{ name: L("미디어"), extensions: ["mp4", "mov", "m4v", "mkv", "webm", "avi", "wmv", "flv", "ts", "mts", "m2ts", "mpg", "mpeg", "3gp", "ogv", "vob",
+      "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "aif", "aiff", "wma", "png", "jpg", "jpeg", "gif", "bmp", "webp", "heic", "tif", "tiff"] }],
   });
   if (files?.length) importFiles(files);
 }
@@ -559,9 +560,10 @@ function split() {
   run("split", { time: S.time, ids: [...S.sel] });
 }
 
+/// 재생헤드에 텍스트(제목) 추가하고 골라 둔다 → 오른쪽에서 바로 글자·스타일 고치기 (맥과 같음)
 async function addText() {
-  const text = prompt(T("enterText"), window.LANG === "ko" ? "제목" : "Title");
-  if (text) run("add_text", { time: S.time, text });
+  applySelect(await run("add_text", { time: S.time, text: L("텍스트를 입력하세요") }));
+  setTimeout(() => { const t = $("#i-text"); if (t) { t.focus(); t.select(); } }, 50);
 }
 
 // MARK: 내보내기 (맥 ExportSheet: 형식, 해상도, 자막 입히기, SRT, 진행률·남은 시간, 완료 창)
@@ -667,6 +669,27 @@ async function importSrt() {
 async function exportSrt() {
   const f = await tauri.dialog.save({ defaultPath: "captions.srt", filters: [{ name: "SRT", extensions: ["srt"] }] });
   if (f) { try { await invoke("export_srt", { path: f }); toast(T("saved")); } catch (e) { showError(e); } }
+}
+
+/// 타임라인 도구 막대의 구간 표시 (맥 ContentView: 구간 시간 · 잘라내기 · 해제)
+let lastRange = "";
+export function rangeInfo() {
+  const el = $("#range-info");
+  if (!el) return;
+  const r = U.markRange();
+  const key = r ? `${r[0]}-${r[1]}` : S.markIn != null ? `in${S.markIn}` : "";
+  if (key === lastRange) return;
+  lastRange = key;
+  if (r) {
+    el.innerHTML = `<span class="rng">${U.fmt(r[0])} – ${U.fmt(r[1])} (${(r[1] - r[0]).toFixed(1)}s)</span>
+      <button class="mini danger-text" id="rng-cut">✂ ${L("구간 잘라내기")}</button><button class="mini" id="rng-clear" title="X">✕</button>`;
+    el.querySelector("#rng-cut").onclick = () => deleteSelection(true);
+    el.querySelector("#rng-clear").onclick = commands.clearMarks;
+  } else if (S.markIn != null) {
+    el.innerHTML = `<span class="hint">${L("시작 {} · O로 끝 지점", U.fmt(S.markIn))}</span>`;
+  } else {
+    el.innerHTML = "";
+  }
 }
 
 function syncToggles() {

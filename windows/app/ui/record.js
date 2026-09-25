@@ -62,6 +62,7 @@ export async function openRecordDialog() {
     useMic: pref("useMic", true) && mics.length > 0,
     micId: pref("micId", ""),
     systemAudio: pref("systemAudio", false),
+    clicks: pref("clicks", true),
   };
   const opt = (list, sel) => list.map((d, i) => `<option value="${esc(d.deviceId)}" ${d.deviceId === sel ? "selected" : ""}>${esc(d.label || `#${i + 1}`)}</option>`).join("");
   box.innerHTML = `<h2>🔴 ${L("화면·얼굴 녹화")}</h2>
@@ -75,6 +76,7 @@ export async function openRecordDialog() {
     <div class="row"><label><input type="checkbox" id="r-mic" ${o.useMic ? "checked" : ""} ${mics.length ? "" : "disabled"}/> ${L("마이크")}</label>
       <select id="r-mic-id" ${mics.length ? "" : "disabled"}>${mics.length ? opt(mics, o.micId) : `<option>${L("마이크 없음")}</option>`}</select></div>
     <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-sys" ${o.systemAudio ? "checked" : ""}/> ${L("컴퓨터 소리도 녹음 (전체 화면일 때)")}</label></div>
+    <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-clicks" ${o.clicks ? "checked" : ""}/> ${L("마우스 클릭 강조 (전체 화면일 때)")}</label></div>
     <p class="hint">${L("녹화 중 단축키: Ctrl+Alt+P 일시정지 · Ctrl+Alt+S 정지")}<br>${L("녹화 파일은 동영상 폴더의 'EasyCut 녹화'에 저장됩니다.")}</p>
     <div class="btns"><button id="r-cancel">${L("취소")}</button><button class="danger" id="r-go">● ${L("녹화 시작")}</button></div>`;
   const q = (s) => box.querySelector(s);
@@ -88,6 +90,7 @@ export async function openRecordDialog() {
       useMic: q("#r-mic").checked && mics.length > 0,
       micId: q("#r-mic-id").value,
       systemAudio: q("#r-sys").checked,
+      clicks: q("#r-clicks").checked,
     };
     for (const [k, v] of Object.entries(opts)) setPref(k, v);
     api.modal.hide();
@@ -109,6 +112,7 @@ function pickMime(kind, resizable = false) {
 
 async function start(o) {
   R.circle = o.circle;
+  R.showClicks = o.clicks;
   let display;
   try {
     display = await navigator.mediaDevices.getDisplayMedia({
@@ -173,6 +177,10 @@ async function start(o) {
     if (R.cancelCountdown) return;
   }
   for (const r of R.recorders) r.rec.start(1000);
+  // 전체 화면 녹화면 클릭 위치도 기록 (녹화 화면 크기로 모니터를 찾는다)
+  const vs = display.getVideoTracks()[0]?.getSettings() || {};
+  R.clicks = o.target === "monitor";
+  if (R.clicks) invoke("rec_clicks", { action: "start", width: vs.width || 0, height: vs.height || 0 }).catch(() => {});
   R.phase = "recording";
   R.startedAt = performance.now();
   R.pausedTotal = 0;
@@ -196,10 +204,12 @@ function status(count) {
 export function togglePause() {
   if (R.phase === "recording") {
     R.recorders.forEach((r) => r.rec.state === "recording" && r.rec.pause());
+    if (R.clicks) invoke("rec_clicks", { action: "pause" }).catch(() => {});
     R.phase = "paused";
     R.pauseBegan = performance.now();
   } else if (R.phase === "paused") {
     R.recorders.forEach((r) => r.rec.state === "paused" && r.rec.resume());
+    if (R.clicks) invoke("rec_clicks", { action: "resume" }).catch(() => {});
     R.pausedTotal += performance.now() - R.pauseBegan;
     R.phase = "recording";
   }
@@ -225,6 +235,7 @@ async function cancel() {
   stopStreams();
   R.recorders = [];
   R.phase = "idle";
+  if (R.clicks) await invoke("rec_clicks", { action: "stop" }).catch(() => {});
   await invoke("rec_hotkeys", { on: false }).catch(() => {});
   await invoke("rec_panel", { open: false, camera: false }).catch(() => {});
   await R.writes;
@@ -239,6 +250,7 @@ export async function stop() {
   clearInterval(R.timer);
   status();
   await invoke("rec_hotkeys", { on: false }).catch(() => {});
+  const clicks = R.clicks ? await invoke("rec_clicks", { action: "stop" }).catch(() => []) : null;
   // 마지막 조각까지 받는다
   await Promise.all(R.recorders.map((r) => new Promise((res) => {
     if (r.rec.state === "inactive") return res();
@@ -253,7 +265,7 @@ export async function stop() {
   await restoreWindow();
   R.phase = "idle";
   try {
-    const r = await invoke("rec_finish", { cameraCircle: R.circle });
+    const r = await invoke("rec_finish", { cameraCircle: R.circle, clicks, showClicks: R.showClicks });
     api.toast(r.hasCamera ? L("녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)") : L("녹화를 타임라인에 넣었습니다"));
     if (r.hasAudio) api.autoTranscribe?.(r.screen);
   } catch (e) {

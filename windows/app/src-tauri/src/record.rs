@@ -167,7 +167,7 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, progress: &dyn Fn(f6
 }
 
 /// 녹화 파일을 정리해 타임라인에: 화면은 트랙 1, 카메라는 트랙 2 오른쪽 아래 작은 화면(원 모양), 컴퓨터 소리는 트랙 3. 그리고 음성 인식.
-pub fn finish(app: &AppHandle, camera_circle: bool) -> Result<Value, String> {
+pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool) -> Result<Value, String> {
     let files: Vec<(String, PathBuf)> = {
         let rec = app.state::<Recorder>();
         let mut f = rec.files.lock().unwrap();
@@ -195,7 +195,12 @@ pub fn finish(app: &AppHandle, camera_circle: bool) -> Result<Value, String> {
     }
     job(app, "record", 1.0, "");
     let screen = out.get("screen").ok_or("녹화 파일을 만들지 못했습니다.")?;
-    let sa = media::probe(screen)?;
+    let mut sa = media::probe(screen)?;
+    // 클릭 기록은 맥과 같은 자리(미디어의 clicks)에 둔다
+    let has_clicks = clicks.as_ref().and_then(Value::as_array).is_some_and(|a| !a.is_empty());
+    if let Some(c) = clicks.filter(|_| has_clicks) {
+        sa.extra.insert("clicks".into(), c);
+    }
     let ca = out.get("camera").and_then(|p| media::probe(p).ok());
     let aa = out.get("system").and_then(|p| media::probe(p).ok());
     let st = app.state::<AppState>();
@@ -218,7 +223,12 @@ pub fn finish(app: &AppHandle, camera_circle: bool) -> Result<Value, String> {
                 p.tracks.push(easycut_core::Track::named(format!("트랙 {}", p.tracks.len() + 1)));
             }
             let t = if was_empty { 0.0 } else { p.track_end(0).max(p.track_end(1)).max(p.track_end(2)) };
-            p.insert(&sa, 0, t, 5.0);
+            let sid = p.insert(&sa, 0, t, 5.0);
+            if has_clicks && show_clicks {
+                if let Some(c) = p.clip_mut(sid) {
+                    c.extra.insert("showClicks".into(), json!(true));
+                }
+            }
             if let Some(aa) = &aa {
                 p.insert(aa, 2, t, 5.0);
             }

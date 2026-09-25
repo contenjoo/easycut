@@ -11,6 +11,11 @@ export class Player {
     this.box = box;
     this.stage = stage;
     this.overlay = box.querySelector("#overlay");
+    // 마우스 클릭 강조 (노란 원이 퍼졌다 사라짐, 0.7초)
+    this.fx = document.createElement("canvas");
+    this.fx.id = "clickfx";
+    this.fx.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:90";
+    box.appendChild(this.fx);
     box.querySelector("#video").remove();
     box.querySelector("#still").remove();
     this.els = new Map(); // clip id → element
@@ -189,6 +194,7 @@ export class Player {
         if (!this.playing && !el.paused) el.pause();
       }
     }
+    this.drawClicks(act, t);
     // 텍스트 클립 + 자막
     this.overlay.innerHTML = "";
     const unit = this.ch / 1080;
@@ -202,6 +208,43 @@ export class Player {
     }
   }
 
+  drawClicks(act, t) {
+    const fx = this.fx;
+    const dpr = window.devicePixelRatio || 1;
+    if (fx.width !== Math.round(this.cw * dpr) || fx.height !== Math.round(this.ch * dpr)) {
+      fx.width = Math.round(this.cw * dpr);
+      fx.height = Math.round(this.ch * dpr);
+    }
+    const g = fx.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, this.cw, this.ch);
+    for (const { c, tr, a } of act) {
+      if (!c.showClicks || !a?.clicks?.length || tr.hidden) continue;
+      const el = this.els.get(c.id);
+      const r = el?._rect;
+      if (!r) continue;
+      const s = c.sourceIn + (t - c.start) * c.speed;
+      for (const m of a.clicks) {
+        if (s < m.t || s - m.t > 0.7) continue;
+        const p = (s - m.t) / 0.7;
+        const rad = (0.02 + 0.03 * p) * Math.min(r.w, r.h);
+        const cx = r.left + m.x * r.w, cy = r.top + m.y * r.h;
+        const grad = g.createRadialGradient(cx, cy, rad * 0.55, cx, cy, rad);
+        grad.addColorStop(0, `rgba(255,214,26,${0.65 * (1 - p)})`);
+        grad.addColorStop(1, "rgba(255,214,26,0)");
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(cx, cy, rad, 0, Math.PI * 2);
+        g.fill();
+        // 안쪽도 같은 색으로 채운다 (맥은 가운데가 차 있는 원판)
+        g.fillStyle = `rgba(255,214,26,${0.65 * (1 - p)})`;
+        g.beginPath();
+        g.arc(cx, cy, rad * 0.55, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }
+
   place(el, c, a) {
     const shape = c.shape;
     let aw = a.width, ah = a.height;
@@ -212,6 +255,7 @@ export class Player {
     el.style.height = h + "px";
     el.style.left = (this.cw - w) / 2 + c.offsetX * this.cw + "px";
     el.style.top = (this.ch - h) / 2 + c.offsetY * this.ch + "px";
+    el._rect = { left: (this.cw - w) / 2 + c.offsetX * this.cw, top: (this.ch - h) / 2 + c.offsetY * this.ch, w, h };
     el.style.objectFit = shape === "circle" ? "cover" : "fill";
     // 맥·내보내기와 같게: 원은 흰 테두리(지름의 1.8%), 둥근 사각형은 짧은 변의 8%
     el.style.borderRadius = shape === "circle" ? "50%" : shape === "rounded" ? `${Math.min(w, h) * 0.08}px` : "0";
@@ -229,6 +273,9 @@ export class Player {
     const col = (c) => `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${c.a})`;
     d.style.fontSize = st.fontSize * unit + "px";
     d.style.fontWeight = st.bold ? "700" : "400";
+    // 맥에서 만든 프로젝트의 맥 전용 글꼴은 기본 글꼴로 (내보내기와 같게)
+    const f = (st.fontName || "").trim();
+    d.style.fontFamily = !f || f.startsWith("AppleSDGothic") || f.startsWith("Apple SD") || f.startsWith(".") || f.includes("-") ? '"Malgun Gothic", sans-serif' : `"${f}", "Malgun Gothic", sans-serif`;
     d.style.color = col(st.textColor);
     d.style.background = col(st.backgroundColor);
     if (st.outline) d.style.webkitTextStroke = `${Math.max(1, st.fontSize * unit * 0.05)}px ${col(st.outlineColor)}`;

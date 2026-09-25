@@ -121,6 +121,42 @@ fn build_ass(p: &Project, w: i64, h: i64, captions: bool) -> Option<String> {
             n += 1;
         }
     }
+    // 마우스 클릭 강조: 노란 원이 0.7초 동안 커지며 사라짐 (맥과 같은 모양)
+    styles.push("Style: Click,Arial,20,&H001AD6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1".into());
+    for tr in p.tracks.iter().filter(|t| !t.hidden) {
+        for c in tr.clips.iter().filter(|c| c.kind == ClipKind::Media && c.extra.get("showClicks").and_then(|v| v.as_bool()) == Some(true)) {
+            let Some(a) = p.asset(c.asset_id) else { continue };
+            let Some(marks) = a.extra.get("clicks").and_then(|v| v.as_array()) else { continue };
+            if a.width <= 0.0 || a.height <= 0.0 {
+                continue;
+            }
+            let fit = (w as f64 / a.width).min(h as f64 / a.height) * c.scale;
+            let (vw, vh) = (a.width * fit, a.height * fit);
+            let (x0, y0) = ((w as f64 - vw) / 2.0 + c.offset_x * w as f64, (h as f64 - vh) / 2.0 + c.offset_y * h as f64);
+            let r = 0.02 * vw.min(vh);
+            let k = 0.5523 * r;
+            let circle = format!("m {r:.1} 0 b {r:.1} {k:.1} {k:.1} {r:.1} 0 {r:.1} b -{k:.1} {r:.1} -{r:.1} {k:.1} -{r:.1} 0 b -{r:.1} -{k:.1} -{k:.1} -{r:.1} 0 -{r:.1} b {k:.1} -{r:.1} {r:.1} -{k:.1} {r:.1} 0");
+            for m in marks {
+                let (Some(mt), Some(mx), Some(my)) = (m["t"].as_f64(), m["x"].as_f64(), m["y"].as_f64()) else { continue };
+                if mt < c.source_in || mt > c.source_out {
+                    continue;
+                }
+                let t0 = c.start + (mt - c.source_in) / c.speed;
+                let dur = 0.7 / c.speed;
+                let ms = (dur * 1000.0).round() as i64;
+                let _ = writeln!(
+                    events,
+                    "Dialogue: 9,{},{},Click,,0,0,0,,{{\\an5\\pos({:.0},{:.0})\\blur{:.1}\\1a&H59&\\t(0,{ms},\\fscx250\\fscy250\\1a&HFF&)\\p1}}{circle}{{\\p0}}",
+                    ass_time(t0),
+                    ass_time(t0 + dur),
+                    x0 + mx * vw,
+                    y0 + my * vh,
+                    (r * 0.35).max(1.0),
+                );
+                n += 1;
+            }
+        }
+    }
     if n == 0 {
         return None;
     }

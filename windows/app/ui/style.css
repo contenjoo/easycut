@@ -191,3 +191,5 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .vsplit:hover, .hsplit:hover, body.resizing .vsplit, body.resizing .hsplit { opacity: 1; background: var(--accent); }
 body.resizing, body.resizing * { user-select: none; }
 body.resizing.v * { cursor: col-resize !important; }
+#range-info { display: flex; align-items: center; gap: 6px; }
+#range-info .rng { color: #9cc2ff; font-variant-numeric: tabular-nums; }

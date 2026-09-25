@@ -1,6 +1,7 @@
 //! EasyCut for Windows — Tauri 백엔드. 편집 규칙은 easycut-core, 화면은 ui/ (HTML·JS).
 mod ai;
 mod ai_tools;
+mod clicks;
 mod control;
 mod edits;
 mod export;
@@ -638,13 +639,15 @@ fn update_track(app: AppHandle, st: State<AppState>, index: usize, muted: bool, 
 
 #[tauri::command]
 fn add_text(app: AppHandle, st: State<AppState>, time: f64, text: String) -> Value {
-    with(&st, |e| {
+    let id = with(&st, |e| {
+        let mut id = None;
         e.apply(|p| {
             let ti = p.tracks.len().saturating_sub(1).max(1);
-            p.insert_text(&text, ti, time, 4.0);
-        })
+            id = Some(p.insert_text(&text, ti, time, 4.0));
+        });
+        id
     });
-    changed(&app, &st)
+    with_selection(&app, &st, id.into_iter().collect(), String::new())
 }
 
 #[tauri::command]
@@ -803,12 +806,23 @@ fn export_srt(st: State<AppState>, path: String) -> Res<()> {
 
 #[tauri::command]
 fn import_srt(app: AppHandle, st: State<AppState>, path: String) -> Res<Value> {
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let caps = srt::parse(&text);
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    // UTF-8(BOM 포함) 또는 UTF-16 (윈도우 메모장 "유니코드" 저장)
+    let text = if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
+        let le = bytes[0] == 0xFF;
+        let units: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) }).collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes)).to_string()
+    };
+    let caps: Vec<Caption> = srt::parse(&text).into_iter().map(|mut c| { c.text = media::strip_tags(&c.text); c }).collect();
     if caps.is_empty() {
         return Err("SRT 자막을 읽지 못했습니다.".into());
     }
-    with(&st, |e| e.apply(|p| p.captions = caps));
+    with(&st, |e| e.apply(|p| {
+        p.captions = caps;
+        p.show_captions = true;
+    }));
     Ok(changed(&app, &st))
 }
 
@@ -1212,8 +1226,31 @@ fn rec_hotkeys(app: AppHandle, on: bool) {
 }
 
 #[tauri::command]
-async fn rec_finish(app: AppHandle, camera_circle: bool) -> Res<Value> {
-    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle)).await.map_err(|e| e.to_string())?
+async fn rec_finish(app: AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: Option<bool>) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle, clicks, show_clicks.unwrap_or(true))).await.map_err(|e| e.to_string())?
+}
+
+/// 클릭 기록: action "start"(width·height = 녹화 화면 크기로 모니터를 찾는다) | "pause" | "resume" | "stop"(모은 클릭)
+#[tauri::command]
+fn rec_clicks(app: AppHandle, action: String, width: Option<f64>, height: Option<f64>) -> Value {
+    let c = app.state::<clicks::Clicks>();
+    match action.as_str() {
+        "start" => {
+            let (w, h) = (width.unwrap_or(0.0), height.unwrap_or(0.0));
+            let monitors = app.available_monitors().unwrap_or_default();
+            // 녹화 화면 크기와 같은 모니터 (여러 개면 EasyCut 창이 있는 모니터)
+            let current = app.get_webview_window("main").and_then(|w| w.current_monitor().ok().flatten());
+            let pick = monitors.iter().filter(|m| (m.size().width as f64 - w).abs() < 2.0 && (m.size().height as f64 - h).abs() < 2.0).max_by_key(|m| current.as_ref().is_some_and(|c| c.position() == m.position()))
+                .or(current.as_ref());
+            if let Some(m) = pick {
+                clicks::start(&c, (m.position().x as f64, m.position().y as f64, m.size().width as f64, m.size().height as f64));
+            }
+            Value::Null
+        }
+        "pause" => { clicks::pause(&c, true); Value::Null }
+        "resume" => { clicks::pause(&c, false); Value::Null }
+        _ => clicks::stop(&c),
+    }
 }
 
 #[tauri::command]
@@ -1313,6 +1350,7 @@ pub fn run() {
         .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)), ui: Mutex::default() })
         .manage(ai::Ai::default())
         .manage(record::Recorder::default())
+        .manage(clicks::Clicks::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_state, new_project, open_project, save_project, undo, redo,
@@ -1327,7 +1365,7 @@ pub fn run() {
             stt_models, stt_select, stt_download, export_transcript,
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
-            rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder,
+            rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder, rec_clicks,
         ])
         .setup(|app| {
             let _ = app.path().app_data_dir();
