@@ -68,8 +68,10 @@ export async function openRecordDialog() {
   box.innerHTML = `<h2>🔴 ${L("화면·얼굴 녹화")}</h2>
     <div class="row"><label>${L("녹화할 곳")}</label><select id="r-target">
       <option value="monitor" ${o.target === "monitor" ? "selected" : ""}>${L("전체 화면")}</option>
-      <option value="window" ${o.target === "window" ? "selected" : ""}>${L("창")}</option></select></div>
-    <p class="hint">${L("시작을 누르면 녹화할 화면이나 창을 고르는 창이 뜹니다.")}</p>
+      <option value="window" ${o.target === "window" ? "selected" : ""}>${L("창")}</option>
+      <option value="area" ${o.target === "area" ? "selected" : ""}>${L("영역")}</option></select>
+      <button class="mini" id="r-area" style="${o.target === "area" ? "" : "display:none"}">${L("영역 고르기…")}</button></div>
+    <p class="hint" id="r-area-info">${o.target === "area" ? (pref("area", null) ? L("고른 영역: 화면의 {}% × {}%", Math.round(pref("area").w * 100), Math.round(pref("area").h * 100)) : L("녹화할 영역을 먼저 고르세요.")) + " " + L("시작하면 그 영역이 있는 화면(전체 화면)을 고르세요.") : L("시작을 누르면 녹화할 화면이나 창을 고르는 창이 뜹니다.")}</p>
     <div class="row"><label><input type="checkbox" id="r-cam" ${o.useCamera ? "checked" : ""} ${cams.length ? "" : "disabled"}/> ${L("카메라")}</label>
       <select id="r-cam-id" ${cams.length ? "" : "disabled"}>${cams.length ? opt(cams, o.cameraId) : `<option>${L("카메라 없음")}</option>`}</select></div>
     <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-circle" ${o.circle ? "checked" : ""}/> ${L("얼굴을 원 모양으로")}</label></div>
@@ -81,7 +83,10 @@ export async function openRecordDialog() {
     <div class="btns"><button id="r-cancel">${L("취소")}</button><button class="danger" id="r-go">● ${L("녹화 시작")}</button></div>`;
   const q = (s) => box.querySelector(s);
   q("#r-cancel").onclick = api.modal.hide;
+  q("#r-target").onchange = (e) => { setPref("target", e.target.value); openRecordDialog(); };
+  q("#r-area").onclick = pickArea;
   q("#r-go").onclick = () => {
+    if (q("#r-target").value === "area" && !pref("area", null)) return pickArea();
     const opts = {
       target: q("#r-target").value,
       useCamera: q("#r-cam").checked && cams.length > 0,
@@ -91,12 +96,25 @@ export async function openRecordDialog() {
       micId: q("#r-mic-id").value,
       systemAudio: q("#r-sys").checked,
       clicks: q("#r-clicks").checked,
+      area: q("#r-target").value === "area" ? pref("area", null) : null,
     };
     for (const [k, v] of Object.entries(opts)) setPref(k, v);
     api.modal.hide();
     // 화면 고르기는 사용자가 누른 바로 그때 불러야 한다
     start(opts);
   };
+}
+
+/// 녹화할 영역 고르기 (화면 위에 끌어서 네모 그리기)
+async function pickArea() {
+  api.modal.hide();
+  const un = await tauri.event.listen("rec-area", async (e) => {
+    un();
+    await invoke("rec_area", { open: false }).catch(() => {});
+    if (e.payload) setPref("area", e.payload);
+    openRecordDialog();
+  });
+  try { await invoke("rec_area", { open: true }); } catch (e) { un(); api.toast(L(String(e))); openRecordDialog(); }
 }
 
 // MARK: 시작 · 일시정지 · 정지
@@ -112,6 +130,8 @@ function pickMime(kind, resizable = false) {
 
 async function start(o) {
   R.circle = o.circle;
+  R.area = o.target === "area" ? o.area : null;
+  if (o.target === "area") o.target = "monitor";
   R.showClicks = o.clicks;
   let display;
   try {
@@ -265,7 +285,8 @@ export async function stop() {
   await restoreWindow();
   R.phase = "idle";
   try {
-    const r = await invoke("rec_finish", { cameraCircle: R.circle, clicks, showClicks: R.showClicks });
+    const a = R.area;
+    const r = await invoke("rec_finish", { cameraCircle: R.circle, clicks, showClicks: R.showClicks, area: a ? [a.x, a.y, a.w, a.h] : null });
     api.toast(r.hasCamera ? L("녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)") : L("녹화를 타임라인에 넣었습니다"));
     if (r.hasAudio) api.autoTranscribe?.(r.screen);
   } catch (e) {

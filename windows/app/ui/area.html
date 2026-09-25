@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>EasyCut 영역</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; cursor: crosshair; user-select: none; background: rgba(0, 0, 0, .35);
+      font: 14px "Segoe UI", "Malgun Gothic", sans-serif; color: #fff; }
+    #box { position: absolute; border: 2px solid #3b82f6; background: rgba(59, 130, 246, .08); box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35); display: none; }
+    #size { position: absolute; background: #3b82f6; padding: 2px 8px; border-radius: 4px; font-size: 12px; display: none; }
+    #help { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(20, 21, 24, .92); padding: 10px 16px; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <div id="help"></div>
+  <div id="box"></div>
+  <div id="size"></div>
+  <script src="strings.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    // 녹화할 영역 고르기: 끌어서 네모를 그리면 끝 (Esc 취소). 결과는 이 화면 기준 0~1 비율
+    const ev = window.__TAURI__.event;
+    const help = document.querySelector("#help"), box = document.querySelector("#box"), size = document.querySelector("#size");
+    help.textContent = L("녹화할 영역을 끌어서 고르세요 · Esc 취소");
+    let s = null;
+    const rect = (e) => {
+      const x = Math.min(s.x, e.clientX), y = Math.min(s.y, e.clientY), w = Math.abs(e.clientX - s.x), h = Math.abs(e.clientY - s.y);
+      return { x, y, w, h };
+    };
+    const show = (r) => {
+      Object.assign(box.style, { display: "block", left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+      Object.assign(size.style, { display: "block", left: r.x + "px", top: Math.max(0, r.y - 26) + "px" });
+      size.textContent = `${Math.round(r.w * devicePixelRatio)} × ${Math.round(r.h * devicePixelRatio)}`;
+      document.body.style.background = "transparent";
+    };
+    window.onmousedown = (e) => { s = { x: e.clientX, y: e.clientY }; help.style.display = "none"; };
+    window.onmousemove = (e) => { if (s && e.buttons & 1) show(rect(e)); };
+    window.onmouseup = (e) => {
+      if (!s) return;
+      const r = rect(e);
+      s = null;
+      if (r.w < 40 || r.h < 40) { help.style.display = ""; box.style.display = size.style.display = "none"; document.body.style.background = ""; return; }
+      ev.emit("rec-area", { x: r.x / innerWidth, y: r.y / innerHeight, w: r.w / innerWidth, h: r.h / innerHeight });
+    };
+    window.onkeydown = (e) => { if (e.key === "Escape") ev.emit("rec-area", null); };
+  </script>
+</body>
+</html>

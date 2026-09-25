@@ -1226,8 +1226,13 @@ fn rec_hotkeys(app: AppHandle, on: bool) {
 }
 
 #[tauri::command]
-async fn rec_finish(app: AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: Option<bool>) -> Res<Value> {
-    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle, clicks, show_clicks.unwrap_or(true))).await.map_err(|e| e.to_string())?
+async fn rec_finish(app: AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: Option<bool>, area: Option<(f64, f64, f64, f64)>) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle, clicks, show_clicks.unwrap_or(true), area)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn rec_area(app: AppHandle, open: bool) -> Res<()> {
+    if open { record::open_area_picker(&app) } else { record::close_area_picker(&app); Ok(()) }
 }
 
 /// 클릭 기록: action "start"(width·height = 녹화 화면 크기로 모니터를 찾는다) | "pause" | "resume" | "stop"(모은 클릭)
@@ -1365,7 +1370,7 @@ pub fn run() {
             stt_models, stt_select, stt_download, export_transcript,
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
-            rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder, rec_clicks,
+            rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder, rec_clicks, rec_area,
         ])
         .setup(|app| {
             let _ = app.path().app_data_dir();

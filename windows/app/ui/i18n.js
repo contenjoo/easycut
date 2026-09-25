@@ -52,8 +52,24 @@
   window.LANG = lang;
   window.T = (k) => dict[k] ?? ko[k] ?? k;
   // 한국어 원문을 키로 쓰는 문구 (맥 앱 LocTable과 같은 방식). {}는 차례로 값이 들어간다
+  // 숫자가 들어간 메시지(앱 안쪽에서 만든 문구)는 "{}" 자리를 맞춰 찾는다
+  let patterns = null;
+  const byPattern = (k) => {
+    if (!window.EN) return null;
+    if (!patterns) {
+      patterns = Object.keys(window.EN).filter((x) => x.includes("{}")).map((x) => {
+        const re = new RegExp("^" + x.split("{}").map((p) => p.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("([\\s\\S]*?)") + "$");
+        return [re, window.EN[x]];
+      });
+    }
+    for (const [re, en] of patterns) {
+      const m = k.match(re);
+      if (m) { let out = en; for (const v of m.slice(1)) out = out.replace("{}", v); return out; }
+    }
+    return null;
+  };
   window.L = (k, ...args) => {
-    let s = lang === "ko" ? k : (window.EN?.[k] ?? k);
+    let s = lang === "ko" ? k : (window.EN?.[k] ?? (args.length ? k : byPattern(String(k)) ?? k));
     for (const a of args) s = s.replace("{}", a);
     return s;
   };

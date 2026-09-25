@@ -98,6 +98,41 @@ pub fn close_panel(app: &AppHandle) {
     }
 }
 
+// MARK: 녹화할 영역 고르기 (EasyCut 창이 있는 화면 전체를 덮는 투명 창)
+
+pub fn open_area_picker(app: &AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("recarea") {
+        let _ = w.destroy();
+    }
+    let main = app.get_webview_window("main").ok_or("창을 찾을 수 없습니다")?;
+    let m = main.current_monitor().ok().flatten().ok_or("화면을 찾을 수 없습니다")?;
+    let scale = m.scale_factor();
+    let pos = m.position().to_logical::<f64>(scale);
+    let size = m.size().to_logical::<f64>(scale);
+    let b = WebviewWindowBuilder::new(app, "recarea", WebviewUrl::App("area.html".into()))
+        .title("EasyCut 영역")
+        .position(pos.x, pos.y)
+        .inner_size(size.width, size.height)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .visible(false);
+    // 뒤 화면이 보이게 (맥 개발용 빌드는 비공개 API가 필요해 불투명)
+    #[cfg(not(target_os = "macos"))]
+    let b = b.transparent(true);
+    let win = b.build().map_err(|e| format!("영역 고르기 창을 열지 못했습니다: {e}"))?;
+    let _ = win.show();
+    let _ = win.set_focus();
+    Ok(())
+}
+
+pub fn close_area_picker(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("recarea") {
+        let _ = w.destroy();
+    }
+}
+
 // MARK: 전역 단축키 (Ctrl+Alt+P 일시정지, Ctrl+Alt+S 정지)
 
 pub fn register_hotkeys(app: &AppHandle) {
@@ -122,7 +157,7 @@ pub fn unregister_hotkeys(app: &AppHandle) {
 // MARK: 끝내기 → MP4로 정리 → 타임라인에
 
 /// MediaRecorder 파일은 길이·색인이 없어 탐색이 안 되므로 다시 싸거나(mp4) H.264로 바꾼다(webm)
-fn finalize_file(src: &Path, dest: &Path, audio_only: bool, progress: &dyn Fn(f64)) -> Result<PathBuf, String> {
+fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f64, f64, f64)>, progress: &dyn Fn(f64)) -> Result<PathBuf, String> {
     let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다.")?;
     let is_mp4 = src.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp4"));
     let run = |args: &[&str], out: &Path| -> bool {
@@ -148,8 +183,15 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, progress: &dyn Fn(f6
     } else {
         let out = dest.with_extension("mp4");
         // 녹화 영상은 프레임 간격이 들쭉날쭉하므로 30fps로 고르게
+        // 영역 녹화: 화면 전체를 녹화한 뒤 고른 영역만 잘라 낸다 (짝수 크기)
+        if let Some((x, y, w, h)) = crop {
+            let vf = format!("crop=trunc(iw*{w:.5}/2)*2:trunc(ih*{h:.5}/2)*2:trunc(iw*{x:.5}):trunc(ih*{y:.5})");
+            if run(&["-vf", &vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"], &out) {
+                return Ok(out);
+            }
+        }
         // 영상은 그대로, 소리는 맥에서도 열리게 AAC로
-        if is_mp4 && run(&["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"], &out) {
+        if is_mp4 && crop.is_none() && run(&["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"], &out) {
             return Ok(out);
         }
         if run(&["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"], &out) {
@@ -167,7 +209,7 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, progress: &dyn Fn(f6
 }
 
 /// 녹화 파일을 정리해 타임라인에: 화면은 트랙 1, 카메라는 트랙 2 오른쪽 아래 작은 화면(원 모양), 컴퓨터 소리는 트랙 3. 그리고 음성 인식.
-pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool) -> Result<Value, String> {
+pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool, area: Option<(f64, f64, f64, f64)>) -> Result<Value, String> {
     let files: Vec<(String, PathBuf)> = {
         let rec = app.state::<Recorder>();
         let mut f = rec.files.lock().unwrap();
@@ -187,7 +229,8 @@ pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_
         let dest = dir.join(name);
         let a2 = app.clone();
         let base = i as f64 / n;
-        let r = finalize_file(src, &dest, kind == "system", &move |v| job(&a2, "record", base + v / n, "녹화 파일 정리 중…"));
+        let crop = if kind == "screen" { area } else { None };
+        let r = finalize_file(src, &dest, kind == "system", crop, &move |v| job(&a2, "record", base + v / n, "녹화 파일 정리 중…"));
         if let Ok(p) = r {
             let _ = std::fs::remove_file(src);
             out.insert(kind.clone(), p);
@@ -196,7 +239,18 @@ pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_
     job(app, "record", 1.0, "");
     let screen = out.get("screen").ok_or("녹화 파일을 만들지 못했습니다.")?;
     let mut sa = media::probe(screen)?;
-    // 클릭 기록은 맥과 같은 자리(미디어의 clicks)에 둔다
+    // 클릭 기록은 맥과 같은 자리(미디어의 clicks)에 둔다. 영역 녹화면 영역 기준으로 바꾸고 밖은 버린다
+    let clicks = match (clicks, area) {
+        (Some(Value::Array(list)), Some((ax, ay, aw, ah))) => Some(Value::Array(
+            list.into_iter()
+                .filter_map(|m| {
+                    let (x, y) = ((m["x"].as_f64()? - ax) / aw, (m["y"].as_f64()? - ay) / ah);
+                    ((0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y)).then(|| json!({ "t": m["t"], "x": x, "y": y }))
+                })
+                .collect(),
+        )),
+        (c, _) => c,
+    };
     let has_clicks = clicks.as_ref().and_then(Value::as_array).is_some_and(|a| !a.is_empty());
     if let Some(c) = clicks.filter(|_| has_clicks) {
         sa.extra.insert("clicks".into(), c);
