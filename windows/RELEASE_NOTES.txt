@@ -1,4 +1,10 @@
-EasyCut for Windows 0.1.1 (베타 / Beta)
+EasyCut for Windows 0.1.2 (베타 / Beta)
+
+[0.1.2 고친 점]
+• 음성 인식 결과에서 영상 맨 끝 단어가 대본에서 사라질 수 있던 문제 (Whisper가 알려 준 단어 시간이 영상 길이를 넘던 경우)
+
+[Fixed in 0.1.2]
+• The last word of a video could disappear from the transcript when Whisper reported it ending after the audio
 
 [0.1.1 고친 점]
 • 눈금자를 끌면 언제나 구간이 선택됩니다 (Alt를 누른 채 끌면 재생헤드만 이동)
