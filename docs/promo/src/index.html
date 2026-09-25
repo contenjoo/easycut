@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>EasyCut Promo</title>
+<style>
+:root{--c1:#F2566B;--c2:#8B3FEA;--c3:#3B6CF6;--bg:#07070D;--panel:#16161E;--panel2:#20202A;--line:rgba(255,255,255,.09);
+  --text:#F5F5FA;--mute:#A6A6B8;--blue:#4C8DFF;--red:#FF4D5E;--green:#34D399;--yellow:#FFD60A}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+body{font-family:"Noto Sans KR","Apple SD Gothic Neo",sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+body.en{font-family:system-ui,-apple-system,"Helvetica Neue",sans-serif}
+.mono{font-family:"SF Mono",Menlo,monospace}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+#bg,#grid,#vig,#flash,#fade{position:absolute;inset:0;pointer-events:none}
+.blob{position:absolute;width:1600px;height:1600px;margin:-800px 0 0 -800px;border-radius:50%}
+#grid{background-image:radial-gradient(rgba(255,255,255,.55) 1.2px,transparent 1.3px);background-size:44px 44px;opacity:.07;
+  -webkit-mask-image:radial-gradient(ellipse 70% 65% at 50% 50%,#000 30%,transparent 100%)}
+#vig{background:radial-gradient(ellipse 80% 75% at 50% 50%,transparent 55%,rgba(0,0,0,.55) 100%)}
+#flash{background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.9),rgba(190,150,255,.35) 35%,transparent 70%);opacity:0}
+#fade{background:#000;opacity:0}
+.scene{position:absolute;inset:0;display:none;transform-origin:50% 50%}
+.abs{position:absolute}
+.grad{background:linear-gradient(100deg,#FF6B81,#A259FF 50%,#4F83FF);-webkit-background-clip:text;background-clip:text;color:transparent}
+.line{display:block;overflow:hidden;padding:.02em 0 .1em}
+.line>span{display:inline-block;will-change:transform}
+.chip{display:inline-flex;align-items:center;gap:14px;padding:8px 24px 8px 9px;border-radius:999px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);font-size:27px;font-weight:500;color:#ECECF4;white-space:nowrap}
+.chip b{display:inline-grid;place-items:center;width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--c1),var(--c2),var(--c3));
+  font-size:18px;font-weight:700;color:#fff}
+.h1{font-size:90px;font-weight:900;line-height:1.12;letter-spacing:-2.5px}
+body.en .h1{font-weight:800;letter-spacing:-2.5px}
+.p{font-size:31px;line-height:1.6;color:var(--mute);white-space:pre-line}
+.win{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:24px;overflow:hidden;
+  box-shadow:0 50px 140px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+.tbar{height:60px;display:flex;align-items:center;gap:10px;padding:0 24px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.025);font-size:24px;font-weight:700}
+.tbar i{width:14px;height:14px;border-radius:50%;display:block}
+.tbar .ttl{margin-left:14px}
+.tbar .st{margin-left:auto;font-size:21px;font-weight:500;color:var(--mute);display:flex;align-items:center;gap:10px}
+.pill{display:inline-flex;align-items:center;gap:10px;padding:10px 20px;border-radius:999px;font-size:24px;font-weight:500;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#E6E6EF;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 30px;border-radius:14px;font-size:26px;font-weight:700;color:#fff;white-space:nowrap}
+.ico{width:34px;height:34px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* S1 */
+#s1 .clip{position:absolute;height:34px;border-radius:9px}
+#s1 .h{position:absolute;left:0;right:0;top:370px;text-align:center;font-size:124px;font-weight:900;letter-spacing:-4px;line-height:1.15}
+body.en #s1 .h{font-weight:800}
+/* S2 */
+#s2 .wrap{position:absolute;left:0;right:0;top:120px;display:flex;flex-direction:column;align-items:center}
+#s2 .iconbox{position:relative;width:420px;height:420px}
+#s2 .iconbox img{width:420px;height:420px;position:relative}
+#s2 .glow{position:absolute;left:50%;top:50%;width:900px;height:900px;margin:-450px 0 0 -450px;border-radius:50%;
+  background:radial-gradient(circle,rgba(162,89,255,.55),rgba(79,131,255,.18) 40%,transparent 68%)}
+#s2 .word{font-family:system-ui,-apple-system,sans-serif;font-size:170px;font-weight:800;letter-spacing:-5px;line-height:1;margin-top:10px}
+#s2 .word span{display:inline-block}
+#s2 .tag{font-size:44px;font-weight:500;color:#D9D9E6;margin-top:38px;letter-spacing:-.5px}
+/* S3 */
+#s3 .left{left:130px;top:285px;width:700px}
+#s3 .card{left:880px;top:200px;width:910px;height:660px}
+#s3 .tx-area{position:absolute;left:0;right:0;top:60px;padding:28px 40px}
+#s3 .tl{display:flex;align-items:baseline;gap:22px;font-size:32px;line-height:1.4;padding:13px 0}
+#s3 .wrap2{overflow:hidden}
+#s3 .ts{width:74px;flex:none;font-size:25px;color:var(--blue)}
+#s3 em{font-style:normal;color:#FF9F43}
+#s3 .selw{position:relative;display:inline-block}
+#s3 .selbg{position:absolute;left:-6px;top:0;bottom:0;border-radius:8px;background:rgba(76,141,255,.45);width:0}
+#s3 .seltxt{position:relative}
+#s3 .strike{position:absolute;left:-4px;top:54%;height:4px;border-radius:2px;background:var(--red);width:0}
+#s3 .key{position:absolute;width:104px;height:104px;border-radius:22px;background:linear-gradient(#3A3A46,#26262F);
+  border:1px solid rgba(255,255,255,.18);box-shadow:0 12px 0 #111118,0 24px 50px rgba(0,0,0,.6);display:grid;place-items:center;font-size:52px;color:#fff}
+#s3 .tlbox{position:absolute;left:0;right:0;bottom:0;height:250px;border-top:1px solid var(--line);padding:24px 40px;background:rgba(0,0,0,.18)}
+#s3 .tlhead{display:flex;justify-content:space-between;align-items:center;font-size:23px;color:var(--mute);margin-bottom:16px}
+#s3 .dur b{color:#fff;font-weight:700}
+#s3 .toastw{left:880px;width:910px;top:892px;text-align:center}
+#s3 .badges{display:flex;gap:14px;margin-top:40px}
+/* S4 */
+#s4 .head{left:0;right:0;top:120px;text-align:center}
+#s4 .panel{left:160px;top:470px;width:1600px;height:470px}
+#s4 canvas{position:absolute;left:30px;top:84px}
+#s4 .phead{position:absolute;left:36px;right:36px;top:24px;display:flex;justify-content:space-between;align-items:center;font-size:24px;color:var(--mute)}
+#s4 .prow{position:absolute;left:36px;right:36px;bottom:26px;display:flex;align-items:center;gap:22px}
+#s4 .count{font-size:30px;font-weight:700;color:#FF6B7A}
+#s4 .time{font-size:28px;color:#DADAE6}
+#s4 .save{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.4);color:#6EF0B8;font-weight:700}
+#s4 .cutbtn{margin-left:auto;background:linear-gradient(180deg,#FF5A6A,#E23A4C);box-shadow:0 10px 30px rgba(255,77,94,.35)}
+/* S5 */
+#s5 .frame{left:130px;top:215px;width:1040px;height:585px;border-radius:26px;overflow:hidden;border:1px solid var(--line);
+  box-shadow:0 50px 140px rgba(0,0,0,.6)}
+#s5 .fbg{position:absolute;inset:-10%;background:linear-gradient(120deg,#FF8FC4 0%,#FF8FC4 38%,#7A5CFF 52%,#2FA7FF 62%,#1E3A8A 100%)}
+#s5 .cap{position:absolute;left:0;right:0;bottom:52px;text-align:center}
+#s5 .cap span{display:inline-block;font-size:44px;font-weight:700;padding:8px 22px;border-radius:10px;white-space:nowrap}
+#s5 .cap.basic span{background:rgba(0,0,0,.75);color:#fff}
+#s5 .cap.yellow span{color:var(--yellow);font-weight:900;
+  text-shadow:3px 0 #000,-3px 0 #000,0 3px #000,0 -3px #000,2px 2px #000,-2px -2px #000,2px -2px #000,-2px 2px #000,0 6px 14px rgba(0,0,0,.5)}
+#s5 .cap.outline span{color:#fff;font-weight:900;font-size:50px;
+  text-shadow:4px 0 #111,-4px 0 #111,0 4px #111,0 -4px #111,3px 3px #111,-3px -3px #111,3px -3px #111,-3px 3px #111,0 8px 20px rgba(0,0,0,.55)}
+#s5 .right{left:1250px;top:180px;width:600px}
+body.en #s5 .h1{font-size:70px !important}
+#s5 .styles{display:flex;gap:12px;margin-top:34px}
+#s5 .sty{padding:12px 24px;border-radius:12px;font-size:25px;font-weight:700;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12)}
+#s5 .sty.on{background:linear-gradient(135deg,var(--c2),var(--c3));border-color:transparent}
+#s5 .list{margin-top:26px;border-radius:16px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+#s5 .row{display:flex;gap:18px;align-items:center;padding:14px 20px;font-size:23px;border-bottom:1px solid var(--line);color:#CFCFDC;white-space:nowrap;overflow:hidden}
+#s5 .row:last-child{border-bottom:0}
+#s5 .row .mono{font-size:19px;color:var(--mute)}
+#s5 .row.on{background:rgba(76,141,255,.18);color:#fff}
+#s5 .srt{display:flex;gap:12px;margin-top:22px}
+/* S6 */
+#s6 .left{left:130px;top:250px;width:700px}
+#s6 .card{left:880px;top:140px;width:910px;height:800px}
+#s6 .logos{display:flex;gap:14px;margin-top:40px}
+#s6 .ubub{position:absolute;right:36px;top:100px;max-width:640px;padding:20px 28px;border-radius:26px 26px 8px 26px;
+  background:linear-gradient(135deg,#8B3FEA,#3B6CF6);font-size:28px;line-height:1.45;font-weight:500}
+#s6 .think{position:absolute;left:36px;top:250px;padding:22px 28px;border-radius:26px 26px 26px 8px;background:var(--panel2);display:flex;gap:10px;align-items:center;font-size:24px;color:var(--mute)}
+#s6 .think i{display:block;width:12px;height:12px;border-radius:50%;background:#B9B9CC}
+#s6 .abub{position:absolute;left:36px;top:250px;width:780px;padding:26px 30px;border-radius:26px 26px 26px 8px;background:var(--panel2)}
+#s6 .step{display:flex;align-items:center;gap:18px;font-size:27px;padding:10px 0}
+#s6 .step .ck{width:40px;height:40px;border-radius:50%;background:var(--green);display:grid;place-items:center;flex:none}
+#s6 .step .ck svg{width:24px;height:24px;fill:none;stroke:#062;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}
+#s6 .step .dim{margin-left:auto;color:#6EF0B8;font-weight:700;font-size:25px}
+#s6 .done{font-size:26px;color:#D5D5E2;margin-top:16px;padding-top:18px;border-top:1px solid var(--line)}
+#s6 .input{position:absolute;left:30px;right:30px;bottom:30px;height:82px;border-radius:20px;background:#0E0E14;border:1px solid rgba(255,255,255,.14);
+  display:flex;align-items:center;padding:0 16px 0 28px;font-size:28px}
+#s6 .input .ph{color:#6B6B7D}
+#s6 .caret{display:inline-block;width:3px;height:34px;background:#fff;margin-left:2px;vertical-align:middle}
+#s6 .send{margin-left:auto;width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--c2),var(--c3))}
+#s6 .undo{position:absolute;left:0;right:0;bottom:130px;text-align:center;font-size:21px;color:#7C7C90}
+/* S7 */
+#s7 .head{left:0;right:0;top:120px;text-align:center}
+#s7 .tile{position:absolute;width:390px;height:250px;border-radius:26px;background:var(--panel);border:1px solid var(--line);padding:34px 32px;
+  box-shadow:0 30px 80px rgba(0,0,0,.45)}
+#s7 .tile .ib{width:68px;height:68px;border-radius:18px;display:grid;place-items:center}
+#s7 .tile h3{font-size:31px;font-weight:700;margin-top:26px;letter-spacing:-.5px}
+#s7 .tile p{font-size:22px;color:var(--mute);margin-top:8px;line-height:1.45}
+/* S8 */
+#s8 .head{left:0;right:0;top:64px;text-align:center}
+#s8 .persp{position:absolute;left:0;right:0;top:230px;height:840px;perspective:2200px}
+#s8 .shot{position:absolute;left:330px;top:0;width:1260px;height:788px;border-radius:18px;overflow:hidden;
+  box-shadow:0 60px 160px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.1);transform-origin:50% 0%}
+#s8 .shot img{position:absolute;inset:0;width:100%;height:100%}
+#s8 .sglow{position:absolute;left:260px;right:260px;top:120px;height:700px;border-radius:50%;
+  background:radial-gradient(ellipse,rgba(139,63,234,.55),rgba(59,108,246,.2) 45%,transparent 70%)}
+#s8 .lbl{position:absolute;left:0;right:0;top:188px;text-align:center;font-size:24px;color:var(--mute)}
+/* S9 */
+#s9 .wrap{position:absolute;left:0;right:0;top:92px;display:flex;flex-direction:column;align-items:center}
+#s9 .iconbox{position:relative;width:300px;height:300px}
+#s9 .iconbox img{width:300px;height:300px;position:relative}
+#s9 .glow{position:absolute;left:50%;top:50%;width:800px;height:800px;margin:-400px 0 0 -400px;border-radius:50%;
+  background:radial-gradient(circle,rgba(162,89,255,.5),rgba(79,131,255,.15) 40%,transparent 68%)}
+#s9 .word{font-family:system-ui,-apple-system,sans-serif;font-size:136px;font-weight:800;letter-spacing:-4px;line-height:1;margin-top:6px}
+#s9 .word span{display:inline-block}
+#s9 .tag{font-size:38px;color:#D9D9E6;margin-top:30px}
+#s9 .badges{display:flex;gap:16px;margin-top:40px}
+#s9 .cta{position:relative;overflow:hidden;margin-top:44px;display:flex;align-items:center;gap:18px;padding:22px 40px;border-radius:999px;
+  background:linear-gradient(100deg,#F2566B,#8B3FEA 50%,#3B6CF6);font-size:36px;font-weight:700;box-shadow:0 20px 60px rgba(139,63,234,.45)}
+#s9 .cta .shine{position:absolute;top:0;bottom:0;width:160px;background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent)}
+</style></head>
+<body>
+<div id="stage">
+  <div id="bg"><div class="blob" id="b1"></div><div class="blob" id="b2"></div><div class="blob" id="b3"></div></div>
+  <div id="grid"></div>
+  <div id="scenes"></div>
+  <div id="vig"></div><div id="flash"></div><div id="fade"></div>
+</div>
+<script>
+const LANG = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ko';
+if (LANG === 'en') { document.body.classList.add('en'); document.documentElement.lang = 'en'; }
+const T = {
+ko: {
+  s1: ['영상 편집,', '아직도 <span class="grad">어렵나요?</span>'],
+  s2tag: '글자처럼 지우고, 말로 부탁하는 영상 편집기',
+  s3chip: '대본으로 편집', s3h: ['대본에서 지우면', '<span class="grad">영상도 잘려요.</span>'],
+  s3p: '음성 인식이 대본을 자동으로 만들어요.\n문서를 고치듯 영상을 편집하세요.',
+  s3badges: ['Apple 온디바이스', 'Whisper 고정확도'],
+  s3card: '대본', s3busy: '음성 인식 중…', s3done: '음성 인식 완료',
+  s3lines: ['안녕하세요, 오늘은 이지컷을 소개합니다.', '<em>음…</em> 그러니까, <em>어…</em> 잠깐만요.', '영상을 불러오면 대본이 자동으로 생겨요.', '필요 없는 말은 지우기만 하면 끝!'],
+  s3tl: '타임라인', s3len: '길이', s3toast: '✓ 4초 잘림 · ⌘Z로 되돌리기',
+  s4chip: '원클릭 무음 컷', s4h: '말 없는 구간은 <span class="grad">버튼 한 번</span>으로.',
+  s4p: '음성 인식 없이 소리 크기만으로 무음을 찾아 한 번에 잘라요.',
+  s4panel: '무음 컷 · 소리 크기 기준', s4thr: '기준 음량 −60 dB · 최소 0.3초',
+  s4count: (n, s) => `무음 ${n}곳 · ${s}초 삭제`, s4btn: '무음 잘라내기', s4save: '24% 단축',
+  s5chip: '자동 자막', s5h: ['대본이 그대로', '<span class="grad">자막이 돼요.</span>'],
+  s5p: '글꼴·색·외곽선·위치를 고르고\nSRT로 내보내거나 영상에 입히세요.',
+  s5styles: ['기본', '노랑', '흰+외곽'], s5srt: ['SRT 가져오기·내보내기', '영상에 입히기'],
+  s5caps: ['안녕하세요, 오늘은 이지컷을 소개합니다.', '영상을 불러오면 대본이 자동으로 생겨요.', '필요 없는 말은 지우기만 하면 끝!'],
+  s6chip: 'AI 편집', s6h: ['말로 부탁하면', '<span class="grad">AI가 편집해요.</span>'],
+  s6p: 'Claude · ChatGPT 계정으로 원클릭 로그인.\nAPI 키 없이 쓰던 구독 그대로.',
+  s6logos: ['Claude', 'ChatGPT', 'MCP 연결'],
+  s6card: 'AI 편집', s6status: 'Claude 연결됨', s6ph: '무엇을 편집할까요?',
+  s6prompt: '말 없는 부분 다 잘라주고, 자막은 노랗게 해줘', s6think: '생각하는 중',
+  s6steps: [['무음 12곳 잘라냄', '−38초'], ['대본으로 자막 24개 만듦', ''], ['자막 스타일 → 노랑 + 외곽선', '']],
+  s6done: '끝났어요. 영상 길이 5:02 → 4:24', s6undo: '모든 AI 편집은 ⌘Z로 되돌릴 수 있습니다',
+  s7h: '필요한 기능은 <span class="grad">다 들어 있어요.</span>',
+  s7: [['화면·얼굴 녹화', '화면 + 카메라 + 마이크\n한 번에 녹화하고 바로 배치'], ['최대 20배속', '0.25~20배 재생\n음정 그대로 속도 조절'],
+       ['링크로 가져오기', '유튜브 주소만 붙여 넣으면\n편집용 MP4로'], ['어떤 파일이든', 'MKV·WebM·AVI 자동 변환\n사진·오디오도 OK'],
+       ['멀티 트랙 타임라인', '분할·트림·그룹·스냅\n실행 취소 300단계'], ['화면 배치', 'PIP·원형 화면·페이드\n인물 배경 흐리게'],
+       ['4K 내보내기', 'MP4·HEVC·ProRes\nSRT 자막 동시 저장'], ['AI 앱 연결', 'Claude Code·Codex에서\nEasyCut을 직접 조작']],
+  s8h: '한 앱에서, <span class="grad">처음부터 끝까지.</span>', s8lbl: '실제 EasyCut 화면',
+  s9tag: '컷 편집 · 대본 편집 · 자막 · AI 편집을 한 앱에',
+  s9badges: ['무료 · 오픈소스 (MIT)', 'macOS · Apple Silicon', 'Windows 베타'],
+  s9cta: 'github.com/contenjoo/easycut',
+},
+en: {
+  s1: ['Video editing,', 'still feels <span class="grad">hard?</span>'],
+  s2tag: 'Edit video like text. Or just ask.',
+  s3chip: 'Edit by transcript', s3h: ['Delete the words,', '<span class="grad">cut the video.</span>'],
+  s3p: 'Speech recognition writes the transcript.\nEdit your video like a document.',
+  s3badges: ['Apple on-device', 'Whisper'],
+  s3card: 'Transcript', s3busy: 'Transcribing…', s3done: 'Transcribed',
+  s3lines: ["Hi! Today I'll show you EasyCut.", '<em>Um…</em> so, <em>uh…</em> wait a second.', 'Import a video, get a transcript.', "Delete what you don't need. Done!"],
+  s3tl: 'Timeline', s3len: 'Length', s3toast: '✓ Cut 4 s · ⌘Z to undo',
+  s4chip: 'One-click silence cut', s4h: 'Silence? Gone in <span class="grad">one click.</span>',
+  s4p: 'Finds quiet gaps by loudness alone — no transcript needed.',
+  s4panel: 'Silence cut · by loudness', s4thr: 'Threshold −60 dB · min 0.3 s',
+  s4count: (n, s) => `${n} gaps · ${s}s removed`, s4btn: 'Cut silence', s4save: '24% shorter',
+  s5chip: 'Auto captions', s5h: ['Your transcript', '<span class="grad">becomes captions.</span>'],
+  s5p: 'Pick font, color, outline and position.\nExport SRT or burn them in.',
+  s5styles: ['Basic', 'Yellow', 'Outline'], s5srt: ['SRT import · export', 'Burn into video'],
+  s5caps: ["Hi! Today I'll show you EasyCut.", 'Import a video, get a transcript.', "Delete what you don't need. Done!"],
+  s6chip: 'AI editing', s6h: ['Just ask.', '<span class="grad">AI does the edit.</span>'],
+  s6p: 'One-click sign-in with Claude or ChatGPT.\nUses your plan — no API key needed.',
+  s6logos: ['Claude', 'ChatGPT', 'MCP'],
+  s6card: 'AI Edit', s6status: 'Claude connected', s6ph: 'What should I edit?',
+  s6prompt: 'Cut all the silent parts and make the captions yellow', s6think: 'Thinking',
+  s6steps: [['Cut 12 silent gaps', '−38s'], ['Made 24 captions from the transcript', ''], ['Caption style → yellow + outline', '']],
+  s6done: 'Done. Length 5:02 → 4:24', s6undo: 'Every AI edit can be undone with ⌘Z',
+  s7h: 'Everything else <span class="grad">you need.</span>',
+  s7: [['Screen + camera', 'Record screen, face and mic\nplaced on tracks for you'], ['Up to 20× speed', 'Play 0.25–20×\nretime clips, keep pitch'],
+       ['Import from a link', 'Paste a YouTube URL,\nget an editable MP4'], ['Any file', 'MKV · WebM · AVI converted\nphotos and audio too'],
+       ['Multi-track timeline', 'Split · trim · group · snap\n300 levels of undo'], ['Layout', 'PIP · round frame · fades\nbackground blur'],
+       ['4K export', 'MP4 · HEVC · ProRes\nSRT saved alongside'], ['Connect AI apps', 'Drive EasyCut from\nClaude Code or Codex']],
+  s8h: 'One app, <span class="grad">start to finish.</span>', s8lbl: 'Real EasyCut screens',
+  s9tag: 'Cut · Transcript · Captions · AI — in one app',
+  s9badges: ['Free & open source (MIT)', 'macOS · Apple Silicon', 'Windows beta'],
+  s9cta: 'github.com/contenjoo/easycut',
+}}[LANG];
+
+// ------------------------------------------------------------ helpers
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, x) => a + (b - a) * x;
+const eo = x => 1 - Math.pow(1 - x, 3);
+const eo4 = x => 1 - Math.pow(1 - x, 4);
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const back = x => { const c1 = 1.5, c3 = c1 + 1; return x <= 0 ? 0 : 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function tf(el, { o = 1, x = 0, y = 0, s = 1, r = 0, b = 0 } = {}) {
+  el.style.opacity = o;
+  el.style.transform = `translate(${x}px,${y}px) scale(${s}) rotate(${r}deg)`;
+  el.style.filter = b > 0.05 ? `blur(${b}px)` : 'none';
+}
+function rise(el, t, t0, d = 0.7, dy = 40) { const e = eo4(P(t, t0, t0 + d)); tf(el, { o: e, y: (1 - e) * dy }); return e; }
+function slideX(el, t, t0, d = 0.8, dx = 120) { const e = eo4(P(t, t0, t0 + d)); tf(el, { o: e, x: (1 - e) * dx, s: .96 + .04 * e }); return e; }
+function maskLines(root, t, t0, st = 0.12) {
+  $$('.line>span', root).forEach((sp, i) => {
+    const e = eo4(P(t, t0 + i * st, t0 + i * st + 0.8));
+    sp.style.transform = `translateY(${(1 - e) * 110}%)`;
+  });
+}
+const lines = arr => arr.map(s => `<span class="line"><span>${s}</span></span>`).join('');
+function rnd(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const ICON = {
+  rec: '<rect x="2" y="4" width="20" height="13" rx="2.5"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="10.5" r="3"/>',
+  speed: '<path d="M3.5 18a9 9 0 1 1 17 0"/><path d="M12 14l4.5-5"/><circle cx="12" cy="14" r="1.2"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 11.5l5 3-5 3z"/>',
+  tracks: '<rect x="3" y="4" width="12" height="4" rx="1.2"/><rect x="8" y="10" width="13" height="4" rx="1.2"/><rect x="3" y="16" width="9" height="4" rx="1.2"/>',
+  pip: '<rect x="2" y="4" width="20" height="16" rx="2.5"/><circle cx="16" cy="14" r="3.2"/>',
+  exp: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>',
+  plug: '<path d="M9 2v5M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  send: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+};
+const svg = (k, cls = 'ico') => `<svg class="${cls}" viewBox="0 0 24 24">${ICON[k]}</svg>`;
+const TL = '<i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i>';
+
+// ------------------------------------------------------------ build scenes
+const SC = document.getElementById('scenes');
+SC.innerHTML = `
+<section class="scene" id="s1"><div class="clips"></div><div class="h">${lines(T.s1)}</div></section>
+
+<section class="scene" id="s2"><div class="wrap">
+  <div class="iconbox"><div class="glow"></div><img src="icon.png"></div>
+  <div class="word">${[...'EasyCut'].map(c => `<span>${c}</span>`).join('')}</div>
+  <div class="tag">${T.s2tag}</div></div></section>
+
+<section class="scene" id="s3">
+  <div class="abs left"><div class="chip"><b>01</b>${T.s3chip}</div>
+    <div class="h1" style="margin-top:34px">${lines(T.s3h)}</div>
+    <div class="p" style="margin-top:30px">${T.s3p}</div>
+    <div class="badges">${T.s3badges.map(b => `<span class="pill">${b}</span>`).join('')}</div></div>
+  <div class="win card">
+    <div class="tbar">${TL}<span class="ttl">${T.s3card}</span><span class="st"><span class="stx"></span></span></div>
+    <div class="tx-area">
+      <div class="tl"><span class="ts mono">0:00</span><span>${T.s3lines[0]}</span></div>
+      <div class="wrap2"><div class="tl"><span class="ts mono">0:05</span><span class="selw"><span class="selbg"></span><span class="seltxt">${T.s3lines[1]}</span><span class="strike"></span></span></div></div>
+      <div class="tl"><span class="ts mono" data-a="0:09" data-b="0:05">0:09</span><span>${T.s3lines[2]}</span></div>
+      <div class="tl"><span class="ts mono" data-a="0:14" data-b="0:10">0:14</span><span>${T.s3lines[3]}</span></div>
+    </div>
+    <div class="tlbox"><div class="tlhead"><span>${T.s3tl}</span><span class="dur">${T.s3len} <b class="mono">0:18</b></span></div><canvas width="830" height="150"></canvas></div>
+  </div>
+  <div class="key">⌫</div>
+  <div class="abs toastw"><span class="toast pill">${T.s3toast}</span></div>
+</section>
+
+<section class="scene" id="s4">
+  <div class="abs head"><div class="chip"><b>02</b>${T.s4chip}</div>
+    <div class="h1" style="margin-top:30px">${lines([T.s4h])}</div>
+    <div class="p" style="margin-top:18px">${T.s4p}</div></div>
+  <div class="win panel">
+    <div class="phead"><span>✂︎ ${T.s4panel}</span><span>${T.s4thr}</span></div>
+    <canvas width="1540" height="260"></canvas>
+    <div class="prow"><span class="count"></span><span class="time mono"></span><span class="pill save">${T.s4save}</span>
+      <span class="btn cutbtn">✂︎ ${T.s4btn}</span></div>
+  </div>
+</section>
+
+<section class="scene" id="s5">
+  <div class="abs frame"><div class="fbg"></div>
+    <svg class="abs spk" viewBox="0 0 1040 585" style="left:0;top:0;width:1040px;height:585px">
+      <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A1650" stop-opacity=".78"/><stop offset="1" stop-color="#140A2E" stop-opacity=".92"/></linearGradient></defs>
+      <circle cx="520" cy="215" r="92" fill="url(#sg)"/>
+      <path d="M300 585 C300 420 400 335 520 335 C640 335 740 420 740 585 Z" fill="url(#sg)"/>
+    </svg>
+    <div class="cap basic"><span></span></div></div>
+  <div class="abs right"><div class="chip"><b>03</b>${T.s5chip}</div>
+    <div class="h1" style="margin-top:30px;font-size:80px">${lines(T.s5h)}</div>
+    <div class="p" style="margin-top:24px;font-size:28px">${T.s5p}</div>
+    <div class="styles">${T.s5styles.map(s => `<span class="sty">${s}</span>`).join('')}</div>
+    <div class="list">${T.s5caps.map((c, i) => `<div class="row"><span class="mono">00:0${[0, 5, 9][i]}.00</span><span>${c}</span></div>`).join('')}</div>
+    <div class="srt">${T.s5srt.map(s => `<span class="pill" style="font-size:21px">${s}</span>`).join('')}</div></div>
+</section>
+
+<section class="scene" id="s6">
+  <div class="abs left"><div class="chip"><b>04</b>${T.s6chip}</div>
+    <div class="h1" style="margin-top:34px">${lines(T.s6h)}</div>
+    <div class="p" style="margin-top:30px">${T.s6p}</div>
+    <div class="logos">${T.s6logos.map(b => `<span class="pill">${b}</span>`).join('')}</div></div>
+  <div class="win card">
+    <div class="tbar">${TL}<span class="ttl" style="display:flex;align-items:center;gap:10px">${svg('spark', 'ico').replace('class="ico"', 'class="ico" style="width:28px;height:28px;stroke:#C9A6FF"')}${T.s6card}</span>
+      <span class="st"><i style="background:var(--green);width:12px;height:12px"></i>${T.s6status}</span></div>
+    <div class="ubub">${T.s6prompt}</div>
+    <div class="think">${T.s6think}<i></i><i></i><i></i></div>
+    <div class="abub">${T.s6steps.map(s => `<div class="step"><span class="ck"><svg viewBox="0 0 24 24">${ICON.check}</svg></span><span>${s[0]}</span><span class="dim">${s[1]}</span></div>`).join('')}
+      <div class="done">${T.s6done}</div></div>
+    <div class="undo">${T.s6undo}</div>
+    <div class="input"><span class="itx"></span><span class="caret"></span><span class="send">${svg('send').replace('class="ico"', 'class="ico" style="width:28px;height:28px;stroke-width:2.6"')}</span></div>
+  </div>
+</section>
+
+<section class="scene" id="s7">
+  <div class="abs head"><div class="h1" style="font-size:80px">${lines([T.s7h])}</div></div>
+  ${T.s7.map((d, i) => { const k = ['rec', 'speed', 'link', 'file', 'tracks', 'pip', 'exp', 'plug'][i];
+      const x = 138 + (i % 4) * 418, y = 330 + Math.floor(i / 4) * 280;
+      const g = ['#F2566B,#C04BD8', '#C04BD8,#8B3FEA', '#8B3FEA,#5B5CF0', '#5B5CF0,#3B6CF6'][i % 4];
+      return `<div class="tile" style="left:${x}px;top:${y}px"><div class="ib" style="background:linear-gradient(135deg,${g})">${svg(k)}</div>
+        <h3>${d[0]}</h3><p>${d[1].replace('\n', '<br>')}</p></div>`; }).join('')}
+</section>
+
+<section class="scene" id="s8">
+  <div class="abs head"><div class="h1" style="font-size:78px">${lines([T.s8h])}</div></div>
+  <div class="lbl">${T.s8lbl}</div>
+  <div class="sglow"></div>
+  <div class="persp"><div class="shot"><img src="../../screenshots/transcript.jpg"><img src="../../screenshots/silence.jpg"><img src="../../screenshots/captions.jpg"><img src="../../screenshots/ai.jpg"></div></div>
+</section>
+
+<section class="scene" id="s9"><div class="wrap">
+  <div class="iconbox"><div class="glow"></div><img src="icon.png"></div>
+  <div class="word">${[...'EasyCut'].map(c => `<span>${c}</span>`).join('')}</div>
+  <div class="tag">${T.s9tag}</div>
+  <div class="badges">${T.s9badges.map(b => `<span class="pill" style="font-size:26px;padding:12px 24px">${b}</span>`).join('')}</div>
+  <div class="cta"><div class="shine"></div>${svg('exp').replace('class="ico"', 'class="ico" style="transform:rotate(180deg)"')}${T.s9cta}</div>
+</div></section>`;
+
+// S1 floating clips
+{
+  const r = rnd(7), box = $('#s1 .clips'), cols = ['#F2566B', '#C04BD8', '#8B3FEA', '#5B5CF0', '#3B6CF6', '#34D399', '#FFB547'];
+  window.S1CLIPS = [];
+  for (let i = 0; i < 34; i++) {
+    const d = document.createElement('div'); d.className = 'clip';
+    const w = 90 + r() * 360, row = Math.floor(r() * 22);
+    d.style.width = w + 'px'; d.style.background = cols[Math.floor(r() * cols.length)];
+    box.appendChild(d);
+    S1CLIPS.push({ d, x0: r() * 2300, y: 40 + row * 46, v: (r() < .5 ? -1 : 1) * (30 + r() * 90), o: .1 + r() * .22, ph: r() * 6 });
+  }
+}
+
+// ------------------------------------------------------------ canvases
+function rr(c, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); if (w <= 0) return; c.beginPath(); c.roundRect(x, y, w, h, r); }
+function waveAmp(r, voice) { return voice ? 0.25 + 0.75 * Math.pow(r(), 0.8) : 0.03 + r() * 0.05; }
+
+// S3 timeline: 4 segments (one per transcript line); segment 1 gets deleted
+const S3SEG = [5, 4, 5, 4];
+const S3BARS = S3SEG.map((d, i) => { const r = rnd(20 + i); return Array.from({ length: Math.round(d * 7) }, (_, k) => (k % 9 === 8 ? 0.08 : 0.2 + 0.8 * r())); });
+function drawS3(t) {
+  const cv = $('#s3 canvas'), c = cv.getContext('2d'), W = cv.width, H = cv.height;
+  c.clearRect(0, 0, W, H);
+  const pxs = W / 18, trackY = 34, trackH = 96;
+  // ruler
+  c.fillStyle = 'rgba(255,255,255,.28)';
+  for (let s = 0; s <= 18; s++) { const x = s * pxs; c.fillRect(Math.min(x, W - 2), 0, 2, s % 2 ? 8 : 16); }
+  const k = 1 - eio(P(t, 11.75, 12.35)), mark = eo(P(t, 11.2, 11.4));
+  let x = 0;
+  S3SEG.forEach((d, i) => {
+    const w = d * pxs * (i === 1 ? k : 1);
+    if (w > 0.5) {
+      c.save(); rr(c, x + 1.5, trackY, w - 3, trackH, 10); c.clip();
+      const g = c.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, 'rgba(139,63,234,.55)'); g.addColorStop(1, 'rgba(59,108,246,.55)');
+      c.fillStyle = g; c.fillRect(x, trackY, w, trackH);
+      if (i === 1 && mark > 0) { c.fillStyle = `rgba(255,77,94,${0.65 * mark})`; c.fillRect(x, trackY, w, trackH); }
+      const bars = S3BARS[i], bw = (d * pxs) / bars.length;
+      c.fillStyle = 'rgba(255,255,255,.8)';
+      bars.forEach((a, j) => { const bx = x + j * bw * (i === 1 ? k : 1) + 3, h = a * (trackH - 30); c.fillRect(bx, trackY + trackH / 2 - h / 2, Math.max(1.5, bw * .45 * (i === 1 ? k : 1)), h); });
+      c.restore();
+      if (i === 1 && mark > 0) { c.strokeStyle = `rgba(255,77,94,${mark})`; c.lineWidth = 3; rr(c, x + 1.5, trackY, w - 3, trackH, 10); c.stroke(); }
+    }
+    x += w;
+  });
+  // playhead
+  const ph = eio(P(t, 12.8, 15.5)) * (x - 4);
+  c.fillStyle = '#FF3B4E'; c.fillRect(ph, 12, 3, H - 12);
+  c.beginPath(); c.moveTo(ph - 8, 10); c.lineTo(ph + 11, 10); c.lineTo(ph + 1.5, 24); c.fill();
+}
+
+// S4 waveform with silence gaps
+const S4SEG = [['v', 4.0], ['s', 1.6], ['v', 5.1], ['s', 2.3], ['v', 5.6], ['s', 1.4], ['v', 4.4], ['s', 2.8], ['v', 4.9], ['s', 1.6], ['v', 5.59]];
+const S4TOT = S4SEG.reduce((a, s) => a + s[1], 0);
+const S4BAR = 7;
+const S4AMP = (() => { const r = rnd(99); return S4SEG.map(([k, d]) => { const n = Math.max(3, Math.round(d * 1540 / S4TOT / S4BAR)); let prev = .5;
+  return Array.from({ length: n }, (_, j) => { if (k === 's') return waveAmp(r, false); prev = prev * .45 + waveAmp(r, true) * .55; const edge = Math.min(1, (j + 1) / 3, (n - j) / 3); return prev * (0.35 + 0.65 * edge); }); }); })();
+const S4DETECT = (() => { let a = 0; return S4SEG.map(([k, d]) => { const r = { k, d, start: a, t: 17.4 + a / S4TOT * 1.0 }; a += d; return r; }); })();
+function drawS4(t) {
+  const cv = $('#s4 canvas'), c = cv.getContext('2d'), W = cv.width, H = cv.height;
+  c.clearRect(0, 0, W, H);
+  const pxs = W / S4TOT, mid = H / 2 + 14;
+  const k = 1 - eio(P(t, 18.9, 19.7));
+  const curW = S4SEG.reduce((a, [kind, d]) => a + d * pxs * (kind === 's' ? k : 1), 0);
+  const off = (W - curW) / 2;
+  let x = off;
+  const g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#FF6B81'); g.addColorStop(.5, '#A259FF'); g.addColorStop(1, '#4F83FF');
+  S4SEG.forEach(([kind, d], i) => {
+    const w = d * pxs * (kind === 's' ? k : 1), det = S4DETECT[i];
+    if (kind === 's') {
+      const a = eo(P(t, det.t, det.t + 0.25));
+      if (a > 0 && w > 0.5) {
+        c.fillStyle = `rgba(255,77,94,${0.22 * a})`; rr(c, x, 18, w, H - 26, 10); c.fill();
+        c.strokeStyle = `rgba(255,77,94,${0.9 * a})`; c.lineWidth = 2; c.setLineDash([7, 6]); rr(c, x, 18, w, H - 26, 10); c.stroke(); c.setLineDash([]);
+        if (k > 0.6) { c.fillStyle = `rgba(255,140,150,${a * clamp((k - .6) / .4)})`; c.font = '600 19px "SF Mono",Menlo,monospace'; c.textAlign = 'center';
+          c.fillText(d.toFixed(1) + 's', x + w / 2, 6 + 6); }
+      }
+    }
+    const amps = S4AMP[i], bw = w / amps.length;
+    amps.forEach((a, j) => {
+      const bx = x + j * bw, gx = (bx - off) / W;
+      const grow = eo(P(t, 16.35 + gx * 0.7, 16.35 + gx * 0.7 + 0.35));
+      const h = Math.max(3, a * (H - 60) * grow);
+      c.fillStyle = kind === 's' ? 'rgba(255,255,255,.35)' : g;
+      rr(c, bx + bw * .18, mid - h / 2, Math.max(1, bw * .64), h, 3); c.fill();
+    });
+    x += w;
+  });
+  // scanner
+  const sp = P(t, 17.4, 18.4);
+  if (sp > 0 && sp < 1) {
+    const sx = off + sp * W; const sg = c.createLinearGradient(sx - 120, 0, sx, 0);
+    sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(1, 'rgba(255,255,255,.18)');
+    c.fillStyle = sg; c.fillRect(sx - 120, 10, 120, H - 10); c.fillStyle = '#fff'; c.fillRect(sx - 1, 10, 3, H - 10);
+  }
+}
+
+// ------------------------------------------------------------ scene renderers
+function bgRender(t) {
+  const b = [['#b1', 'rgba(139,63,234,.28)', 520 + 260 * Math.sin(t * .13), 330 + 120 * Math.cos(t * .17)],
+             ['#b2', 'rgba(59,108,246,.22)', 1450 + 220 * Math.cos(t * .11), 760 + 150 * Math.sin(t * .15)],
+             ['#b3', 'rgba(242,86,107,.16)', 1250 + 300 * Math.sin(t * .09 + 2), 180 + 120 * Math.sin(t * .2)]];
+  b.forEach(([id, col, x, y]) => { const el = $(id); el.style.background = `radial-gradient(circle,${col},transparent 62%)`; el.style.left = x + 'px'; el.style.top = y + 'px'; });
+  $('#grid').style.backgroundPosition = `${(t * 6) % 44}px ${(t * 3) % 44}px`;
+}
+
+function r1(t) {
+  const fin = eo(P(t, 0, .8)), fout = 1 - eio(P(t, 2.9, 3.7));
+  S1CLIPS.forEach(c => {
+    const x = ((c.x0 + c.v * t) % 2400 + 2400) % 2400 - 300;
+    tf(c.d, { o: c.o * fin * fout, x, y: c.y + Math.sin(t * 1.3 + c.ph) * 6 });
+  });
+  maskLines($('#s1 .h'), t, 0.25, 0.55);
+  const e = eio(P(t, 3.5, 4.0)); tf($('#s1 .h'), { o: 1 - e, s: 1 + .12 * e, b: 14 * e });
+}
+
+function r2(t) {
+  const ic = $('#s2 .iconbox img'), e = back(P(t, 4.0, 4.75));
+  tf(ic, { o: clamp(P(t, 4.0, 4.15)), s: .35 + .65 * e, r: -14 * (1 - eo(P(t, 4.0, 4.9))), y: Math.sin((t - 4) * 2) * 6 * P(t, 4.8, 5.5) });
+  const gl = $('#s2 .glow'); tf(gl, { o: eo(P(t, 4.05, 4.9)) * (.85 + .15 * Math.sin(t * 3)), s: .6 + .4 * eo(P(t, 4.05, 5)) });
+  $$('#s2 .word span').forEach((sp, i) => { const a = 4.5 + i * .055, e2 = back(P(t, a, a + .55)); tf(sp, { o: clamp(P(t, a, a + .2)), y: (1 - e2) * 70 }); });
+  rise($('#s2 .tag'), t, 5.3, .8, 30);
+  const w = $('#s2 .wrap'); w.style.transform = `scale(${1 + .025 * P(t, 4, 8)})`;
+}
+
+let S3M = null;
+function r3(t, el) {
+  const L = $('.left', el);
+  rise($('.chip', L), t, 8.15, .6, 24); maskLines(L, t, 8.3, .13); rise($('.p', L), t, 8.85, .7, 24); rise($('.badges', L), t, 9.2, .7, 24);
+  slideX($('.card', el), t, 8.2, .85, 140);
+  const st = $('.stx', el), busy = t < 9.9;
+  st.innerHTML = busy ? `<span style="display:inline-block;width:20px;height:20px;border-radius:50%;border:3px solid #6B6B80;border-top-color:#fff;transform:rotate(${t * 540}deg)"></span> ${T.s3busy}`
+                      : `<span style="color:var(--green)">✓</span> ${T.s3done}`;
+  const tls = $$('.tl', el);
+  tls.forEach((l, i) => rise(l, t, 8.7 + i * .28, .5, 18));
+  // select → delete → collapse
+  $('.selbg', el).style.width = `calc(${eio(P(t, 10.2, 10.9)) * 100}% + 12px)`;
+  if (t < 10.2) $('.selbg', el).style.width = '0';
+  $('.strike', el).style.width = `calc(${eio(P(t, 11.2, 11.55)) * 100}% + 8px)`;
+  if (t < 11.2) $('.strike', el).style.width = '0';
+  $('.seltxt', el).style.opacity = 1 - .45 * P(t, 11.2, 11.5);
+  const c = eio(P(t, 11.75, 12.35)), w2 = $('.wrap2', el);
+  w2.style.height = (S3M.h2 * (1 - c)) + 'px'; w2.style.opacity = 1 - c;
+  $$('.ts[data-a]', el).forEach(ts => { ts.textContent = c > .5 ? ts.dataset.b : ts.dataset.a; ts.style.color = c > .5 && t < 13.2 ? '#6EF0B8' : ''; });
+  $('.dur b', el).textContent = c > .5 ? '0:14' : '0:18'; $('.dur b', el).style.color = c > .5 ? '#6EF0B8' : '';
+  // key cap
+  const key = $('.key', el), ke = back(P(t, 10.9, 11.2)), press = (t > 11.1 && t < 11.24) ? .88 : 1, kout = P(t, 11.8, 12.1);
+  key.style.left = S3M.kx + 'px'; key.style.top = S3M.ky + 'px';
+  tf(key, { o: clamp(P(t, 10.9, 11.0)) * (1 - kout), s: (.5 + .5 * ke) * press, y: (press < 1 ? 8 : 0) + kout * 20 });
+  const toast = $('.toast', el); const te = back(P(t, 12.5, 12.9)); tf(toast, { o: clamp(P(t, 12.5, 12.65)), y: (1 - te) * 30, s: .9 + .1 * te });
+  drawS3(t);
+}
+
+function r4(t, el) {
+  const H = $('.head', el);
+  rise($('.chip', H), t, 16.1, .6, 24); maskLines(H, t, 16.2); rise($('.p', H), t, 16.6, .7, 20);
+  rise($('.panel', el), t, 16.2, .8, 70);
+  drawS4(t);
+  let n = 0, s = 0; S4DETECT.forEach(d => { if (d.k === 's' && t >= d.t) { n++; s += d.d; } });
+  $('.count', el).textContent = T.s4count(n, s.toFixed(1)); $('.count', el).style.opacity = t > 17.4 ? 1 : 0;
+  const k = eio(P(t, 18.9, 19.7)), cur = 39.29 - 9.7 * k;
+  const fmt = v => `00:${v.toFixed(2).padStart(5, '0')}`;
+  $('.time', el).innerHTML = k > 0 ? `00:39.29 → <b style="color:#fff">${fmt(cur)}</b>` : fmt(39.29);
+  const sv = $('.save', el), se = back(P(t, 19.7, 20.05)); tf(sv, { o: clamp(P(t, 19.7, 19.8)), s: .6 + .4 * se });
+  const btn = $('.cutbtn', el), press = (t > 18.52 && t < 18.68) ? .93 : 1;
+  btn.style.transform = `scale(${press})`;
+  btn.style.boxShadow = `0 10px 30px rgba(255,77,94,.35), 0 0 0 ${eo(P(t, 18.55, 19.1)) * 26}px rgba(255,77,94,${.35 * (1 - P(t, 18.55, 19.1))})`;
+  btn.style.opacity = 1 - .5 * P(t, 19.0, 19.3);
+}
+
+function r5(t, el) {
+  slideX($('.frame', el), t, 22.1, .85, -140);
+  const R = $('.right', el);
+  rise($('.chip', R), t, 22.2, .6, 24); maskLines(R, t, 22.3, .13); rise($('.p', R), t, 22.75, .7, 24);
+  rise($('.styles', R), t, 22.95, .7, 24); rise($('.list', R), t, 23.1, .7, 24); rise($('.srt', R), t, 23.3, .7, 24);
+  $('.fbg', el).style.transform = `translate(${Math.sin(t * .6) * 30}px,${Math.cos(t * .5) * 20}px) rotate(${Math.sin(t * .3) * 3}deg)`;
+  $('.spk', el).style.transform = `translateY(${Math.sin(t * 2.2) * 3}px)`;
+  const starts = [23.0, 24.6, 26.0], idx = t < 24.6 ? 0 : t < 26.0 ? 1 : 2, cls = ['basic', 'yellow', 'outline'][idx];
+  const cap = $('.cap', el); cap.className = 'cap ' + cls; $('span', cap).textContent = T.s5caps[idx];
+  const ce = back(P(t, starts[idx], starts[idx] + .35)); tf(cap, { o: t < 23 ? 0 : clamp(P(t, starts[idx], starts[idx] + .12)), s: .85 + .15 * ce, y: (1 - ce) * 16 });
+  $$('.sty', el).forEach((s, i) => s.classList.toggle('on', t >= 23 && i === idx));
+  $$('.row', el).forEach((r, i) => r.classList.toggle('on', t >= 23 && i === idx));
+}
+
+function r6(t, el) {
+  const L = $('.left', el);
+  rise($('.chip', L), t, 28.1, .6, 24); maskLines(L, t, 28.2, .13); rise($('.p', L), t, 28.7, .7, 24); rise($('.logos', L), t, 29.0, .7, 24);
+  slideX($('.card', el), t, 28.2, .85, 140);
+  const full = T.s6prompt, tp = P(t, 28.8, 30.6), step = Math.floor(tp * 26) / 26;
+  const n = t >= 30.8 ? 0 : Math.round(step * full.length);
+  const itx = $('.itx', el);
+  itx.innerHTML = n > 0 ? full.slice(0, n) : `<span class="ph">${T.s6ph}</span>`;
+  const typing = t >= 28.8 && t < 30.8;
+  $('.caret', el).style.opacity = (typing || Math.floor(t * 2.4) % 2 === 0) && t < 30.8 ? 1 : 0;
+  $('.caret', el).style.display = n > 0 || typing ? 'inline-block' : 'none';
+  if (n === 0) $('.caret', el).style.display = 'none';
+  const snd = $('.send', el); snd.style.transform = `scale(${t > 30.75 && t < 30.9 ? .85 : 1})`; snd.style.opacity = n > 0 || t > 30.7 ? 1 : .4;
+  const ub = $('.ubub', el), ue = back(P(t, 30.8, 31.2)); tf(ub, { o: clamp(P(t, 30.8, 30.9)), s: .7 + .3 * ue, y: (1 - ue) * 120 }); ub.style.transformOrigin = '100% 100%';
+  const th = $('.think', el); th.style.opacity = t >= 31.1 && t < 31.95 ? eo(P(t, 31.1, 31.25)) : 0;
+  $$('.think i', el).forEach((d, i) => d.style.transform = `translateY(${Math.sin(t * 10 - i * .9) * 5}px)`);
+  const ab = $('.abub', el); const ae = eo4(P(t, 31.95, 32.35)); tf(ab, { o: ae, y: (1 - ae) * 30 });
+  $$('.step', ab).forEach((s, i) => { const a = 32.0 + i * .35; const e = eo(P(t, a, a + .4)); tf(s, { o: e, x: (1 - e) * -20 });
+    const ck = $('.ck', s); const ce = back(P(t, a, a + .35)); ck.style.transform = `scale(${ce})`; });
+  rise($('.done', ab), t, 33.2, .6, 14);
+  
+}
+
+function r7(t, el) {
+  maskLines($('.head', el), t, 36.05);
+  $$('.tile', el).forEach((tile, i) => {
+    const a = 36.3 + i * .12, e = back(P(t, a, a + .55));
+    tf(tile, { o: clamp(P(t, a, a + .18)), s: .8 + .2 * e, y: (1 - e) * 50 + Math.sin(t * 1.6 + i) * 3 * P(t, a + .5, a + 1) });
+  });
+}
+
+function r8(t, el) {
+  maskLines($('.head', el), t, 42.0);
+  rise($('.lbl', el), t, 42.3, .6, 10);
+  const shot = $('.shot', el), e = eo4(P(t, 42.0, 43.0));
+  shot.style.opacity = e;
+  shot.style.transform = `translateY(${(1 - e) * 160}px) rotateX(${(1 - e) * 32}deg) scale(${(.9 + .1 * e) * (1 + .035 * P(t, 43, 46))})`;
+  $('.sglow', el).style.opacity = e * (.8 + .2 * Math.sin(t * 2));
+  const imgs = $$('.shot img', el), cuts = [42.0, 43.0, 44.0, 45.0];
+  imgs.forEach((im, i) => { im.style.opacity = i === 0 ? 1 : eio(P(t, cuts[i] - .12, cuts[i] + .18)); });
+}
+
+function r9(t, el) {
+  const ic = $('.iconbox img', el), e = back(P(t, 46.05, 46.75));
+  tf(ic, { o: clamp(P(t, 46.05, 46.2)), s: .4 + .6 * e, y: Math.sin((t - 46) * 1.8) * 5 * P(t, 46.8, 47.5) });
+  tf($('.glow', el), { o: eo(P(t, 46.1, 47)) * (.85 + .15 * Math.sin(t * 2.5)), s: .6 + .4 * eo(P(t, 46.1, 47)) });
+  $$('.word span', el).forEach((sp, i) => { const a = 46.35 + i * .05, e2 = back(P(t, a, a + .55)); tf(sp, { o: clamp(P(t, a, a + .2)), y: (1 - e2) * 60 }); });
+  rise($('.tag', el), t, 46.95, .7, 24);
+  $$('.badges .pill', el).forEach((b, i) => { const a = 47.25 + i * .1, e2 = back(P(t, a, a + .5)); tf(b, { o: clamp(P(t, a, a + .15)), s: .8 + .2 * e2 }); });
+  const cta = $('.cta', el), ce = back(P(t, 47.7, 48.25)); tf(cta, { o: clamp(P(t, 47.7, 47.85)), s: .85 + .15 * ce });
+  $('.shine', cta).style.left = (-200 + eio(P(t, 48.4, 49.3)) * 1100) + 'px';
+}
+
+const SCN = [['s1', 0, 4, r1], ['s2', 4, 8, r2], ['s3', 8, 16, r3], ['s4', 16, 22, r4], ['s5', 22, 28, r5],
+             ['s6', 28, 36, r6], ['s7', 36, 42, r7], ['s8', 42, 46, r8], ['s9', 46, 53, r9]];
+window.DURATION = 53;
+window.render = function (t) {
+  bgRender(t);
+  for (const [id, a, b, f] of SCN) {
+    const el = document.getElementById(id), on = t >= a && t < b;
+    el.style.display = on ? 'block' : 'none';
+    if (!on) continue;
+    f(t, el);
+    if (id !== 's1' && id !== 's9' && id !== 's8') { const e = eio(P(t, b - .45, b)); tf(el, { o: 1 - e, y: -40 * e, s: 1 - .03 * e, b: 10 * e }); }
+    else if (id === 's8') { const e = eio(P(t, b - .3, b)); tf(el, { o: 1 - e, s: 1 + .06 * e, b: 12 * e }); }
+    else tf(el, {});
+  }
+  const fl = Math.max(0.9 * (1 - eo(P(t, 4.0, 4.5))) * (t >= 4 ? 1 : 0), 0.8 * (1 - eo(P(t, 46.0, 46.55))) * (t >= 46 ? 1 : 0));
+  $('#flash').style.opacity = fl;
+  $('#fade').style.opacity = eio(P(t, 51.8, 53)) + (1 - eo(P(t, 0, .5)));
+};
+
+// measure layout-dependent positions once
+(async () => {
+  await document.fonts.ready;
+  await Promise.all($$('img').map(i => i.decode().catch(() => {})));
+  const s3 = $('#s3'); s3.style.display = 'block';
+  const w2 = $('.wrap2', s3), st = $('.seltxt', s3).getBoundingClientRect();
+  S3M = { h2: w2.getBoundingClientRect().height, kx: 1662, ky: st.top + st.height / 2 - 52 };
+  s3.style.display = 'none';
+  render(0);
+  window.__ready = true;
+})();
+</script>
+</body></html>

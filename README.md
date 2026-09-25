@@ -8,6 +8,8 @@
 
 윈도우 버전(베타): [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases?q=Windows&expanded=true) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
 
+[![EasyCut 소개 영상 (53초) — 눌러서 보기](docs/promo/poster.jpg)](docs/promo/easycut-promo.mp4)
+
 ![대본 편집 — 음성 인식된 대본, 자막, 타임라인](docs/screenshots/transcript.jpg)
 
 | 원클릭 무음 컷 | 자막 스타일 | AI 편집 |
