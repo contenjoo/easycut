@@ -6,6 +6,7 @@ import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showM
 import { initRecord, openRecordDialog, isRecording } from "./record.js";
 import { initCaptions, renderCaptions as renderCaptionsTab, captionInspector, addCaption, deleteCaptions, generateCaptions, styleControls } from "./captions.js";
 import { showMenu } from "./menu.js";
+import { initTranscript, renderTranscript as renderTranscriptTab, highlightWord, deleteWords, transcribeTimeline, transcribeAsset, silenceDialog, sttSettings, focusSearch, selectRange, fixSelectedWord } from "./transcript.js";
 import { SPEEDS } from "./player.js";
 
 const tauri = window.__TAURI__;
@@ -210,116 +211,6 @@ function renderMedia() {
   $("#m-link").onclick = linkDialog;
 }
 
-// MARK: 대본 탭
-
-let wordDrag = null;
-function renderTranscript() {
-  const el = $("#tab-transcript");
-  el.innerHTML = `
-    <div class="row">
-      <button class="primary" id="t-run">${T("transcribe")}</button>
-      <select id="t-lang"><option value="ko">${T("korean")}</option><option value="en">${T("english")}</option><option value="auto">auto</option></select>
-    </div>
-    <div class="row">
-      <button id="t-del" ${S.selWords.size ? "" : "disabled"}>${T("deleteSel")}${S.selWords.size ? ` (${S.selWords.size})` : ""}</button>
-      <button id="t-fill">${T("fillers")}</button>
-      <button id="t-cap">${T("makeCaptions")}</button>
-    </div>
-    <div id="transcript"></div>`;
-  $("#t-lang").value = S.language;
-  $("#t-lang").onchange = (e) => { S.language = e.target.value; localStorage.setItem("sttLanguage", S.language); };
-  $("#t-run").onclick = transcribeAll;
-  $("#t-del").onclick = deleteWords;
-  $("#t-fill").onclick = () => run("remove_fillers");
-  $("#t-cap").onclick = () => generateCaptions();
-  const box = $("#transcript");
-  if (!S.words.length) {
-    box.innerHTML = `<p class="hint" style="white-space:pre-line">${T("noTranscript")}</p>`;
-    return;
-  }
-  const frag = document.createDocumentFragment();
-  let lastLine = -99;
-  S.words.forEach((w, i) => {
-    // 3초 넘게 쉬면 새 줄
-    if (i === 0 || w.start - S.words[i - 1].end > 1.2 || w.start - lastLine > 30) {
-      if (i) frag.appendChild(document.createElement("br"));
-      const t = document.createElement("span");
-      t.className = "t";
-      t.textContent = U.fmt(w.start).replace(/\.\d+$/, "");
-      frag.appendChild(t);
-      lastLine = w.start;
-    }
-    const s = document.createElement("span");
-    s.className = "w" + (S.selWords.has(w.id) ? " sel" : "") + (w.filler ? " filler" : "");
-    s.textContent = w.text;
-    s.dataset.i = i;
-    frag.appendChild(s);
-    frag.appendChild(document.createTextNode(" "));
-  });
-  box.appendChild(frag);
-  box.onmousedown = (e) => {
-    const i = e.target.dataset?.i;
-    if (i == null) return;
-    const idx = +i;
-    if (e.shiftKey && wordDrag?.anchor != null) {
-      selectWordRange(wordDrag.anchor, idx);
-    } else {
-      wordDrag = { anchor: idx, active: true };
-      selectWordRange(idx, idx);
-      seek(S.words[idx].start);
-    }
-  };
-  box.onmouseover = (e) => {
-    const i = e.target.dataset?.i;
-    if (i == null || !wordDrag?.active || !(e.buttons & 1)) return;
-    selectWordRange(wordDrag.anchor, +i);
-  };
-  box.ondblclick = (e) => {
-    const i = e.target.dataset?.i;
-    if (i == null) return;
-    const w = S.words[+i];
-    const text = prompt(T("textContent"), w.text);
-    if (text != null && text.trim()) run("update_word", { asset: w.asset, word: w.word, text: text.trim() });
-  };
-  window.addEventListener("mouseup", () => { if (wordDrag) wordDrag.active = false; }, { once: true });
-  highlightWord();
-}
-
-function selectWordRange(a, b) {
-  const [lo, hi] = [Math.min(a, b), Math.max(a, b)];
-  S.selWords = new Set(S.words.slice(lo, hi + 1).map((w) => w.id));
-  document.querySelectorAll("#transcript .w").forEach((el) => el.classList.toggle("sel", S.selWords.has(S.words[+el.dataset.i].id)));
-  const btn = $("#t-del");
-  if (btn) { btn.disabled = !S.selWords.size; btn.textContent = `${T("deleteSel")} (${S.selWords.size})`; }
-}
-
-let lastNow = -1;
-function highlightWord() {
-  if (!S.words.length) return;
-  let lo = 0, hi = S.words.length - 1, found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const w = S.words[mid];
-    if (S.time < w.start) hi = mid - 1;
-    else if (S.time >= w.end) lo = mid + 1;
-    else { found = mid; break; }
-  }
-  if (found === lastNow) return;
-  document.querySelector(`#transcript .w[data-i="${lastNow}"]`)?.classList.remove("now");
-  const el = document.querySelector(`#transcript .w[data-i="${found}"]`);
-  el?.classList.add("now");
-  lastNow = found;
-}
-
-async function deleteWords() {
-  if (!S.selWords.size) return;
-  const n = S.selWords.size;
-  const ids = [...S.selWords];
-  S.selWords.clear();
-  await run("delete_words", { ids });
-  toast(window.LANG === "ko" ? `${n}개 단어 삭제` : `Deleted ${n} words`);
-}
-
 // MARK: 오른쪽 클릭 메뉴 (맥 TimelineView / Panels / TranscriptView 메뉴)
 
 const speedItems = (cur, apply) => SPEEDS.map((s) => ({ label: `${s}x`, checked: Math.abs(cur - s) < 0.001, action: () => apply(s) }));
@@ -380,22 +271,6 @@ function mediaMenu(x, y, a) {
   ]);
 }
 
-/// 모델이 없으면 받을지 묻고, 한 미디어만 음성 인식
-async function ensureWhisper() {
-  const st = await invoke("whisper_status");
-  if (!st.engine || !st.ffmpeg) { toast(T("engineMissing")); return false; }
-  if (st.model) return true;
-  const ok = await confirmModal(T("whisperTitle"), T("whisperHint"), T("download"));
-  if (!ok) return false;
-  try { await invoke("download_model"); return true; } catch (e) { showError(e); return false; }
-}
-
-async function transcribeAsset(id) {
-  if (!(await ensureWhisper())) return;
-  switchTab("transcript");
-  await run("transcribe", { asset: id, language: S.language });
-}
-
 /// 녹화가 끝나면 바로 음성 인식 (모델이 있을 때만. 없으면 안내)
 async function autoTranscribe(assetId) {
   const st = await invoke("whisper_status").catch(() => ({}));
@@ -404,22 +279,11 @@ async function autoTranscribe(assetId) {
   run("transcribe", { asset: assetId, language: S.language });
 }
 
-async function transcribeAll() {
-  const st = await invoke("whisper_status");
-  if (!st.engine || !st.ffmpeg) return toast(T("engineMissing"));
-  if (!st.model) {
-    const ok = await confirmModal(T("whisperTitle"), T("whisperHint"), T("download"));
-    if (!ok) return;
-    try { await invoke("download_model"); } catch (e) { return showError(e); }
-  }
-  const used = new Set(S.project.tracks.flatMap((t) => t.clips.map((c) => c.assetID)).filter(Boolean));
-  const targets = S.project.assets.filter((a) => used.has(a.id) && a.hasAudio);
-  if (!targets.length) return toast(T("noAudio"));
-  switchTab("transcript");
-  for (const a of targets) {
-    const v = await run("transcribe", { asset: a.id, language: S.language });
-    if (!v) break;
-  }
+
+// MARK: 대본 탭
+
+function renderTranscript() {
+  renderTranscriptTab($("#tab-transcript"));
 }
 
 // MARK: 자막 탭
@@ -591,37 +455,6 @@ async function exportDialog() {
   };
 }
 
-async function silenceDialog() {
-  const box = $("#modal-box");
-  box.innerHTML = `<h2>${T("silenceTitle")}</h2><p class="hint">${T("silenceHint")}</p>
-    <div class="row"><label>${T("minSilence")}</label><input type="range" id="s-min" min="0.2" max="2" step="0.05" value="0.6"/><span class="hint" id="s-minv">0.60s</span></div>
-    <div class="row"><label>${T("padding")}</label><input type="range" id="s-pad" min="0" max="0.5" step="0.01" value="0.12"/><span class="hint" id="s-padv">0.12s</span></div>
-    <p class="hint" id="s-sum"></p>
-    <div class="btns"><button id="s-cancel">${T("cancel")}</button><button id="s-prev">${T("preview")}</button><button class="danger" id="s-go">${T("cutSilences")}</button></div>`;
-  $("#modal").classList.remove("hidden");
-  const settings = () => ({ threshold: -40, minSilence: +$("#s-min").value, padding: +$("#s-pad").value });
-  $("#s-min").oninput = (e) => ($("#s-minv").textContent = (+e.target.value).toFixed(2) + "s");
-  $("#s-pad").oninput = (e) => ($("#s-padv").textContent = (+e.target.value).toFixed(2) + "s");
-  const close = () => { S.silencePreview = []; timeline.drawSoon(); $("#modal").classList.add("hidden"); };
-  $("#s-cancel").onclick = close;
-  $("#s-prev").onclick = async () => {
-    try {
-      const r = await invoke("silence_ranges", { settings: settings(), auto: true, apply: false });
-      S.silencePreview = r.ranges;
-      timeline.drawSoon();
-      $("#s-sum").textContent = r.ranges.length ? `${r.ranges.length} · −${r.removed.toFixed(1)}s` : T("noSilences");
-    } catch (e) { showError(e); }
-  };
-  $("#s-go").onclick = async () => {
-    try {
-      const r = await invoke("silence_ranges", { settings: settings(), auto: true, apply: true });
-      close();
-      setState(await invoke("get_state"));
-      toast(r.ranges.length ? `${r.ranges.length} · −${r.removed.toFixed(1)}s` : T("noSilences"));
-    } catch (e) { showError(e); }
-  };
-  $("#s-prev").onclick();
-}
 
 function confirmModal(title, text, okLabel) {
   return new Promise((resolve) => {
@@ -730,6 +563,8 @@ const commands = {
     deleteSelection(false);
   },
   paste: async () => applySelect(await run("paste_clips", { time: S.time })),
+  sttSettings,
+  findTranscript: focusSearch,
   selectAll: () => { S.sel = new Set(U.clips().map((x) => x.c.id)); window.dispatchEvent(new Event("selection")); },
   group: async () => {
     if (S.sel.size < 2) return toast(L("묶을 클립을 2개 이상 선택하세요 (빈 곳을 끌거나 Shift/Ctrl+클릭)"));
@@ -767,7 +602,7 @@ const commands = {
   delete: () => deleteSelection(true),
   text: addText,
   silence: silenceDialog,
-  transcribe: transcribeAll,
+  transcribe: transcribeTimeline,
   captions: () => generateCaptions(),
   addCaption: () => addCaption(),
   save: () => saveProject(),
@@ -801,7 +636,7 @@ function onKey(e) {
       return;
     }
     const map = { z: "undo", y: "redo", s: "save", i: "import", e: "export", "=": "zoomIn", "+": "zoomIn", "-": "zoomOut", o: "open", n: "newProject",
-      t: "split", "/": "shortcuts", d: "duplicate", a: "selectAll", c: "copy", x: "cut", v: "paste", g: "group", j: "join" };
+      t: "split", "/": "shortcuts", f: "findTranscript", d: "duplicate", a: "selectAll", c: "copy", x: "cut", v: "paste", g: "group", j: "join" };
     if (["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); return switchTab(["media", "transcript", "captions", "ai"][+e.key - 1]); }
     if (map[k] && commands[map[k]]) { e.preventDefault(); commands[map[k]](); }
     if (k === "backspace" || k === "delete") { e.preventDefault(); deleteSelection(true); }
@@ -825,6 +660,9 @@ function onKey(e) {
       e.preventDefault();
       if (S.selWords.size && document.querySelector("#tab-transcript.on")) return deleteWords();
       return deleteSelection(false);
+    case "Enter": case "NumpadEnter":
+      if (S.selWords.size && document.querySelector("#tab-transcript.on")) { e.preventDefault(); fixSelectedWord(); }
+      return;
     case "Escape": commands.deselect(); return;
     case "KeyS": split(); return;
     case "KeyI": setMark("in"); return;
@@ -880,11 +718,12 @@ async function init() {
       if (c.play === false) player.pause();
     }
   });
+  const modal = { box: modalBox(), show: showModal, hide: hideModal };
+  initTranscript({ S, U, run, invoke, seek, toast, switchTab, ask, modal, player, timeline, generateCaptions, addCaption, render });
   initCaptions({ S, U, run, invoke, seek, toast, switchTab, render, commands, ask, captionMenu, selectionChanged: () => window.dispatchEvent(new Event("selection")) });
   setState(await invoke("get_state"));
   syncToggles();
   reportUi();
-  const modal = { box: modalBox(), show: showModal, hide: hideModal };
   await initAI($("#tab-ai"), { toast, modal });
   initRecord({ toast, modal, autoTranscribe });
   const files = await invoke("startup_files");

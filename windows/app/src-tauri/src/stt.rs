@@ -1,22 +1,68 @@
 //! Whisper 음성 인식 (whisper-cli) 과 모델 내려받기
 use crate::{media, tools};
-use easycut_core::whisper::{fix_overlaps, parse_progress, parse_whisper_full, whisper_chunks, MODELS};
+use easycut_core::whisper::{fix_overlaps, parse_progress, parse_whisper_full, whisper_chunks, WhisperModel, MODELS};
 use easycut_core::Word;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+/// 모델 크기 (MB, 진행률 계산용)
+fn size_mb(id: &str) -> f64 {
+    match id {
+        "small" => 488.0,
+        "base" => 148.0,
+        _ => 574.0,
+    }
+}
+
+pub fn models_dir() -> PathBuf {
+    tools::app_data().join("models")
+}
+
+fn path_of(m: &WhisperModel) -> PathBuf {
+    models_dir().join(m.file_name())
+}
+
+fn installed(m: &WhisperModel) -> bool {
+    std::fs::metadata(path_of(m)).map(|x| x.len() as f64 > size_mb(m.id) * 1_000_000.0 * 0.9).unwrap_or(false)
+}
+
+/// 고른 모델 (설정에 없으면 받아 둔 모델, 그것도 없으면 Turbo)
+pub fn selected() -> &'static WhisperModel {
+    let pick = crate::recovery::prefs()["whisperModel"].as_str().map(str::to_string);
+    if let Some(m) = pick.and_then(|id| MODELS.iter().find(|m| m.id == id)) {
+        return m;
+    }
+    MODELS.iter().find(|m| installed(m)).unwrap_or(&MODELS[0])
+}
+
 pub fn model_path() -> PathBuf {
-    tools::app_data().join("models").join(MODELS[0].file_name())
+    path_of(selected())
 }
 
 pub fn model_ready() -> bool {
-    std::fs::metadata(model_path()).map(|m| m.len() > 100_000_000).unwrap_or(false)
+    installed(selected())
 }
 
-/// 모델 받기 (curl: 윈도우 10 이상·맥에 기본으로 있음). progress(0~1)
+pub fn models_json() -> serde_json::Value {
+    let sel = selected().id;
+    serde_json::json!({
+        "selected": sel,
+        "models": MODELS.iter().map(|m| serde_json::json!({ "id": m.id, "label": m.label, "sizeMB": size_mb(m.id), "installed": installed(m) })).collect::<Vec<_>>(),
+        "engine": tools::find_tool("whisper-cli").is_some(),
+        "folder": models_dir().to_string_lossy(),
+    })
+}
+
+/// 고른 모델 받기
 pub fn download_model(progress: impl Fn(f64)) -> Result<(), String> {
-    let dest = model_path();
+    download(selected().id, progress, || false)
+}
+
+/// 모델 받기 (curl: 윈도우 10 이상·맥에 기본으로 있음). progress(0~1), cancel이 참이면 멈춘다
+pub fn download(id: &str, progress: impl Fn(f64), cancel: impl Fn() -> bool) -> Result<(), String> {
+    let m = MODELS.iter().find(|m| m.id == id).ok_or("알 수 없는 모델입니다")?;
+    let dest = path_of(m);
     std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
     let tmp = dest.with_extension("part");
     let _ = std::fs::remove_file(&tmp);
@@ -24,11 +70,17 @@ pub fn download_model(progress: impl Fn(f64)) -> Result<(), String> {
     let mut child = tools::command(&curl)
         .args(["-L", "--fail", "-s", "-o"])
         .arg(&tmp)
-        .arg(MODELS[0].url())
+        .arg(m.url())
         .spawn()
         .map_err(|e| format!("모델 다운로드를 시작하지 못했습니다: {e}"))?;
-    let expected = 574_000_000f64;
+    let expected = size_mb(m.id) * 1_000_000.0;
     loop {
+        if cancel() {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&tmp);
+            return Err("모델 받기를 취소했습니다.".into());
+        }
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             if !status.success() {
                 return Err("모델 다운로드 실패: 인터넷 연결을 확인하세요.".into());
@@ -73,7 +125,7 @@ pub fn transcribe(
         let out_base = work.join(format!("c{i}"));
         let mut child = tools::command(&whisper)
             .arg("-m").arg(model_path())
-            .args(["-l", language, "-ojf", "-pp", "--dtw", MODELS[0].dtw, "-nfa", "-mc", "0", "-of"])
+            .args(["-l", language, "-ojf", "-pp", "--dtw", selected().dtw, "-nfa", "-mc", "0", "-of"])
             .arg(&out_base)
             .arg("-f").arg(&wav)
             .stdout(Stdio::null())

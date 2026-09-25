@@ -57,9 +57,21 @@ impl Editor {
         }
     }
 
+    /// 되돌려도 그 뒤에 만든 대본은 남긴다 (맥과 같음: 음성 인식을 다시 하지 않아도 되게)
+    fn keep_words(&mut self, from: &Project) {
+        for a in &mut self.project.assets {
+            if a.words.is_none() {
+                if let Some(w) = from.assets.iter().find(|x| x.id == a.id).and_then(|x| x.words.clone()) {
+                    a.words = Some(w);
+                }
+            }
+        }
+    }
+
     fn undo_step(&mut self) -> bool {
         let Some(prev) = self.undo.pop() else { return false };
         let cur = std::mem::replace(&mut self.project, prev);
+        self.keep_words(&cur);
         self.redo.push(cur);
         self.dirty = true;
         self.rev += 1;
@@ -560,8 +572,8 @@ fn generate_captions(app: AppHandle, st: State<AppState>) -> Res<Value> {
 // MARK: 자막 편집
 
 #[tauri::command]
-fn add_caption(app: AppHandle, st: State<AppState>, time: f64) -> Value {
-    let c = Caption::new(time, time + 3.0, "새 자막");
+fn add_caption(app: AppHandle, st: State<AppState>, time: f64, end: Option<f64>, text: Option<String>) -> Value {
+    let c = Caption::new(time, end.filter(|e| *e > time + 0.1).unwrap_or(time + 3.0), text.unwrap_or_else(|| "새 자막".into()));
     let id = c.id;
     with(&st, |e| e.apply(|p| p.captions.push(c)));
     let mut v = changed(&app, &st);
@@ -637,9 +649,25 @@ fn import_srt(app: AppHandle, st: State<AppState>, path: String) -> Res<Value> {
     Ok(changed(&app, &st))
 }
 
-/// 소리 크기로 무음 구간 찾기. apply=false면 미리보기 구간만 돌려준다.
+/// 무음 구간 찾기. mode "transcript"면 대본 단어 사이 공백 기준. apply=false면 미리보기 구간만 돌려준다.
 #[tauri::command]
-async fn silence_ranges(app: AppHandle, settings: Option<SilenceSettings>, auto: bool, apply: bool) -> Res<Value> {
+async fn silence_ranges(app: AppHandle, settings: Option<SilenceSettings>, auto: bool, apply: bool, mode: Option<String>) -> Res<Value> {
+    if mode.as_deref() == Some("transcript") {
+        let s = settings.unwrap_or_default();
+        let st = app.state::<AppState>();
+        let v = with(&st, |e| {
+            let ranges = e.project.silence_ranges(s.min_silence, s.padding);
+            let removed: f64 = ranges.iter().map(|r| r.len()).sum();
+            if apply && !ranges.is_empty() {
+                e.apply(|p| p.ripple_delete_ranges(&ranges));
+            }
+            json!({ "ranges": ranges.iter().map(|r| [r.start, r.end]).collect::<Vec<_>>(), "removed": removed, "threshold": s.threshold })
+        });
+        if apply {
+            emit_state(&app);
+        }
+        return Ok(v);
+    }
     tauri::async_runtime::spawn_blocking(move || silence_blocking(&app, settings, auto, apply)).await.map_err(|e| e.to_string())?
 }
 
@@ -684,16 +712,50 @@ fn silence_blocking(app: &AppHandle, settings: Option<SilenceSettings>, auto: bo
 // MARK: 음성 인식
 
 #[tauri::command]
+fn stt_models() -> Value {
+    stt::models_json()
+}
+
+#[tauri::command]
+fn stt_select(id: String) -> Value {
+    recovery::set_pref("whisperModel", json!(id));
+    stt::models_json()
+}
+
+/// 모델 하나 받기 (취소: cancel_job)
+#[tauri::command]
+async fn stt_download(app: AppHandle, id: String) -> Res<Value> {
+    let cancel = app.state::<AppState>().cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
+    let a2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || stt::download(&id, |v| job(&a2, "model", v, "Whisper 모델 받는 중…"), || cancel.load(Ordering::SeqCst)))
+        .await
+        .map_err(|e| e.to_string())??;
+    job(&app, "model", 1.0, "");
+    Ok(stt::models_json())
+}
+
+#[tauri::command]
+fn export_transcript(st: State<AppState>, path: String) -> Res<()> {
+    let text = with(&st, |e| e.project.transcript_text());
+    std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn whisper_status() -> Value {
     json!({ "engine": tools::find_tool("whisper-cli").is_some(), "model": stt::model_ready(), "ffmpeg": tools::find_tool("ffmpeg").is_some() })
 }
 
 #[tauri::command]
 async fn download_model(app: AppHandle) -> Res<()> {
+    let cancel = app.state::<AppState>().cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
     let a2 = app.clone();
-    tauri::async_runtime::spawn_blocking(move || stt::download_model(|v| job(&a2, "model", v, "Whisper 모델 받는 중…")))
+    let r = tauri::async_runtime::spawn_blocking(move || stt::download(stt::selected().id, |v| job(&a2, "model", v, "Whisper 모델 받는 중…"), || cancel.load(Ordering::SeqCst)))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    job(&app, "model", 1.0, "");
+    r
 }
 
 #[tauri::command]
@@ -1058,6 +1120,7 @@ pub fn run() {
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
             ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
+            stt_models, stt_select, stt_download, export_transcript,
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
             rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder,

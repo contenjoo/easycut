@@ -137,3 +137,22 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .capstyle { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
 .capstyle summary { cursor: pointer; color: var(--dim); font-size: 12px; margin-bottom: 6px; }
 button.danger-text { color: #ff7b7b; }
+/* 대본 탭 */
+#tab-transcript.on { display: flex; flex-direction: column; overflow: hidden; }
+#tab-transcript #transcript { flex: 1; overflow: auto; min-height: 0; user-select: none; }
+#transcript .t { cursor: pointer; }
+#transcript .t:hover { text-decoration: underline; }
+#transcript .w.hit { background: rgba(255, 211, 77, .25); }
+#transcript .w.cur { background: #b8860b; color: #fff; }
+.t-foot { border-top: 1px solid var(--line); padding-top: 6px; }
+.t-foot .row { margin: 4px 0; }
+/* 창 공통 */
+.seg { display: flex; gap: 0; margin: 8px 0; }
+.seg button { flex: 1; border-radius: 0; }
+.seg button:first-child { border-radius: 6px 0 0 6px; }
+.seg button:last-child { border-radius: 0 6px 6px 0; }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sumbox { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 10px; }
+.sumbox b.red { color: #ff6b6b; }
+.ok { color: #3fbf6a; font-size: 12px; }
+.model-row { border-bottom: 1px solid var(--line); padding: 4px 0; }
