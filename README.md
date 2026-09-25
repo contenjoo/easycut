@@ -6,7 +6,7 @@
 
 **[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
 
-윈도우 버전(베타): [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases?q=Windows&expanded=true) · 소스는 [`windows/`](windows)
+윈도우 버전(베타): [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases?q=Windows&expanded=true) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
 
 ![대본 편집 — 음성 인식된 대본, 자막, 타임라인](docs/screenshots/transcript.jpg)
 

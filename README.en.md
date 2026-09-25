@@ -6,7 +6,7 @@ EasyCut is a macOS video editor that puts simple cut editing, transcript-based e
 
 **[⬇︎ Download the latest version (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
 
-Windows (beta): [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases?q=Windows&expanded=true) · source in [`windows/`](windows)
+Windows (beta): [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases?q=Windows&expanded=true) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
 
 ![Transcript editing — recognized transcript, captions, timeline](docs/screenshots/transcript.jpg)
 
