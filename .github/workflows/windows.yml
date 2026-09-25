@@ -102,6 +102,15 @@ jobs:
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0 -or -not (Select-String -Path selftest.txt -Pattern "ALL PASSED" -Quiet)) { exit 1 }
 
+      # 자체 검사가 실패하면 원인 확인용으로 테스트 음성과 결과를 남긴다
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: selftest-debug
+          path: |
+            ${{ runner.temp }}\speech.wav
+            selftest.txt
+
       - uses: actions/upload-artifact@v4
         with:
           name: EasyCut-Windows-setup

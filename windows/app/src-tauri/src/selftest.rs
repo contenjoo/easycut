@@ -66,9 +66,18 @@ fn speech_test(c: &mut Checker, speech: &Path, expected: &str) {
     let recall = hits as f64 / want.len().max(1) as f64;
     c.check(!want.is_empty() && recall >= 0.7,
         &format!("whisper recognized {hits}/{} expected words ({:.0}%) in {:.1}s", want.len(), recall * 100.0, t0.elapsed().as_secs_f64()));
-    let ordered = words.windows(2).all(|w| w[0].start <= w[1].start && w[0].end <= w[1].start + 1e-6);
-    let inside = words.iter().all(|w| w.start >= 0.0 && w.end > w.start && w.end <= asset.duration + 0.5);
-    c.check(!words.is_empty() && ordered && inside, &format!("word timings ordered and within {:.2}s", asset.duration));
+    let bad_order: Vec<String> = words
+        .windows(2)
+        .filter(|w| !(w[0].start <= w[1].start && w[0].end <= w[1].start + 1e-6))
+        .map(|w| format!("{}[{:.2}-{:.2}]>{}[{:.2}]", w[0].text, w[0].start, w[0].end, w[1].text, w[1].start))
+        .collect();
+    let outside: Vec<String> = words
+        .iter()
+        .filter(|w| !(w.start >= 0.0 && w.end > w.start && w.end <= asset.duration + 0.5))
+        .map(|w| format!("{}[{:.2}-{:.2}]", w.text, w.start, w.end))
+        .collect();
+    c.check(!words.is_empty() && bad_order.is_empty() && outside.is_empty(),
+        &format!("word timings ordered and within {:.2}s {}{}", asset.duration, bad_order.join(" "), outside.join(" ")));
 
     // 대본 편집: 단어 3개를 지우면 그만큼 잘린다
     let mut p = Project::default();
