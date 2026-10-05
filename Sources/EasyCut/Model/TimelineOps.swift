@@ -296,6 +296,9 @@ extension Project {
                 if same {
                     clips[p].sourceOut = b.sourceOut
                     clips[p].fadeOut = b.fadeOut
+                    // 가리기 영역은 원본 시간 기준이라 그대로 합친다
+                    let blurs = (a.blurs ?? []) + (b.blurs ?? []).filter { r in !(a.blurs ?? []).contains { $0.id == r.id } }
+                    clips[p].blurs = blurs.isEmpty ? nil : blurs
                     clips.remove(at: i)
                     merged += 1
                 } else {

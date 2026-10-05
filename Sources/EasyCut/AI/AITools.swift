@@ -75,6 +75,21 @@ enum AITools {
               "start": num("일부만 받을 때 시작(초)"), "end": num("일부만 받을 때 끝(초)")],
              required: ["url"]),
         tool("transcribe", "타임라인 영상/오디오의 음성 인식(STT)을 시작한다. 끝나면 대본과 자막이 생긴다(수 초~수 분)."),
+        tool("read_screen_text", "지정 시간(타임라인 초)에 화면에 보이는 글자를 OCR로 읽어 줄마다 위치(x,y,w,h: 클립 원본 화면 비율 0~1, 왼쪽 위 원점)와 함께 돌려준다. 이름·주소처럼 형태가 정해지지 않은 개인정보를 찾아 add_blur로 가릴 때 쓴다.",
+             ["time": num("타임라인 시간(초), 생략하면 재생헤드"), "clip_id": str("읽을 클립 id, 생략하면 그 시간 맨 위 영상/사진 클립")]),
+        tool("scan_privacy", "영상/사진 화면을 처음부터 끝까지 읽어(OCR) 전화번호·주민등록번호·이메일·카드번호·계좌번호·여권번호와 지정한 글자(이름 등), 선택적으로 얼굴이 보이는 자리와 시간을 찾아 자동으로 가린다. 다시 실행하면 전에 자동으로 찾은 영역은 새 결과로 바뀐다. 영상 길이에 따라 수 초~수 분 걸린다.",
+             ["clip_ids": ["type": "array", "items": ["type": "string"], "description": "대상 클립 id, 생략하면 타임라인의 모든 영상/사진 클립"] as [String: Any],
+              "keywords": ["type": "array", "items": ["type": "string"], "description": "함께 가릴 글자 (이름·주소·회사명 등)"] as [String: Any],
+              "patterns": ["type": "boolean", "description": "번호·이메일 형태 찾기 (기본 true)"],
+              "faces": ["type": "boolean", "description": "얼굴도 가리기 (기본 false)"],
+              "style": ["type": "string", "enum": ["blur", "mosaic", "box"], "description": "blur=흐리게(기본), mosaic=모자이크, box=검은 상자"] as [String: Any]]),
+        tool("add_blur", "클립 화면의 사각형 영역을 가린다. 좌표는 클립 원본 화면 비율(0~1, 왼쪽 위 원점, read_screen_text와 같은 기준). 시간은 타임라인 초이며 생략하면 클립 전체.",
+             ["clip_id": str("클립 id"), "x": num, "y": num, "w": num, "h": num,
+              "start": num("가리기 시작(타임라인 초), 선택"), "end": num("가리기 끝(타임라인 초), 선택"),
+              "style": ["type": "string", "enum": ["blur", "mosaic", "box"]] as [String: Any], "label": str("무엇을 가렸는지 (예: 이름)")],
+             required: ["clip_id", "x", "y", "w", "h"]),
+        tool("remove_blurs", "클립의 가리기 영역을 지운다. 번호를 주지 않으면 모두 지운다. 번호는 get_project_state에 나오는 가리기 번호.",
+             ["clip_id": str("클립 id"), "indices": ["type": "array", "items": ["type": "integer"]] as [String: Any]], required: ["clip_id"]),
         tool("undo", "마지막 편집을 되돌린다.", ["steps": ["type": "integer", "description": "되돌릴 횟수 (기본 1)"]]),
     ]
 
@@ -224,6 +239,103 @@ enum AITools {
                 p.tracks[loc.track].clips[loc.index] = c
             }
             return ("클립 속성 변경", false)
+
+        case "read_screen_text":
+            let t = d("time") ?? store.time
+            let p = store.project
+            var target: Clip?
+            if let k = s("clip_id") { target = findClip(k, p).flatMap { p.clip($0) } } else {
+                for tr in p.tracks.reversed() where !tr.hidden {
+                    if let c = tr.clips.first(where: { $0.kind == .media && t >= $0.start && t < $0.end && [.video, .image].contains(p.asset($0.assetID)?.kind) }) { target = c; break }
+                }
+            }
+            guard let c = target, let a = p.asset(c.assetID), a.kind != .audio else { return ("그 시간에 화면이 있는 영상/사진 클립이 없습니다", true) }
+            let src = c.sourceTime(atTimeline: min(max(t, c.start), c.end - 0.001))
+            let lines: [PrivacyScanner.TextLine] = await Task.detached {
+                guard let img = await PrivacyScanner.frame(asset: a, at: src) else { return [] }
+                return PrivacyScanner.textLines(img)
+            }.value
+            if lines.isEmpty { return (String(format: "클립 %@ %.2f초 화면에서 글자를 찾지 못했습니다", String(c.id.uuidString.prefix(8)), t), false) }
+            var o = [String(format: "클립 %@ (%@) 타임라인 %.2f초 화면 글자 %d줄 [x,y,w,h]:", String(c.id.uuidString.prefix(8)), a.name, t, lines.count)]
+            for l in lines.prefix(300) {
+                o.append(String(format: "[%.3f,%.3f,%.3f,%.3f] %@", l.rect.minX, l.rect.minY, l.rect.width, l.rect.height, l.text))
+            }
+            return (o.joined(separator: "\n"), false)
+
+        case "scan_privacy":
+            let p = store.project
+            var ids = (input["clip_ids"] as? [String] ?? []).compactMap { findClip($0, p) }
+            if ids.isEmpty {
+                ids = p.tracks.flatMap(\.clips).filter { $0.kind == .media && [.video, .image].contains(p.asset($0.assetID)?.kind) }.map(\.id)
+            }
+            guard !ids.isEmpty else { return ("가릴 영상/사진 클립이 없습니다", true) }
+            var opt = PrivacyScanner.Options()
+            opt.patterns = b("patterns") ?? true
+            opt.faces = b("faces") ?? false
+            opt.keywords = input["keywords"] as? [String] ?? []
+            let st = BlurStyle(rawValue: s("style") ?? "") ?? .blur
+            var total = 0
+            var kinds: [String: Int] = [:]
+            for id in ids {
+                guard let c = store.project.clip(id), let a = store.project.asset(c.assetID), !a.isMissing else { continue }
+                store.privacyScanning[id] = JobProgress(value: 0, message: "화면 읽는 중…")
+                let from = a.kind == .image ? 0 : c.sourceIn, to = a.kind == .image ? 0 : c.sourceOut
+                let found: [BlurRegion]
+                do {
+                    found = try await Task.detached(priority: .userInitiated) {
+                        try await PrivacyScanner.scan(asset: a, from: from, to: to, options: opt) { v in
+                            Task { @MainActor in store.privacyScanning[id]?.value = v }
+                        }
+                    }.value
+                } catch {
+                    store.privacyScanning[id] = nil
+                    return ("화면 읽기 실패: \(error.localizedDescription)", true)
+                }
+                store.privacyScanning[id] = nil
+                store.apply { p in
+                    guard let loc = p.locate(clip: id) else { return }
+                    let manual = (p.tracks[loc.track].clips[loc.index].blurs ?? []).filter { $0.label == EditorStore.manualBlurLabel }
+                    let all = manual + found.map { var r = $0; r.style = st; return r }
+                    p.tracks[loc.track].clips[loc.index].blurs = all.isEmpty ? nil : all
+                }
+                total += found.count
+                for r in found { kinds[r.label, default: 0] += 1 }
+            }
+            if total == 0 { return ("\(ids.count)개 클립에서 가릴 개인정보를 찾지 못했습니다", false) }
+            return ("\(ids.count)개 클립에서 \(total)곳을 가렸습니다: " + kinds.map { "\($0.key) \($0.value)" }.sorted().joined(separator: ", "), false)
+
+        case "add_blur":
+            guard let cid = s("clip_id").flatMap({ findClip($0, store.project) }), let c = store.project.clip(cid),
+                  let a = store.project.asset(c.assetID), a.kind != .audio else { return ("영상/사진 클립을 찾지 못했습니다", true) }
+            guard let x = d("x"), let y = d("y"), let w = d("w"), let h = d("h"), w > 0, h > 0 else { return ("x, y, w, h가 필요합니다", true) }
+            let image = a.kind == .image
+            var r = BlurRegion(x: min(1, max(0, x)), y: min(1, max(0, y)), w: min(1, w), h: min(1, h),
+                               start: image ? 0 : c.sourceIn, end: image ? 1e6 : c.sourceOut,
+                               style: BlurStyle(rawValue: s("style") ?? "") ?? .blur,
+                               label: s("label").map { $0.isEmpty ? EditorStore.manualBlurLabel : $0 } ?? EditorStore.manualBlurLabel)
+            if !image {
+                if let v = d("start") { r.start = c.sourceTime(atTimeline: max(c.start, v)) }
+                if let v = d("end") { r.end = c.sourceTime(atTimeline: min(c.end, v)) }
+                if r.end <= r.start { return ("끝 시간이 시작보다 앞입니다", true) }
+            }
+            r.w = min(r.w, 1 - r.x); r.h = min(r.h, 1 - r.y)
+            store.apply { p in
+                guard let loc = p.locate(clip: cid) else { return }
+                p.tracks[loc.track].clips[loc.index].blurs = (p.tracks[loc.track].clips[loc.index].blurs ?? []) + [r]
+            }
+            return ("가리기 영역 추가", false)
+
+        case "remove_blurs":
+            guard let cid = s("clip_id").flatMap({ findClip($0, store.project) }), let c = store.project.clip(cid) else { return ("클립을 찾지 못했습니다", true) }
+            let list = c.blurs ?? []
+            if let idx = input["indices"] as? [NSNumber], !idx.isEmpty {
+                let ids = Set(idx.map(\.intValue).filter { list.indices.contains($0) }.map { list[$0].id })
+                guard !ids.isEmpty else { return ("해당 번호의 가리기 영역이 없습니다", true) }
+                store.removeBlurs(cid, ids)
+                return ("가리기 \(ids.count)곳 지움", false)
+            }
+            store.removeBlurs(cid)
+            return ("가리기 \(list.count)곳 모두 지움", false)
 
         case "delete_clips":
             let ids = Set((input["clip_ids"] as? [String] ?? []).compactMap { findClip($0, store.project) })
@@ -395,6 +507,10 @@ enum AITools {
                 let label = c.kind == .text ? "텍스트 \"\(c.text)\"" : "\(p.asset(c.assetID)?.kind.rawValue ?? "?") \(p.asset(c.assetID)?.name ?? "")"
                 o.append(String(format: "  - id %@ | %@ | %.2f~%.2f초 | 원본 %.2f~%.2f | %g배속 | 볼륨 %.0f%% | 크기 %.0f%%",
                                 String(c.id.uuidString.prefix(8)), label, c.start, c.end, c.sourceIn, c.sourceOut, c.speed, c.volume * 100, c.scale * 100))
+                for (n, r) in (c.blurs ?? []).enumerated().prefix(30) {
+                    let a = c.timelineTime(atSource: max(r.start, c.sourceIn)), b = c.timelineTime(atSource: min(r.end, c.sourceOut))
+                    o.append(String(format: "      가리기 [%d] %@ %@ [%.3f,%.3f,%.3f,%.3f] %.2f~%.2f초", n, r.label, r.style.rawValue, r.x, r.y, r.w, r.h, a, b))
+                }
             }
         }
         o.append("자막 \(p.captions.count)개 (표시 \(p.showCaptions ? "켬" : "끔"), 크기 \(Int(p.captionStyle.fontSize)), 위치 \(String(format: "%.2f", p.captionStyle.positionY)))")

@@ -56,6 +56,8 @@ enum SelfTest {
     }
 
     static func runAsync(_ dir: URL) async throws {
+        // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
         print("1) 모델 연산")
         testTimelineOps()
         check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
@@ -253,6 +255,90 @@ enum SelfTest {
             print(String(format: "  %gx: 최대 음량 %.3f", sp, peak))
             if sp <= 2 { check(peak > 0.01, "\(Int(sp))배속 재생 시 소리 나옴") }
         }
+
+        try await testPrivacy(dir)
+    }
+
+    /// 9) 개인정보 찾기·가리기: 글자 형태 → 영상 OCR → 가린 뒤 다시 읽어도 안 보이는지
+    static func testPrivacy(_ dir: URL) async throws {
+        print("9) 개인정보 가리기")
+        let o = PrivacyScanner.Options()
+        func kinds(_ s: String, _ opt: PrivacyScanner.Options = o) -> [String] { PrivacyScanner.matches(in: s, options: opt).map(\.label) }
+        check(kinds("연락처: 010-1234-5678") == ["전화번호"], "형태: 휴대폰 번호")
+        check(kinds("tel 02)123-4567") == ["전화번호"], "형태: 지역 번호")
+        check(kinds("+82 10 1234 5678") == ["전화번호"], "형태: +82 번호")
+        check(kinds("주민번호 900101-1234567") == ["주민등록번호"], "형태: 주민등록번호")
+        check(kinds("900101-1******") == ["주민등록번호"], "형태: 뒷자리 가린 주민번호")
+        check(kinds("메일 Hong.Gil@example.co.kr 로") == ["이메일"], "형태: 이메일")
+        check(kinds("카드 1234-5678-9012-3456") == ["카드번호"], "형태: 카드번호")
+        check(kinds("국민 123456-78-901234") == ["계좌번호"], "형태: 계좌번호")
+        check(kinds("Ol0-1234-5678") == ["전화번호"], "형태: OCR 오인식(O→0, l→1) 보정")
+        check(kinds("2024-01-15 회의, 버전 1.8.2, 3,000원, 12:30") == [], "형태: 날짜·버전·금액은 무시")
+        var ko = o; ko.patterns = false; ko.keywords = ["홍길동"]
+        let km = PrivacyScanner.matches(in: "작성자 홍 길동 님", options: ko)
+        check(km.count == 1 && km[0].range == 4..<8, "지정한 글자: 띄어쓰기 무시")
+
+        let base = CIImage(color: CIColor(red: 0.2, green: 0.5, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        let regions = BlurStyle.allCases.map { BlurRegion(x: 0.1, y: 0.1, w: 0.2, h: 0.2, start: 0, end: 5, style: $0) }
+        for r in regions {
+            check(Effects.blurRegions(base, [r], sourceTime: 1).extent == base.extent, "가리기(\(r.style.rawValue)): 크기 유지")
+        }
+
+        // 글자가 나오는 영상 만들기: 0~3초 전화번호, 3~6초 이메일, 내내 이름
+        var p = Project()
+        p.canvasWidth = 1280; p.canvasHeight = 720
+        var phone = TextStyle.title; phone.fontSize = 60; phone.positionY = 0.3
+        var mail = phone; mail.positionY = 0.55
+        var name = phone; name.positionY = 0.8; name.fontSize = 48
+        func text(_ t: String, _ st: TextStyle, track: Int, at: Double, dur: Double) {
+            let id = p.insertText(t, track: track, at: at, duration: dur)
+            if let loc = p.locate(clip: id) { p.tracks[loc.track].clips[loc.index].textStyle = st }
+        }
+        text("연락처 010-2345-6789", phone, track: 0, at: 0, dur: 3)
+        text("이메일 kim.minsu@example.com", mail, track: 1, at: 3, dur: 3)
+        text("담당 홍길동 과장", name, track: 2, at: 0, dur: 6)
+        p.normalize()
+        let src = dir.appendingPathComponent("privacy_src.mp4")
+        try? FileManager.default.removeItem(at: src)
+        try await Exporter.export(project: p, format: .mp4H264, size: CGSize(width: 1280, height: 720), burnCaptions: false, to: src, cancel: Exporter.Box()) { _ in }
+        let va = try await MediaProbe.probe(src)
+        var opt = PrivacyScanner.Options()
+        opt.keywords = ["홍길동"]
+        let t0 = Date()
+        let found = try await PrivacyScanner.scan(asset: va, from: 0, to: va.duration, options: opt) { _ in }
+        print(String(format: "  %.1f초 영상 %.1f초 만에 %d곳: ", va.duration, Date().timeIntervalSince(t0), found.count)
+              + found.map { String(format: "%@ %.1f~%.1f [%.2f,%.2f]", $0.label, $0.start, $0.end, $0.y, $0.h) }.joined(separator: ", "))
+        let ph = found.filter { $0.label == "전화번호" }
+        let em = found.filter { $0.label == "이메일" }
+        let nm = found.filter { $0.label == "지정한 글자" }
+        check(ph.count == 1 && ph[0].start <= 0.01 && ph[0].end >= 2.9 && ph[0].end <= 4, "영상: 전화번호 0~3초")
+        check(em.count == 1 && em[0].start >= 2 && em[0].start <= 3.01 && em[0].end >= 5.9, "영상: 이메일 3~6초")
+        check(nm.count == 1 && nm[0].end >= 5.9, "영상: 지정한 이름 내내")
+        if let r = ph.first { check(r.y < 0.3 && r.y + r.h > 0.3 && r.x > 0.2, "영상: 전화번호 위치 (글자 부분만)") }
+
+        // 가린 영상을 다시 읽으면 개인정보가 안 보여야 한다
+        var q = Project()
+        q.canvasWidth = 1280; q.canvasHeight = 720
+        q.assets = [va]
+        let cid = q.insert(asset: va, track: 0, at: 0)
+        if let loc = q.locate(clip: cid) { q.tracks[loc.track].clips[loc.index].blurs = found }
+        for t in [1.0, 4.0] {
+            let png = dir.appendingPathComponent(String(format: "privacy_%.0f.png", t))
+            try await Exporter.snapshot(project: q, time: t, to: png)
+            guard let isrc = CGImageSourceCreateWithURL(png as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(isrc, 0, nil) else {
+                check(false, "가린 장면 읽기"); continue
+            }
+            let left = PrivacyScanner.scan(img, options: opt)
+            let lines = PrivacyScanner.textLines(img).map(\.text)
+            check(left.isEmpty, String(format: "가린 뒤 %.0f초 장면에 개인정보 없음 (읽힌 글자: %@)", t, lines.joined(separator: " / ")))
+        }
+
+        // 사진
+        let still = dir.appendingPathComponent("privacy_still.png")
+        try await Exporter.snapshot(project: p, time: 1, to: still)
+        let ia = try await MediaProbe.probe(still)
+        let ifound = try await PrivacyScanner.scan(asset: ia, from: 0, to: 0, options: opt) { _ in }
+        check(Set(ifound.map(\.label)) == ["전화번호", "지정한 글자"], "사진: 전화번호·이름 찾기")
     }
 
     static func testTimelineOps() {

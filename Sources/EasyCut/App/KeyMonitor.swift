@@ -83,8 +83,13 @@ final class KeyMonitor {
         case 119: s.seek(p.duration); return true              // end
         case 51, 117:                                          // delete
             if inTranscript { return false }
+            // 미리보기에서 고른 가리기 영역이 있으면 그것만 지운다
+            if let b = s.selectedBlur, s.selection.count == 1, let cid = s.selection.first, s.project.clip(cid)?.blurs?.contains(where: { $0.id == b }) == true {
+                s.removeBlurs(cid, [b]); return true
+            }
             s.deleteSelection(ripple: false); return true
         case 53:                                               // esc
+            if s.drawingBlur || s.selectedBlur != nil { s.drawingBlur = false; s.selectedBlur = nil; return true }
             s.selection = []; s.selectedCaption = nil; s.clearMarks(); return true
         default: break
         }

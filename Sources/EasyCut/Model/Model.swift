@@ -79,6 +79,31 @@ enum BackgroundEffect: String, Codable, CaseIterable, Identifiable {
     var label: String { switch self { case .none: "그대로"; case .blur: "흐리게"; case .remove: "지우기" } }
 }
 
+/// 가리기 방식
+enum BlurStyle: String, Codable, CaseIterable, Identifiable {
+    case blur, mosaic, box
+    var id: String { rawValue }
+    var label: String { switch self { case .blur: "흐리게"; case .mosaic: "모자이크"; case .box: "검은 상자" } }
+}
+
+/// 화면 일부 가리기 (개인정보 등). 좌표는 원본 화면 비율(왼쪽 위 원점), 시간은 원본 미디어 기준 초.
+struct BlurRegion: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var x: Double
+    var y: Double
+    var w: Double
+    var h: Double
+    var start: Double
+    var end: Double
+    var style: BlurStyle = .blur
+    /// 무엇을 가렸는지 (전화번호, 얼굴, 직접 지정 등)
+    var label: String = ""
+    /// 찾은 글자 (자동 찾기)
+    var text: String?
+
+    func isActive(atSource s: Double) -> Bool { s >= start - 0.0001 && s < end }
+}
+
 struct TextStyle: Codable, Hashable {
     /// 1080p 기준 글자 크기
     var fontSize: Double = 54
@@ -129,6 +154,8 @@ struct Clip: Codable, Identifiable, Hashable {
     var backgroundEffect: BackgroundEffect?
     /// 녹화 때 기록한 마우스 클릭 강조 표시
     var showClicks: Bool?
+    /// 화면 일부 가리기 (nil = 없음)
+    var blurs: [BlurRegion]?
 
     var duration: Double { max(0, (sourceOut - sourceIn) / speed) }
     var end: Double { start + duration }

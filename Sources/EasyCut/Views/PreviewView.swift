@@ -49,6 +49,7 @@ struct PreviewPane: View {
                 Color.black
                 PlayerLayerView(player: player.player)
                     .aspectRatio(store.project.canvasWidth / max(1, store.project.canvasHeight), contentMode: .fit)
+                    .overlay { BlurOverlay(store: store, player: player) }
                 if store.project.duration == 0 {
                     VStack(spacing: 12) {
                         Image(systemName: "film.stack")
@@ -91,6 +92,118 @@ struct PreviewPane: View {
             }
             TransportBar(store: store, player: player)
         }
+    }
+}
+
+/// 선택한 클립의 가리기 영역을 미리보기 위에 보여 주고 끌어서 옮기거나 크기를 바꾼다
+struct BlurOverlay: View {
+    @ObservedObject var store: EditorStore
+    @ObservedObject var player: PlayerController
+    @State private var origin: BlurRegion?
+    @State private var drawStart: CGPoint?
+    @State private var drawEnd: CGPoint?
+
+    /// 선택된 클립과 그 원본 화면이 캔버스(보기 좌표)에서 차지하는 자리
+    func target(_ size: CGSize) -> (clip: Clip, frame: CGRect)? {
+        guard store.selection.count == 1, let id = store.selection.first, let clip = store.project.clip(id),
+              clip.kind == .media, let a = store.project.asset(clip.assetID), a.kind != .audio,
+              a.width > 0, a.height > 0 else { return nil }
+        let t = player.time
+        guard t >= clip.start - 0.001, t < clip.end + 0.001 else { return nil }
+        let fit = min(size.width / a.width, size.height / a.height) * clip.scale
+        let fw = a.width * fit, fh = a.height * fit
+        let fx = (size.width - fw) / 2 + clip.offsetX * size.width
+        let fy = (size.height - fh) / 2 + clip.offsetY * size.height
+        return (clip, CGRect(x: fx, y: fy, width: fw, height: fh))
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            if !player.isPlaying, let (clip, f) = target(geo.size) {
+                let s = clip.sourceTime(atTimeline: min(max(player.time, clip.start), clip.end - 0.001))
+                ZStack(alignment: .topLeading) {
+                    if store.drawingBlur {
+                        Color.black.opacity(0.15)
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 2)
+                                .onChanged { v in drawStart = v.startLocation; drawEnd = v.location }
+                                .onEnded { v in
+                                    let r = CGRect(x: min(v.startLocation.x, v.location.x), y: min(v.startLocation.y, v.location.y),
+                                                   width: abs(v.location.x - v.startLocation.x), height: abs(v.location.y - v.startLocation.y))
+                                        .intersection(f)
+                                    drawStart = nil; drawEnd = nil
+                                    store.drawingBlur = false
+                                    guard !r.isNull, r.width > 4, r.height > 4 else { return }
+                                    store.addBlur(clip.id, rect: CGRect(x: (r.minX - f.minX) / f.width, y: (r.minY - f.minY) / f.height,
+                                                                         width: r.width / f.width, height: r.height / f.height))
+                                })
+                        if let a = drawStart, let b = drawEnd {
+                            Rectangle().stroke(Theme.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                                .frame(width: abs(b.x - a.x), height: abs(b.y - a.y))
+                                .offset(x: min(a.x, b.x), y: min(a.y, b.y))
+                        }
+                    }
+                    ForEach((clip.blurs ?? []).filter { $0.isActive(atSource: s) }) { r in
+                        region(r, clip: clip, frame: f)
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                .clipped()
+            }
+        }
+    }
+
+    func region(_ r: BlurRegion, clip: Clip, frame f: CGRect) -> some View {
+        let rect = CGRect(x: f.minX + r.x * f.width, y: f.minY + r.y * f.height, width: r.w * f.width, height: r.h * f.height)
+        let selected = store.selectedBlur == r.id
+        return ZStack(alignment: .bottomTrailing) {
+            Rectangle()
+                .fill(Color.white.opacity(0.001))
+                .overlay(Rectangle().stroke(selected ? Theme.accentColor : Color.white.opacity(0.85),
+                                            style: StrokeStyle(lineWidth: selected ? 2 : 1, dash: selected ? [] : [5, 3])))
+                .overlay(alignment: .topLeading) {
+                    if selected || rect.width > 60 {
+                        Text(L(r.label))
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(selected ? Theme.accentColor : Color.black.opacity(0.6))
+                            .foregroundStyle(.white)
+                            .fixedSize()
+                            .offset(y: -15)
+                    }
+                }
+                .gesture(DragGesture(minimumDistance: 1)
+                    .onChanged { v in
+                        if origin?.id != r.id { origin = r; store.selectedBlur = r.id }
+                        guard let o = origin else { return }
+                        store.updateBlur(clip.id, r.id, key: "blurmove") {
+                            $0.x = o.x + v.translation.width / f.width
+                            $0.y = o.y + v.translation.height / f.height
+                        }
+                    }
+                    .onEnded { _ in origin = nil })
+                .onTapGesture { store.selectedBlur = r.id }
+            if selected {
+                Rectangle()
+                    .fill(Theme.accentColor)
+                    .frame(width: 10, height: 10)
+                    .offset(x: 5, y: 5)
+                    .gesture(DragGesture(minimumDistance: 1)
+                        .onChanged { v in
+                            if origin?.id != r.id { origin = r }
+                            guard let o = origin else { return }
+                            store.updateBlur(clip.id, r.id, key: "blursize") {
+                                $0.w = max(0.01, o.w + v.translation.width / f.width)
+                                $0.h = max(0.01, o.h + v.translation.height / f.height)
+                            }
+                        }
+                        .onEnded { _ in origin = nil })
+                    .help("끌어서 크기 조절")
+            }
+        }
+        .frame(width: max(4, rect.width), height: max(4, rect.height))
+        .offset(x: rect.minX, y: rect.minY)
+        .help(r.text.map { "\(L(r.label)): \($0)" } ?? L(r.label))
     }
 }
 

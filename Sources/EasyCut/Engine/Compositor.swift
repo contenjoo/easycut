@@ -26,6 +26,8 @@ struct RenderLayer {
     var backgroundEffect: BackgroundEffect = .none
     /// 표시할 마우스 클릭 (원본 시간 기준)
     var clicks: [ClickMark] = []
+    /// 화면 일부 가리기 (원본 시간 기준)
+    var blurs: [BlurRegion] = []
 
     func alpha(at t: Double) -> Double {
         var a = opacity
@@ -227,6 +229,8 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
             }
             src = src.transformed(by: CGAffineTransform(translationX: -src.extent.minX, y: -src.extent.minY))
             if !isText {
+                // 가리기는 다른 효과보다 먼저 (개인정보가 어떤 경우에도 남지 않게)
+                if !layer.blurs.isEmpty { src = Effects.blurRegions(src, layer.blurs, sourceTime: layer.sourceIn + (t - layer.start) * layer.speed) }
                 if layer.backgroundEffect != .none { src = Effects.personBackground(src, effect: layer.backgroundEffect) }
                 if !layer.clicks.isEmpty { src = Effects.clicks(src, marks: layer.clicks, sourceTime: layer.sourceIn + (t - layer.start) * layer.speed) }
                 if layer.shape != .none {
@@ -314,6 +318,36 @@ enum Effects {
         default: bg = CIImage.empty()
         }
         return img.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: bg, kCIInputMaskImageKey: mask]).cropped(to: e)
+    }
+
+    /// 화면 일부를 흐리게/모자이크/검은 상자로 가린다
+    static func blurRegions(_ img: CIImage, _ regions: [BlurRegion], sourceTime s: Double) -> CIImage {
+        let e = img.extent
+        var out = img
+        for r in regions where r.isActive(atSource: s) {
+            let rect = CGRect(x: e.minX + CGFloat(r.x) * e.width, y: e.minY + CGFloat(1 - r.y - r.h) * e.height,
+                              width: CGFloat(r.w) * e.width, height: CGFloat(r.h) * e.height).integral.intersection(e)
+            guard rect.width >= 1, rect.height >= 1 else { continue }
+            let piece: CIImage
+            switch r.style {
+            case .box:
+                piece = CIImage(color: .black).cropped(to: rect)
+            case .mosaic:
+                let cell = max(6, min(rect.width, rect.height) / 5)
+                piece = out.cropped(to: rect).clampedToExtent()
+                    .applyingFilter("CIPixellate", parameters: [kCIInputCenterKey: CIVector(x: rect.minX, y: rect.minY), kCIInputScaleKey: cell])
+                    .cropped(to: rect)
+            case .blur:
+                // 모자이크 위에 흐림을 겹쳐 글자를 되살릴 수 없게 한다
+                let cell = max(4, min(rect.height, rect.width) / 3)
+                piece = out.cropped(to: rect).clampedToExtent()
+                    .applyingFilter("CIPixellate", parameters: [kCIInputCenterKey: CIVector(x: rect.minX, y: rect.minY), kCIInputScaleKey: cell])
+                    .applyingGaussianBlur(sigma: Double(cell) * 0.8)
+                    .cropped(to: rect)
+            }
+            out = piece.composited(over: out)
+        }
+        return out
     }
 
     /// 클릭한 자리에 노란 원이 퍼졌다 사라지는 표시 (0.7초)

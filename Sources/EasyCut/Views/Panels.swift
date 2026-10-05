@@ -455,6 +455,10 @@ struct ClipInspector: View {
                 .controlSize(.small)
             }
 
+            if !isText && (kind == .video || kind == .image) {
+                PrivacySection(store: store, clip: clip, isImage: kind == .image)
+            }
+
             SectionTitle(text: "전환 (페이드)")
             ValueSlider(title: "페이드 인", value: bind(\.fadeIn, key: "fi"), range: 0...3) { String(format: "%.1f초", $0) }
             ValueSlider(title: "페이드 아웃", value: bind(\.fadeOut, key: "fo"), range: 0...3) { String(format: "%.1f초", $0) }
@@ -468,6 +472,139 @@ struct ClipInspector: View {
             .controlSize(.small)
         }
         .font(.callout)
+    }
+}
+
+/// 개인정보 가리기: 화면 글자·얼굴을 읽어 자동으로 찾거나 직접 영역을 그린다
+struct PrivacySection: View {
+    @ObservedObject var store: EditorStore
+    let clip: Clip
+    let isImage: Bool
+    @AppStorage("privacyPatterns") private var patterns = true
+    @AppStorage("privacyFaces") private var faces = false
+    @AppStorage("privacyKeywords") private var keywords = ""
+    @AppStorage("blurStyle") private var styleRaw = BlurStyle.blur.rawValue
+
+    var style: BlurStyle { BlurStyle(rawValue: styleRaw) ?? .blur }
+
+    var options: PrivacyScanner.Options {
+        var o = PrivacyScanner.Options()
+        o.patterns = patterns
+        o.faces = faces
+        o.keywords = keywords.split(whereSeparator: { $0 == "," || $0 == "\n" }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return o
+    }
+
+    var body: some View {
+        let regions = clip.blurs ?? []
+        VStack(alignment: .leading, spacing: 8) {
+            SectionTitle(text: "가리기 (개인정보)")
+            if let job = store.privacyScanning[clip.id] {
+                HStack {
+                    ProgressView(value: job.value).controlSize(.small)
+                    Text("\(Int(job.value * 100))%").monospacedDigit().font(.caption)
+                    Button("중지") { store.cancelPrivacyScan(clip.id) }.controlSize(.small)
+                }
+                Text(L(job.message)).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Toggle("전화·주민·카드·계좌번호, 이메일", isOn: $patterns).font(.caption)
+                Toggle("얼굴", isOn: $faces).font(.caption)
+                TextField("이름·주소 등 가릴 글자 (쉼표로 구분)", text: $keywords)
+                    .textFieldStyle(.roundedBorder).font(.caption)
+                HStack {
+                    Text("방식").font(.caption).frame(width: 58, alignment: .leading)
+                    Picker("", selection: $styleRaw) {
+                        ForEach(BlurStyle.allCases) { Text(L($0.label)).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                }
+                HStack {
+                    Button { store.scanPrivacy(clip.id, options: options, style: style) } label: {
+                        Label("자동으로 찾아 가리기", systemImage: "eye.slash")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!patterns && !faces && options.keywords.isEmpty)
+                    .help("화면 글자를 읽어(OCR) 개인정보가 보이는 자리와 시간을 찾습니다. 다시 찾으면 자동으로 찾은 영역은 새로 바뀌고, 직접 그린 영역은 남습니다.")
+                    Button {
+                        if store.time < clip.start || store.time >= clip.end { store.seek(clip.start) }
+                        store.player.pause()
+                        store.drawingBlur.toggle()
+                    } label: { Label(store.drawingBlur ? "그리기 취소" : "직접 그리기", systemImage: "rectangle.dashed") }
+                    .help("미리보기 화면에서 끌어서 가릴 영역을 그립니다 (재생헤드부터 클립 끝까지)")
+                }
+                .controlSize(.small)
+            }
+            if !regions.isEmpty {
+                ForEach(regions) { r in row(r) }
+                HStack {
+                    Text("\(regions.count)곳 가림").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Menu("방식 모두 바꾸기") {
+                        ForEach(BlurStyle.allCases) { st in
+                            Button(L(st.label)) { store.updateClip(clip.id, key: "blurstyle") { c in for i in c.blurs!.indices { c.blurs![i].style = st } } }
+                        }
+                    }
+                    .fixedSize()
+                    Button("모두 지우기", role: .destructive) { store.removeBlurs(clip.id) }
+                }
+                .controlSize(.small)
+                Text("미리보기를 멈춘 상태에서 영역을 끌어 옮기고, 오른쪽 아래 점으로 크기를 바꿉니다. 영역을 고르고 ⌫로 지웁니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    func row(_ r: BlurRegion) -> some View {
+        let selected = store.selectedBlur == r.id
+        let a = clip.timelineTime(atSource: max(r.start, clip.sourceIn))
+        let b = clip.timelineTime(atSource: min(r.end, clip.sourceOut))
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: r.label == "얼굴" ? "face.smiling" : (r.label == EditorStore.manualBlurLabel ? "rectangle.dashed" : "text.viewfinder"))
+                    .foregroundStyle(selected ? Theme.accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(L(r.label)).font(.caption.weight(.semibold))
+                    if let t = r.text { Text(t).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer()
+                if !isImage {
+                    Text("\(TimeFormat.clock(a))~\(TimeFormat.clock(b))").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                Button { store.removeBlurs(clip.id, [r.id]) } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary)
+                    .help("이 영역 지우기")
+            }
+            if selected {
+                Picker("", selection: Binding(get: { r.style }, set: { v in store.updateBlur(clip.id, r.id, key: "blurstyle") { $0.style = v } })) {
+                    ForEach(BlurStyle.allCases) { Text(L($0.label)).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                if !isImage {
+                    HStack {
+                        Button("시작=재생헤드") {
+                            let s = clip.sourceTime(atTimeline: store.time)
+                            store.updateBlur(clip.id, r.id, key: "blurtime") { $0.start = s }
+                        }
+                        Button("끝=재생헤드") {
+                            let s = clip.sourceTime(atTimeline: store.time)
+                            store.updateBlur(clip.id, r.id, key: "blurtime") { $0.end = s }
+                        }
+                    }
+                    .controlSize(.small)
+                    .disabled(store.time < clip.start || store.time > clip.end)
+                }
+            }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Theme.accentColor.opacity(0.12) : Color.secondary.opacity(0.06)))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            store.selectedBlur = r.id
+            store.player.pause()
+            if !isImage, !r.isActive(atSource: clip.sourceTime(atTimeline: store.time)) || store.time < clip.start || store.time >= clip.end {
+                store.seek(min(max(a, clip.start), clip.end - 0.05) + 0.001)
+            }
+        }
     }
 }
 

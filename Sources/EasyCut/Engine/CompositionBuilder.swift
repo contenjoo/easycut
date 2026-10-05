@@ -72,6 +72,7 @@ enum CompositionBuilder {
                 common.speed = clip.speed
                 common.shape = clip.shape ?? .none
                 common.backgroundEffect = clip.backgroundEffect ?? .none
+                common.blurs = clip.blurs ?? []
                 if clip.showClicks == true, let marks = project.asset(clip.assetID)?.clicks {
                     common.clicks = marks.filter { $0.t >= clip.sourceIn - 1 && $0.t <= clip.sourceOut }
                 }

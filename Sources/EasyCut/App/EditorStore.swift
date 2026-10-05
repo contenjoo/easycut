@@ -54,6 +54,12 @@ final class EditorStore: ObservableObject {
     /// 무음 컷 미리보기 (타임라인에 빨간색으로 표시)
     @Published var silencePreview: [ClosedRange<Double>] = []
     @Published var showAIPanel = false
+    /// 개인정보 찾는 중인 클립 (클립 id → 진행률)
+    @Published var privacyScanning: [UUID: JobProgress] = [:]
+    /// 미리보기에서 고른 가리기 영역
+    @Published var selectedBlur: UUID?
+    /// 미리보기에서 끌어서 가리기 영역 그리기
+    @Published var drawingBlur = false
     private(set) var loudness: [UUID: [Float]] = [:]
 
     @AppStorage("sttEngine") var sttEngineRaw: String = STTEngine.apple.rawValue
@@ -79,6 +85,7 @@ final class EditorStore: ObservableObject {
     private var transcribeTasks: [UUID: Task<Void, Never>] = [:]
     private var clipboard: [(track: Int, clip: Clip)] = []
     private var toastTask: Task<Void, Never>?
+    private var privacyTasks: [UUID: Task<Void, Never>] = [:]
 
     var sttEngine: STTEngine {
         get { STTEngine(rawValue: sttEngineRaw) ?? .apple }
@@ -567,6 +574,95 @@ final class EditorStore: ObservableObject {
             guard let loc = p.locate(clip: id) else { return }
             f(&p.tracks[loc.track].clips[loc.index])
         }
+    }
+
+    // MARK: 가리기 (개인정보)
+
+    static let manualBlurLabel = "직접 지정"
+
+    /// 선택 클립 화면을 읽어 개인정보가 보이는 자리를 찾아 가린다. 다시 찾으면 전에 자동으로 찾은 영역은 바뀐다.
+    func scanPrivacy(_ clipID: UUID, options: PrivacyScanner.Options, style: BlurStyle = .blur) {
+        guard privacyTasks[clipID] == nil, let clip = project.clip(clipID), let asset = project.asset(clip.assetID) else { return }
+        guard asset.kind != .audio else { alert = "화면이 있는 영상이나 사진을 골라 주세요."; return }
+        guard !asset.isMissing else { alert = "\(asset.name) 파일을 찾을 수 없습니다."; return }
+        player.pause()
+        privacyScanning[clipID] = JobProgress(value: 0, message: "화면 읽는 중…")
+        let from = asset.kind == .image ? 0 : clip.sourceIn, to = asset.kind == .image ? 0 : clip.sourceOut
+        privacyTasks[clipID] = Task { [weak self] in
+            do {
+                var found = try await Task.detached(priority: .userInitiated) {
+                    try await PrivacyScanner.scan(asset: asset, from: from, to: to, options: options) { v in
+                        Task { @MainActor in self?.privacyScanning[clipID]?.value = v }
+                    }
+                }.value
+                guard let self else { return }
+                self.privacyScanning[clipID] = nil
+                self.privacyTasks[clipID] = nil
+                for i in found.indices { found[i].style = style }
+                self.apply { p in
+                    guard let loc = p.locate(clip: clipID) else { return }
+                    let manual = (p.tracks[loc.track].clips[loc.index].blurs ?? []).filter { $0.label == Self.manualBlurLabel }
+                    let all = manual + found
+                    p.tracks[loc.track].clips[loc.index].blurs = all.isEmpty ? nil : all
+                }
+                if found.isEmpty {
+                    self.showToast("가릴 개인정보를 찾지 못했습니다")
+                } else {
+                    let kinds = Dictionary(grouping: found, by: \.label).map { "\(L($0.key)) \($0.value.count)" }.sorted().joined(separator: ", ")
+                    self.showToast("\(found.count)곳을 가렸습니다 (\(kinds))")
+                }
+            } catch {
+                guard let self else { return }
+                self.privacyScanning[clipID] = nil
+                self.privacyTasks[clipID] = nil
+                if !(error is CancellationError) { self.alert = error.localizedDescription }
+            }
+        }
+    }
+
+    func cancelPrivacyScan(_ clipID: UUID) {
+        privacyTasks[clipID]?.cancel()
+        privacyTasks[clipID] = nil
+        privacyScanning[clipID] = nil
+    }
+
+    /// 재생헤드부터 클립 끝까지 보이는 가리기 영역 추가 (rect: 원본 화면 비율, 왼쪽 위 원점)
+    @discardableResult
+    func addBlur(_ clipID: UUID, rect: CGRect? = nil, style: BlurStyle = .blur) -> UUID? {
+        guard let clip = project.clip(clipID), let asset = project.asset(clip.assetID), asset.kind != .audio else { return nil }
+        let r = rect ?? CGRect(x: 0.35, y: 0.4, width: 0.3, height: 0.2)
+        let image = asset.kind == .image
+        let s = clip.sourceTime(atTimeline: min(max(time, clip.start), clip.end))
+        let region = BlurRegion(x: r.minX, y: r.minY, w: r.width, h: r.height,
+                                start: image ? 0 : (s >= clip.sourceOut - 0.05 ? clip.sourceIn : s),
+                                end: image ? 1e6 : clip.sourceOut, style: style, label: Self.manualBlurLabel)
+        apply { p in
+            guard let loc = p.locate(clip: clipID) else { return }
+            p.tracks[loc.track].clips[loc.index].blurs = (p.tracks[loc.track].clips[loc.index].blurs ?? []) + [region]
+        }
+        selectedBlur = region.id
+        return region.id
+    }
+
+    func updateBlur(_ clipID: UUID, _ blurID: UUID, key: String = "blur", _ f: (inout BlurRegion) -> Void) {
+        updateClip(clipID, key: "\(key)-\(blurID)") { c in
+            guard let i = c.blurs?.firstIndex(where: { $0.id == blurID }) else { return }
+            f(&c.blurs![i])
+            var r = c.blurs![i]
+            r.w = min(1, max(0.005, r.w)); r.h = min(1, max(0.005, r.h))
+            r.x = min(1 - r.w, max(0, r.x)); r.y = min(1 - r.h, max(0, r.y))
+            if r.end < r.start + 0.05 { r.end = r.start + 0.05 }
+            c.blurs![i] = r
+        }
+    }
+
+    /// ids가 nil이면 클립의 가리기를 모두 지운다
+    func removeBlurs(_ clipID: UUID, _ ids: Set<UUID>? = nil) {
+        updateClip(clipID, key: "blurdel") { c in
+            if let ids { c.blurs?.removeAll { ids.contains($0.id) } } else { c.blurs = nil }
+            if c.blurs?.isEmpty == true { c.blurs = nil }
+        }
+        if let b = selectedBlur, ids == nil || ids!.contains(b) { selectedBlur = nil }
     }
 
     func addTextClip() {
