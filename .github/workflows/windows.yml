@@ -128,7 +128,7 @@ jobs:
           $out | ForEach-Object { $_.Substring(0, [Math]::Min(200, $_.Length)) }
           Stop-Process -Id $app.Id -Force
           $tools = ($out[1] | ConvertFrom-Json).result.tools.Count
-          if ($tools -ne 24) { Write-Error "expected 24 tools, got $tools"; exit 1 }
+          if ($tools -ne 28) { Write-Error "expected 28 tools, got $tools"; exit 1 }
           if (-not ($out[3] -match '"isError":false') -or -not ($out[3] -match 'CI')) { Write-Error "tool call through the running app failed"; exit 1 }
 
       - name: Silent install (what auto-update runs) and self-test of the installed app
