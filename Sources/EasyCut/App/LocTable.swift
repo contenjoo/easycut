@@ -776,5 +776,10 @@ enum LocTable {
         "개인정보 가리기": "Hide personal info",
         "영역 가리기": "Hide area",
         "가리기 지우기": "Remove hidden areas",
+        "자막 읽기": "Read captions",
+        "클립 확인": "Inspect clips",
+        "소리 확인": "Listen to range",
+        "경계 조정": "Adjust clip edge",
+        "잘린 말 되살리기": "Restore cut speech",
     ]
 }

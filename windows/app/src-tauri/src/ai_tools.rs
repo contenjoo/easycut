@@ -93,6 +93,9 @@ pub fn definitions() -> Vec<Value> {
              json!({ "clip_id": string("클립 id"), "indices": { "type": "array", "items": { "type": "integer" } } }), &["clip_id"]),
         tool("undo", "마지막 편집을 되돌린다.", json!({ "steps": { "type": "integer", "description": "되돌릴 횟수 (기본 1)" } }), &[]),
     ]
+    .into_iter()
+    .chain(crate::review_tools::definitions())
+    .collect()
 }
 
 /// 도구 이름 → 짧은 한국어 이름 (대화창 표시용)
@@ -119,6 +122,11 @@ pub fn label(name: &str) -> String {
         "import_url" => "링크 가져오기",
         "transcribe" => "음성 인식",
         "read_screen_text" => "화면 글자 읽기",
+        "get_captions" => "자막 읽기",
+        "get_clips" => "클립 확인",
+        "listen_range" => "소리 확인",
+        "adjust_clip_edge" => "경계 조정",
+        "restore_cut" => "잘린 말 되살리기",
         "scan_privacy" => "개인정보 가리기",
         "add_blur" => "영역 가리기",
         "remove_blurs" => "가리기 지우기",
@@ -723,7 +731,7 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
             changed(format!("{n}단계 되돌림"))
         }
 
-        _ => (format!("알 수 없는 도구: {name}"), true),
+        _ => crate::review_tools::execute(app, name, input).unwrap_or_else(|| (format!("알 수 없는 도구: {name}"), true)),
     }
 }
 
@@ -776,7 +784,7 @@ fn project_state(app: &AppHandle) -> String {
         o.push(format!("  [{n}] {:.2}~{:.2} {}", c.start, c.end, c.text));
     }
     if p.captions.len() > 20 {
-        o.push(format!("  … 이하 {}개 생략 (자막 내용은 대본과 같습니다)", p.captions.len() - 20));
+        o.push(format!("  … 이하 {}개 생략 (전체는 get_captions로 읽습니다)", p.captions.len() - 20));
     }
     o.push(format!("대본 단어 {}개", p.timeline_words().len()));
     if !ui.selection.is_empty() {

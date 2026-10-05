@@ -17,7 +17,9 @@ enum AITools {
         "items": ["type": "object", "properties": ["start": num, "end": num], "required": ["start", "end"]] as [String: Any],
     ]
 
-    static let definitions: [[String: Any]] = [
+    static let definitions: [[String: Any]] = baseDefinitions + reviewDefinitions
+
+    static let baseDefinitions: [[String: Any]] = [
         tool("get_project_state", "현재 프로젝트 상태: 전체 길이, 재생헤드, 캔버스, 트랙별 클립(id, 종류, 이름, 시작/끝, 속도, 볼륨), 자막 목록 일부, 대본 유무, 선택 항목. 편집 전에 먼저 호출해 구조를 파악한다."),
         tool("get_transcript", "대본을 문장 단위로 돌려준다. 각 줄은 '[첫단어번호-끝단어번호] 시작~끝초 문장'. 길면 from/to(초)로 범위를 나눠 읽는다. 특정 말을 찾을 때는 search_transcript가 훨씬 빠르다.",
              ["from": num("시작 시간(초), 선택"), "to": num("끝 시간(초), 선택")]),
@@ -465,6 +467,7 @@ enum AITools {
             return changed("\(n)단계 되돌림")
 
         default:
+            if let r = await executeReview(name, input, store: store) { return r }
             return ("알 수 없는 도구: \(name)", true)
         }
     }
@@ -517,7 +520,7 @@ enum AITools {
         for (n, c) in p.captions.prefix(20).enumerated() {
             o.append(String(format: "  [%d] %.2f~%.2f %@", n, c.start, c.end, c.text))
         }
-        if p.captions.count > 20 { o.append("  … 이하 \(p.captions.count - 20)개 생략 (자막 내용은 대본과 같습니다)") }
+        if p.captions.count > 20 { o.append("  … 이하 \(p.captions.count - 20)개 생략 (전체는 get_captions로 읽습니다)") }
         o.append("대본 단어 \(p.timelineWords().count)개")
         if !store.selection.isEmpty { o.append("선택된 클립: " + store.selection.map { String($0.uuidString.prefix(8)) }.joined(separator: ", ")) }
         if let r = store.markRange { o.append(String(format: "In/Out 구간: %.2f~%.2f", r.lowerBound, r.upperBound)) }

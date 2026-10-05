@@ -10,6 +10,7 @@ mod media;
 mod privacy;
 mod record;
 mod recovery;
+mod review_tools;
 mod selftest;
 mod stt;
 mod tools;

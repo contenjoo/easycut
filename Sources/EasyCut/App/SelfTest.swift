@@ -58,6 +58,7 @@ enum SelfTest {
     static func runAsync(_ dir: URL) async throws {
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "review" { try await testReview(dir); return }
         print("1) 모델 연산")
         testTimelineOps()
         check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
@@ -257,6 +258,83 @@ enum SelfTest {
         }
 
         try await testPrivacy(dir)
+        try await testReview(dir)
+    }
+
+    /// 10) 편집 검토 도구: 자막 전체, 클립 경계, 구간 소리, 경계 조정·잘린 말 되살리기
+    static func testReview(_ dir: URL) async throws {
+        print("10) 편집 검토 도구")
+        // 모델 연산
+        var m = Project()
+        let ma = MediaAsset(path: "/tmp/x.mp4", name: "x", kind: .video, duration: 10, width: 1920, height: 1080, hasAudio: true)
+        m.assets = [ma]
+        m.insert(asset: ma, track: 0, at: 0)
+        m.captions = [Caption(start: 1, end: 2, text: "앞"), Caption(start: 6, end: 7, text: "뒤")]
+        m.rippleDelete(from: 3, to: 5)
+        let cps = m.cutPoints()
+        check(cps.count == 1 && cps[0].gap == 3...5 && abs(m.duration - 8) < 1e-9, "경계 찾기: 원본 3~5초 잘림")
+        var part = m
+        part.restoreCut(cps[0], before: 0.5, after: 0.25)
+        let pc = part.tracks[0].clips
+        check(pc.count == 2 && abs(pc[0].sourceOut - 3.5) < 1e-9 && abs(pc[1].sourceIn - 4.75) < 1e-9 && abs(part.duration - 8.75) < 1e-9
+              && abs(part.captions[1].start - 4.75) < 1e-9, "일부 되살리기: 앞 0.5초·뒤 0.25초, 뒤 자막도 밀림")
+        var full = m
+        full.restoreCut(cps[0], before: nil, after: nil)
+        check(full.tracks[0].clips.count == 1 && abs(full.duration - 10) < 1e-9 && abs(full.captions[1].start - 6) < 1e-9, "전체 되살리기: 한 클립으로, 자막 제자리")
+        var trim = full
+        trim.adjustEdge(clip: trim.tracks[0].clips[0].id, end: true, seconds: -1, sourceDuration: 10)
+        check(abs(trim.duration - 9) < 1e-9, "끝 1초 줄이기")
+        let grow = trim.adjustEdge(clip: trim.tracks[0].clips[0].id, end: true, seconds: 5, sourceDuration: 10)
+        check(abs(grow - 1) < 1e-9 && abs(trim.duration - 10) < 1e-9, "원본 끝까지만 늘리기")
+
+        // 실제 말소리로 AI 도구
+        let speech = dir.appendingPathComponent("review_speech.aiff")
+        if !FileManager.default.fileExists(atPath: speech.path) {
+            let pr = Process()
+            pr.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            pr.arguments = ["-v", "Yuna", "-o", speech.path, "오늘은 날씨가 정말 좋습니다. 공원에 산책하러 가겠습니다."]
+            try pr.run(); pr.waitUntilExit()
+        }
+        var a = try await MediaProbe.probe(speech)
+        guard Transcriber.whisperReady, let model = WhisperModel.all.first(where: \.isInstalled) else {
+            print("  (Whisper 미설치 — 실제 소리 검사 건너뜀)")
+            return
+        }
+        a.words = try await Transcriber.transcribe(url: a.url, engine: .whisper, language: STTLanguage.all[0], whisperModel: model) { _, _ in }
+        let ws = a.words ?? []
+        print("  대본: " + ws.map { String(format: "%@[%.2f-%.2f]", $0.text, $0.start, $0.end) }.joined(separator: " "))
+        guard ws.count >= 5 else { check(false, "받아쓴 단어가 너무 적음 (\(ws.count))"); return }
+        // 셋째 단어 가운데부터 다섯째 단어 가운데까지 잘라 말이 끊기게 만든다
+        let cutA = (ws[2].start + ws[2].end) / 2, cutB = (ws[4].start + ws[4].end) / 2
+        var p = Project()
+        p.assets = [a]
+        p.insert(asset: a, track: 0, at: 0)
+        p.captions = p.generatedCaptions(maxChars: 20)
+        p.rippleDelete(from: cutA, to: cutB)
+        let store = await MainActor.run { EditorStore() }
+        let cut = p
+        await MainActor.run { store.apply { $0 = cut } }
+        func run(_ name: String, _ input: [String: Any]) async -> String {
+            let (out, err) = await AITools.execute(name, input, store: store)
+            print("  [\(name)] " + out.replacingOccurrences(of: "\n", with: "\n    "))
+            return err ? "ERROR " + out : out
+        }
+        let caps = await run("get_captions", [:])
+        check(caps.contains("[0]") && !caps.hasPrefix("ERROR"), "get_captions: 번호·시간·내용")
+        let clips = await run("get_clips", [:])
+        check(clips.contains("잘림") && clips.contains(ws[3].text), "get_clips: 잘린 원본 구간과 잘린 말")
+        let heard = await run("listen_range", ["start": max(0, cutA - 1.5), "end": cutA + 1.5, "recognize": true])
+        check(heard.contains("◐") && heard.contains("다시 받아쓴 원음"), "listen_range: 경계에 걸린 말 표시 + 원음 받아쓰기")
+        let before = await MainActor.run { store.project.duration }
+        let restored = await run("restore_cut", ["time": cutA])
+        let after = await MainActor.run { store.project.duration }
+        let one = await MainActor.run { store.project.tracks[0].clips.count }
+        check(restored.contains("되살림") && abs(after - a.duration) < 0.01 && one == 1,
+              String(format: "restore_cut: %.2f초 → %.2f초 (원본 %.2f초), 클립 %d개", before, after, a.duration, one))
+        let undo = await run("undo", [:])
+        let id = await MainActor.run { store.project.tracks[0].clips[0].id.uuidString }
+        let edge = await run("adjust_clip_edge", ["clip_id": id, "edge": "end", "seconds": 0.3])
+        check(!undo.hasPrefix("ERROR") && edge.contains("되살림"), "adjust_clip_edge: 앞 클립 끝 0.3초 늘리기")
     }
 
     /// 9) 개인정보 찾기·가리기: 글자 형태 → 영상 OCR → 가린 뒤 다시 읽어도 안 보이는지

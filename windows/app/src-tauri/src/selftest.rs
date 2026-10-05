@@ -79,6 +79,14 @@ fn speech_test(c: &mut Checker, speech: &Path, expected: &str) {
     c.check(!words.is_empty() && bad_order.is_empty() && outside.is_empty(),
         &format!("word timings ordered and within {:.2}s {}{}", asset.duration, bad_order.join(" "), outside.join(" ")));
 
+    // listen_range의 원음 받아쓰기: 원본 일부 구간만 다시 받아써 원본 시간으로 돌려준다
+    let (wa, wb) = (asset.duration * 0.3, asset.duration * 0.8);
+    match crate::review_tools::recognize(&asset, wa, wb, "en") {
+        Ok(h) => c.check(!h.is_empty() && h.iter().all(|w| w.start >= wa - 0.3 && w.end <= wb + 0.5),
+            &format!("re-listen {wa:.1}~{wb:.1}s: {}", h.iter().map(|w| format!("{}[{:.1}]", w.text, w.start)).collect::<Vec<_>>().join(" "))),
+        Err(e) => c.check(false, &format!("re-listen: {e}")),
+    }
+
     // 대본 편집: 단어 3개를 지우면 그만큼 잘린다
     let mut p = Project::default();
     let mut a = asset.clone();

@@ -361,7 +361,104 @@ extension Project {
         tracks[loc.track].clips[loc.index] = c
     }
 
-    /// 속도 변경. 같은 트랙의 뒤 클립은 길이 변화만큼 당기거나 민다.
+    // MARK: 경계 조정 · 잘린 구간 복원
+
+    /// t 이후에 시작하는 모든 클립(except 제외)과 자막을 d초 뒤로 민다
+    mutating func rippleShift(from t: Double, by d: Double, except: UUID?) {
+        guard abs(d) > 1e-9 else { return }
+        for ti in tracks.indices {
+            for ci in tracks[ti].clips.indices where tracks[ti].clips[ci].id != except && tracks[ti].clips[ci].start >= t - Project.eps {
+                tracks[ti].clips[ci].start += d
+            }
+        }
+        for i in captions.indices where captions[i].start >= t - Project.eps {
+            captions[i].start += d
+            captions[i].end += d
+        }
+    }
+
+    /// 클립 가장자리를 원본 기준 seconds만큼 늘리거나(+) 줄인다(−). 뒤의 영상·자막은 함께 밀리거나 당겨진다.
+    /// 돌려주는 값: 실제로 바뀐 원본 초 (원본 처음/끝, 최소 길이에서 멈춘다)
+    @discardableResult
+    mutating func adjustEdge(clip id: UUID, end atEnd: Bool, seconds: Double, sourceDuration: Double) -> Double {
+        guard let loc = locate(clip: id) else { return 0 }
+        let c = tracks[loc.track].clips[loc.index]
+        guard c.kind == .media else { return 0 }
+        if seconds >= 0 {
+            let x = atEnd ? min(seconds, max(0, sourceDuration - c.sourceOut)) : min(seconds, max(0, c.sourceIn))
+            guard x > 1e-6 else { return 0 }
+            let t = atEnd ? c.end : c.start
+            if atEnd { tracks[loc.track].clips[loc.index].sourceOut += x } else { tracks[loc.track].clips[loc.index].sourceIn -= x }
+            rippleShift(from: t, by: x / c.speed, except: id)
+            return x
+        }
+        let x = min(-seconds, max(0, (c.sourceOut - c.sourceIn) - Project.minClipDuration * c.speed))
+        guard x > 1e-6 else { return 0 }
+        let d = x / c.speed
+        if atEnd { rippleDelete(from: c.end - d, to: c.end) } else { rippleDelete(from: c.start, to: c.start + d) }
+        return -x
+    }
+
+    /// 같은 원본을 잘라 이어 붙인 경계 (앞 클립, 뒤 클립, 잘린 원본 구간)
+    struct CutPoint {
+        var left: UUID
+        var right: UUID
+        var track: Int
+        var time: Double
+        var gap: ClosedRange<Double>
+    }
+
+    func cutPoints(track only: Int? = nil) -> [CutPoint] {
+        var out: [CutPoint] = []
+        for (ti, t) in tracks.enumerated() where only == nil || only == ti {
+            let clips = t.clips.sorted { $0.start < $1.start }
+            for i in clips.indices.dropFirst() {
+                let a = clips[i - 1], b = clips[i]
+                guard a.kind == .media, b.kind == .media, a.assetID != nil, a.assetID == b.assetID,
+                      abs(a.end - b.start) < 0.01, abs(a.speed - b.speed) < 0.0001, b.sourceIn > a.sourceOut + 0.001 else { continue }
+                out.append(CutPoint(left: a.id, right: b.id, track: ti, time: b.start, gap: a.sourceOut...b.sourceIn))
+            }
+        }
+        return out.sorted { $0.time < $1.time }
+    }
+
+    /// 잘린 경계에서 원본을 되살린다. before = 앞 클립 끝을 늘릴 원본 초, after = 뒤 클립 시작을 당길 원본 초.
+    /// 둘 다 nil이면 잘린 구간 전체를 되살리고 두 클립을 하나로 합친다. 돌려주는 값: 되살린 원본 구간
+    @discardableResult
+    mutating func restoreCut(_ cp: CutPoint, before: Double?, after: Double?) -> [ClosedRange<Double>] {
+        let gap = cp.gap.upperBound - cp.gap.lowerBound
+        var b = before ?? (after == nil ? gap : 0)
+        var a = after ?? 0
+        b = min(max(0, b), gap)
+        a = min(max(0, a), gap - b)
+        var out: [ClosedRange<Double>] = []
+        if b > 1e-6 {
+            adjustEdge(clip: cp.left, end: true, seconds: b, sourceDuration: .infinity)
+            out.append(cp.gap.lowerBound...(cp.gap.lowerBound + b))
+        }
+        if a > 1e-6 {
+            adjustEdge(clip: cp.right, end: false, seconds: a, sourceDuration: .infinity)
+            out.append((cp.gap.upperBound - a)...cp.gap.upperBound)
+        }
+        // 빈틈 없이 이어지면 한 클립으로
+        if let la = locate(clip: cp.left), let lb = locate(clip: cp.right), la.track == lb.track {
+            let l = tracks[la.track].clips[la.index], r = tracks[lb.track].clips[lb.index]
+            let alike = l.volume == r.volume && l.opacity == r.opacity && l.scale == r.scale && l.offsetX == r.offsetX && l.offsetY == r.offsetY
+                && l.shape == r.shape && l.backgroundEffect == r.backgroundEffect && l.showClicks == r.showClicks
+            if alike, abs(r.sourceIn - l.sourceOut) < 0.0005, abs(l.end - r.start) < 0.01 {
+                var m = l
+                m.sourceOut = r.sourceOut
+                m.fadeOut = r.fadeOut
+                let blurs = (l.blurs ?? []) + (r.blurs ?? []).filter { x in !(l.blurs ?? []).contains { $0.id == x.id } }
+                m.blurs = blurs.isEmpty ? nil : blurs
+                tracks[la.track].clips[la.index] = m
+                tracks[lb.track].clips.removeAll { $0.id == cp.right }
+            }
+        }
+        return out
+    }
+
+
     mutating func setSpeed(clip id: UUID, _ speed: Double) {
         guard let loc = locate(clip: id) else { return }
         let old = tracks[loc.track].clips[loc.index]

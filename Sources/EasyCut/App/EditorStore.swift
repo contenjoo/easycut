@@ -842,6 +842,14 @@ final class EditorStore: ObservableObject {
         return true
     }
 
+    /// 한 미디어의 10ms 음량 (없으면 계산해 둔다)
+    func loudness(of a: MediaAsset) async -> [Float]? {
+        if let l = loudness[a.id] { return l }
+        guard a.hasAudio, !a.isMissing, let l = try? await SilenceDetector.loudness(url: a.url) else { return nil }
+        loudness[a.id] = l
+        return l
+    }
+
     func audioSilenceRanges(_ settings: SilenceSettings) -> [ClosedRange<Double>] {
         project.audioSilenceRanges(loudness: loudness, settings: settings)
     }

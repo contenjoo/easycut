@@ -49,11 +49,16 @@ enum Transcriber {
     // MARK: 오디오 추출
 
     /// 파일의 오디오를 16kHz 모노 16비트 PCM으로 읽는다
-    static func pcm16k(url: URL) async throws -> [Int16] {
+    /// range: 원본의 이 구간만 (초)
+    static func pcm16k(url: URL, range: ClosedRange<Double>? = nil) async throws -> [Int16] {
         let asset = AVURLAsset(url: url)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         guard !tracks.isEmpty else { throw MediaError.failed("오디오 트랙이 없습니다.") }
         let reader = try AVAssetReader(asset: asset)
+        if let r = range {
+            reader.timeRange = CMTimeRange(start: CMTime(seconds: max(0, r.lowerBound), preferredTimescale: 48000),
+                                           end: CMTime(seconds: r.upperBound, preferredTimescale: 48000))
+        }
         let out = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: sampleRate,
