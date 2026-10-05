@@ -374,6 +374,7 @@
 "가져오기" = "Import";
 "개인정보 가리기" = "Hide personal info";
 "검은 상자" = "Black box";
+"경계 조정" = "Adjust clip edge";
 "계속 녹화 (⌥⌘P)" = "Resume (⌥⌘P)";
 "계정 기본 모델" = "Account default model";
 "계정 기본값" = "Account default";
@@ -699,6 +700,7 @@
 "소리 분석 중…" = "Analyzing audio…";
 "소리 켜기" = "Unmute";
 "소리 크기로 (음성 인식 불필요)" = "By loudness (no transcription needed)";
+"소리 확인" = "Listen to range";
 "소리만 (M4A)" = "Audio only (M4A)";
 "속도" = "Speed";
 "속도 (최대 20배)" = "Speed (up to 20×)";
@@ -958,6 +960,7 @@
 "자막 모두 삭제" = "Delete All Captions";
 "자막 생성" = "Generate captions";
 "자막 스타일" = "Caption style";
+"자막 읽기" = "Read captions";
 "자막 추가" = "Add caption";
 "자막 추가  (C)" = "Add Caption  (C)";
 "자막 탭에서 끌기" = "Drag in Captions tab";
@@ -976,6 +979,7 @@
 "작업 단계가 너무 많아 멈췄습니다. 요청을 나눠 주세요." = "Stopped: too many steps. Please split your request.";
 "잘라낼 구간이 없습니다" = "Nothing to cut";
 "잘라낼 무음이 없습니다" = "No silences to cut";
+"잘린 말 되살리기" = "Restore cut speech";
 "잘린 조각 %@곳을 하나로 합침" = "Joined %@ cut piece(s) back together";
 "잘린 조각 %lf곳을 하나로 합침" = "Joined %lf cut piece(s) back together";
 "잘린 조각 %lld곳을 하나로 합침" = "Joined %lld cut piece(s) back together";
@@ -1118,6 +1122,7 @@
 "클립 속성" = "Clip properties";
 "클립 여러 개 선택 (⇧/⌘ = 기존 선택에 더하기)" = "Select multiple clips (⇧/⌘ = add to selection)";
 "클립 이동" = "Move clip";
+"클립 확인" = "Inspect clips";
 "클립: %@개 · 자막: %@개" = "Clips: %@ · captions: %@";
 "클립: %@개 · 자막: %lf개" = "Clips: %@ · captions: %lf";
 "클립: %@개 · 자막: %lld개" = "Clips: %@ · captions: %lld";

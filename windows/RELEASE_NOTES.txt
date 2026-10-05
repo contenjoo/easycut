@@ -1,6 +1,14 @@
-EasyCut for Windows 0.3.0 (베타 / Beta)
+EasyCut for Windows 0.4.0 (베타 / Beta)
 
-[새 기능] 개인정보 가리기
+[새 기능] AI 편집 검토 도구
+• AI가 자막 전체를 읽고 교정할 수 있습니다.
+• 잘라 붙인 경계마다 잘린 말과 반쯤 잘린 말을 찾고, 경계의 소리를 확인하고(원음 다시 받아쓰기 포함), 잘린 말을 원본에서 되살립니다. 뒤의 영상·자막도 함께 맞춰집니다.
+• 예: "말이 끊긴 곳 찾아서 고쳐줘", "자막 전체 맞춤법 고쳐줘"
+
+[New in 0.4.0] AI review tools
+• The AI editor can read and fix every caption, find words cut at edit points, listen to a range (with a Whisper re-listen), and restore cut speech from the original, shifting later clips and captions.
+
+[0.3.0 새 기능] 개인정보 가리기
 • 클립을 고르고 오른쪽 "가리기 (개인정보)"에서 "자동으로 찾아 가리기"를 누르면, 화면 글자를 읽어 전화번호·주민등록번호·이메일·카드번호·계좌번호·여권번호가 보이는 자리와 시간만 가립니다.
 • 이름·주소는 "가릴 글자" 칸에 쉼표로 적으면 함께 찾습니다. 얼굴도 가릴 수 있습니다.
 • 미리보기에서 직접 영역을 그리고, 끌어서 옮기고, 크기를 바꿀 수 있습니다. 방식: 흐리게, 모자이크, 검은 상자.
