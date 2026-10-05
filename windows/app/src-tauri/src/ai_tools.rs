@@ -77,6 +77,20 @@ pub fn definitions() -> Vec<Value> {
              json!({ "url": string("영상 페이지 주소"), "quality": { "type": "string", "enum": ["720p", "1080p", "best", "audio"] },
                      "start": num("일부만 받을 때 시작(초)"), "end": num("일부만 받을 때 끝(초)") }), &["url"]),
         tool("transcribe", "타임라인 영상/오디오의 음성 인식(STT)을 시작한다. 끝나면 대본과 자막이 생긴다(수 초~수 분).", json!({}), &[]),
+        tool("read_screen_text", "지정 시간(타임라인 초)에 화면에 보이는 글자를 OCR로 읽어 줄마다 위치(x,y,w,h: 클립 원본 화면 비율 0~1, 왼쪽 위 원점)와 함께 돌려준다. 이름·주소처럼 형태가 정해지지 않은 개인정보를 찾아 add_blur로 가릴 때 쓴다.",
+             json!({ "time": num("타임라인 시간(초), 생략하면 재생헤드"), "clip_id": string("읽을 클립 id, 생략하면 그 시간 맨 위 영상/사진 클립") }), &[]),
+        tool("scan_privacy", "영상/사진 화면을 처음부터 끝까지 읽어(OCR) 전화번호·주민등록번호·이메일·카드번호·계좌번호·여권번호와 지정한 글자(이름 등), 선택적으로 얼굴이 보이는 자리와 시간을 찾아 자동으로 가린다. 다시 실행하면 전에 자동으로 찾은 영역은 새 결과로 바뀐다. 영상 길이에 따라 수 초~수 분 걸린다.",
+             json!({ "clip_ids": { "type": "array", "items": { "type": "string" }, "description": "대상 클립 id, 생략하면 타임라인의 모든 영상/사진 클립" },
+                     "keywords": { "type": "array", "items": { "type": "string" }, "description": "함께 가릴 글자 (이름·주소·회사명 등)" },
+                     "patterns": { "type": "boolean", "description": "번호·이메일 형태 찾기 (기본 true)" },
+                     "faces": { "type": "boolean", "description": "얼굴도 가리기 (기본 false)" },
+                     "style": { "type": "string", "enum": ["blur", "mosaic", "box"], "description": "blur=흐리게(기본), mosaic=모자이크, box=검은 상자" } }), &[]),
+        tool("add_blur", "클립 화면의 사각형 영역을 가린다. 좌표는 클립 원본 화면 비율(0~1, 왼쪽 위 원점, read_screen_text와 같은 기준). 시간은 타임라인 초이며 생략하면 클립 전체.",
+             json!({ "clip_id": string("클립 id"), "x": n, "y": n, "w": n, "h": n,
+                     "start": num("가리기 시작(타임라인 초), 선택"), "end": num("가리기 끝(타임라인 초), 선택"),
+                     "style": { "type": "string", "enum": ["blur", "mosaic", "box"] }, "label": string("무엇을 가렸는지 (예: 이름)") }), &["clip_id", "x", "y", "w", "h"]),
+        tool("remove_blurs", "클립의 가리기 영역을 지운다. 번호를 주지 않으면 모두 지운다. 번호는 get_project_state에 나오는 가리기 번호.",
+             json!({ "clip_id": string("클립 id"), "indices": { "type": "array", "items": { "type": "integer" } } }), &["clip_id"]),
         tool("undo", "마지막 편집을 되돌린다.", json!({ "steps": { "type": "integer", "description": "되돌릴 횟수 (기본 1)" } }), &[]),
     ]
 }
@@ -104,6 +118,10 @@ pub fn label(name: &str) -> String {
         "set_playback_speed" => "재생 속도",
         "import_url" => "링크 가져오기",
         "transcribe" => "음성 인식",
+        "read_screen_text" => "화면 글자 읽기",
+        "scan_privacy" => "개인정보 가리기",
+        "add_blur" => "영역 가리기",
+        "remove_blurs" => "가리기 지우기",
         "undo" => "되돌리기",
         "get_project_state" => "상태 확인",
         "get_transcript" => "대본 읽기",
@@ -581,6 +599,117 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
             (if made > 0 { format!("음성 인식 완료: 대본 단어 {words}개, 자막 {made}개 생성") } else { format!("음성 인식 완료: 대본 단어 {words}개") }, false)
         }
 
+        "read_screen_text" => {
+            let p = project(app);
+            let t = d(input, "time").unwrap_or_else(|| app.state::<AppState>().ui.lock().unwrap().time);
+            let visual = |c: &easycut_core::Clip| c.kind == ClipKind::Media && p.asset(c.asset_id).is_some_and(|a| a.kind != MediaKind::Audio);
+            let target = match s(input, "clip_id") {
+                Some(k) => find_clip(k, &p).and_then(|id| p.clip(id)).cloned(),
+                None => p.tracks.iter().rev().filter(|t| !t.hidden).find_map(|tr| tr.clips.iter().find(|c| visual(c) && t >= c.start && t < c.end()).cloned()),
+            };
+            let Some(c) = target.filter(|c| visual(c)) else { return err("그 시간에 화면이 있는 영상/사진 클립이 없습니다") };
+            let a = p.asset(c.asset_id).unwrap().clone();
+            let src = c.source_time(t.clamp(c.start, c.end() - 0.001));
+            match crate::privacy::screen_text(&a, src) {
+                Err(e) => (e, true),
+                Ok(lines) if lines.is_empty() => (format!("클립 {} {t:.2}초 화면에서 글자를 찾지 못했습니다", &c.id.to_string()[..8]), false),
+                Ok(lines) => {
+                    let mut o = vec![format!("클립 {} ({}) 타임라인 {t:.2}초 화면 글자 {}줄 [x,y,w,h]:", &c.id.to_string()[..8], a.name, lines.len())];
+                    for (text, r) in lines.iter().take(300) {
+                        o.push(format!("[{:.3},{:.3},{:.3},{:.3}] {text}", r.x, r.y, r.w, r.h));
+                    }
+                    (o.join("\n"), false)
+                }
+            }
+        }
+
+        "scan_privacy" => {
+            let p = project(app);
+            let mut ids: Vec<Id> = input.get("clip_ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).filter_map(|k| find_clip(k, &p)).collect()).unwrap_or_default();
+            if ids.is_empty() {
+                ids = p.tracks.iter().flat_map(|t| &t.clips).filter(|c| c.kind == ClipKind::Media && p.asset(c.asset_id).is_some_and(|a| a.kind != MediaKind::Audio)).map(|c| c.id).collect();
+            }
+            if ids.is_empty() {
+                return err("가릴 영상/사진 클립이 없습니다");
+            }
+            let opt = easycut_core::privacy::Options {
+                patterns: b(input, "patterns").unwrap_or(true),
+                faces: b(input, "faces").unwrap_or(false),
+                keywords: input.get("keywords").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect()).unwrap_or_default(),
+            };
+            let style = easycut_core::privacy::BlurStyle::parse(s(input, "style").unwrap_or(""));
+            let mut all = vec![];
+            for id in &ids {
+                match crate::privacy_scan_blocking(app, *id, &opt, style) {
+                    Ok(f) => all.extend(f),
+                    Err(e) => {
+                        emit_state(app);
+                        return (format!("화면 읽기 실패: {e}"), true);
+                    }
+                }
+            }
+            emit_state(app);
+            if all.is_empty() {
+                return (format!("{}개 클립에서 가릴 개인정보를 찾지 못했습니다", ids.len()), false);
+            }
+            (format!("{}개 클립에서 {}곳을 가렸습니다: {}", ids.len(), all.len(), crate::privacy_summary(&all)), false)
+        }
+
+        "add_blur" => {
+            use easycut_core::privacy::{BlurRegion, BlurStyle, MANUAL_LABEL};
+            let p = project(app);
+            let Some(c) = s(input, "clip_id").and_then(|k| find_clip(k, &p)).and_then(|id| p.clip(id)).cloned() else { return err("영상/사진 클립을 찾지 못했습니다") };
+            let Some(a) = p.asset(c.asset_id).filter(|a| a.kind != MediaKind::Audio) else { return err("영상/사진 클립을 찾지 못했습니다") };
+            let (Some(x), Some(y), Some(w), Some(h)) = (d(input, "x"), d(input, "y"), d(input, "w"), d(input, "h")) else { return err("x, y, w, h가 필요합니다") };
+            if w <= 0.0 || h <= 0.0 {
+                return err("w, h는 0보다 커야 합니다");
+            }
+            let image = a.kind == MediaKind::Image;
+            let mut r = BlurRegion {
+                x: x.clamp(0.0, 1.0), y: y.clamp(0.0, 1.0), w: w.min(1.0), h: h.min(1.0),
+                start: if image { 0.0 } else { c.source_in }, end: if image { 1e6 } else { c.source_out },
+                style: BlurStyle::parse(s(input, "style").unwrap_or("")),
+                label: s(input, "label").filter(|l| !l.is_empty()).unwrap_or(MANUAL_LABEL).to_string(),
+                ..Default::default()
+            };
+            if !image {
+                if let Some(v) = d(input, "start") { r.start = c.source_time(v.max(c.start)) }
+                if let Some(v) = d(input, "end") { r.end = c.source_time(v.min(c.end())) }
+                if r.end <= r.start {
+                    return err("끝 시간이 시작보다 앞입니다");
+                }
+            }
+            r.w = r.w.min(1.0 - r.x);
+            r.h = r.h.min(1.0 - r.y);
+            edit(app, |p| {
+                if let Some(c) = p.clip_mut(c.id) {
+                    let mut l = c.blurs();
+                    l.push(r);
+                    c.set_blurs(l);
+                }
+            });
+            ("가리기 영역 추가".into(), false)
+        }
+
+        "remove_blurs" => {
+            let p = project(app);
+            let Some(cid) = s(input, "clip_id").and_then(|k| find_clip(k, &p)) else { return err("클립을 찾지 못했습니다") };
+            let list = p.clip(cid).map(|c| c.blurs()).unwrap_or_default();
+            let idx: Vec<usize> = input.get("indices").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(|v| v as usize).filter(|&v| v < list.len()).collect()).unwrap_or_default();
+            let all = input.get("indices").and_then(Value::as_array).is_none_or(|a| a.is_empty());
+            if !all && idx.is_empty() {
+                return err("해당 번호의 가리기 영역이 없습니다");
+            }
+            let n = if all { list.len() } else { idx.len() };
+            edit(app, |p| {
+                if let Some(c) = p.clip_mut(cid) {
+                    let keep = if all { vec![] } else { list.iter().enumerate().filter(|(i, _)| !idx.contains(i)).map(|(_, r)| r.clone()).collect() };
+                    c.set_blurs(keep);
+                }
+            });
+            (format!("가리기 {n}곳 {}", if all { "모두 지움" } else { "지움" }), false)
+        }
+
         "undo" => {
             let n = i(input, "steps").unwrap_or(1).clamp(1, 50);
             {
@@ -636,6 +765,10 @@ fn project_state(app: &AppHandle) -> String {
                 "  - id {} | {} | {:.2}~{:.2}초 | 원본 {:.2}~{:.2} | {}배속 | 볼륨 {:.0}% | 크기 {:.0}%",
                 &c.id.to_string()[..8], label, c.start, c.end(), c.source_in, c.source_out, c.speed, c.volume * 100.0, c.scale * 100.0
             ));
+            for (n, r) in c.blurs().iter().enumerate().take(30) {
+                let (a, b) = (c.timeline_time(r.start.max(c.source_in)), c.timeline_time(r.end.min(c.source_out)));
+                o.push(format!("      가리기 [{n}] {} {:?} [{:.3},{:.3},{:.3},{:.3}] {a:.2}~{b:.2}초", r.label, r.style, r.x, r.y, r.w, r.h));
+            }
         }
     }
     o.push(format!("자막 {}개 (표시 {}, 크기 {}, 위치 {:.2})", p.captions.len(), if p.show_captions { "켬" } else { "끔" }, p.caption_style.font_size as i64, p.caption_style.position_y));

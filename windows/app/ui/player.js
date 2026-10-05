@@ -1,5 +1,6 @@
 // 미리보기: 지금 시간에 걸린 클립마다 <video>/<audio>/<img>를 두고 한 시계에 맞춰 재생한다
 import { S, U, onTime } from "./app.js";
+import { BlurLayer } from "./privacy.js";
 
 const src = (path) => window.__TAURI__.core.convertFileSrc(path);
 // 맥 앱과 같은 속도 단계. 16배를 넘으면 영상 요소는 16배로 돌리고 시계만 더 빨리 가며 따라잡는다
@@ -16,6 +17,8 @@ export class Player {
     this.fx.id = "clickfx";
     this.fx.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:90";
     box.appendChild(this.fx);
+    // 개인정보 가리기 영역
+    this.blur = new BlurLayer(box, this);
     box.querySelector("#video").remove();
     box.querySelector("#still").remove();
     this.els = new Map(); // clip id → element
@@ -195,6 +198,7 @@ export class Player {
       }
     }
     this.drawClicks(act, t);
+    this.blur.draw(act, t);
     // 텍스트 클립 + 자막
     this.overlay.innerHTML = "";
     const unit = this.ch / 1080;

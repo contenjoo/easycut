@@ -2,6 +2,7 @@
 
 pub mod clip_ops;
 pub mod model;
+pub mod privacy;
 pub mod silence;
 pub mod timeline_ops;
 pub mod transcript_ops;

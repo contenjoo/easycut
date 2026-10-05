@@ -7,6 +7,7 @@ mod edits;
 mod export;
 mod link;
 mod media;
+mod privacy;
 mod record;
 mod recovery;
 mod selftest;
@@ -618,6 +619,77 @@ fn update_clip(app: AppHandle, st: State<AppState>, id: Id, props: HashMap<Strin
                         _ => {}
                     }
                 }
+            }
+        })
+    });
+    changed(&app, &st)
+}
+
+// MARK: 개인정보 가리기
+
+/// 클립 화면을 읽어 개인정보 자리를 찾아 가린다. 전에 자동으로 찾은 영역은 바뀌고 직접 그린 영역은 남는다.
+pub(crate) fn privacy_scan_blocking(app: &AppHandle, clip: Id, opt: &easycut_core::privacy::Options, style: easycut_core::privacy::BlurStyle) -> Res<Vec<easycut_core::privacy::BlurRegion>> {
+    use easycut_core::privacy::MANUAL_LABEL;
+    let st = app.state::<AppState>();
+    let (c, a) = with(&st, |e| {
+        let c = e.project.clip(clip).cloned();
+        let a = c.as_ref().and_then(|c| e.project.asset(c.asset_id).cloned());
+        (c, a)
+    });
+    let (Some(c), Some(a)) = (c, a) else { return Err("영상/사진 클립을 찾지 못했습니다".into()) };
+    if a.kind == MediaKind::Audio {
+        return Err("화면이 있는 영상이나 사진을 골라 주세요.".into());
+    }
+    if !std::path::Path::new(&a.path).exists() {
+        return Err(format!("{} 파일을 찾을 수 없습니다.", a.name));
+    }
+    let cancel = st.cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
+    job(app, "privacy", 0.0, "화면 읽는 중…");
+    let r = privacy::scan(&a, c.source_in, c.source_out, opt, |v| job(app, "privacy", v, "화면 읽는 중…"), || cancel.load(Ordering::SeqCst));
+    job(app, "privacy", 1.0, "");
+    let mut found = r?;
+    for f in &mut found {
+        f.style = style;
+    }
+    with(&st, |e| {
+        e.apply(|p| {
+            if let Some(c) = p.clip_mut(clip) {
+                let mut all: Vec<_> = c.blurs().into_iter().filter(|b| b.label == MANUAL_LABEL).collect();
+                all.extend(found.iter().cloned());
+                c.set_blurs(all);
+            }
+        })
+    });
+    Ok(found)
+}
+
+/// 찾은 영역 종류별 개수 ("전화번호 2, 이메일 1")
+pub(crate) fn privacy_summary(found: &[easycut_core::privacy::BlurRegion]) -> String {
+    let mut kinds: std::collections::BTreeMap<&str, usize> = Default::default();
+    for r in found {
+        *kinds.entry(r.label.as_str()).or_default() += 1;
+    }
+    kinds.iter().map(|(k, n)| format!("{k} {n}")).collect::<Vec<_>>().join(", ")
+}
+
+#[tauri::command]
+async fn privacy_scan(app: AppHandle, clip: Id, patterns: bool, faces: bool, keywords: Vec<String>, style: String) -> Res<Value> {
+    let a2 = app.clone();
+    let opt = easycut_core::privacy::Options { patterns, faces, keywords: keywords.into_iter().map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect() };
+    let style = easycut_core::privacy::BlurStyle::parse(&style);
+    let found = tauri::async_runtime::spawn_blocking(move || privacy_scan_blocking(&a2, clip, &opt, style)).await.map_err(|e| e.to_string())??;
+    let state = emit_state(&app);
+    Ok(json!({ "count": found.len(), "summary": privacy_summary(&found), "state": state }))
+}
+
+/// 클립의 가리기 목록을 통째로 바꾼다 (화면에서 그리기·옮기기·지우기를 마친 뒤 한 번)
+#[tauri::command]
+fn set_blurs(app: AppHandle, st: State<AppState>, clip: Id, blurs: Vec<easycut_core::privacy::BlurRegion>) -> Value {
+    with(&st, |e| {
+        e.apply(|p| {
+            if let Some(c) = p.clip_mut(clip) {
+                c.set_blurs(blurs.into_iter().map(|b| b.clamped()).collect());
             }
         })
     });
@@ -1374,6 +1446,7 @@ pub fn run() {
             stt_models, stt_select, stt_download, export_transcript,
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
+            privacy_scan, set_blurs,
             rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder, rec_clicks, rec_area,
         ])
         .setup(|app| {

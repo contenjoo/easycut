@@ -106,6 +106,12 @@ pub fn run(dir: &Path) -> i32 {
     let _ = std::fs::create_dir_all(dir);
     let mut c = Checker { failed: 0 };
     println!("EasyCut for Windows self-test ({})", std::env::consts::OS);
+    // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
+    if std::env::var("EASYCUT_SELFTEST_ONLY").as_deref() == Ok("privacy") {
+        privacy_test(&mut c, dir);
+        println!("\n{}", if c.failed == 0 { "ALL PASSED".to_string() } else { format!("{} FAILED", c.failed) });
+        return if c.failed == 0 { 0 } else { 1 };
+    }
     println!("1) tools");
     for t in ["ffmpeg", "ffprobe", "whisper-cli"] {
         let p = tools::find_tool(t);
@@ -254,6 +260,149 @@ pub fn run(dir: &Path) -> i32 {
         println!("  skip (no model/engine)");
     }
 
+    privacy_test(&mut c, dir);
+
     println!("\n{}", if c.failed == 0 { "ALL PASSED".to_string() } else { format!("{} FAILED", c.failed) });
     if c.failed == 0 { 0 } else { 1 }
+}
+
+/// 8) 개인정보 가리기: 글자가 나오는 영상을 만들고 → (윈도우) OCR로 찾고 → 가려서 내보낸 뒤 다시 읽어도 안 보이는지
+fn privacy_test(c: &mut Checker, dir: &Path) {
+    use crate::privacy;
+    use easycut_core::privacy::{BlurRegion, BlurStyle, Options};
+    println!("8) privacy blur");
+    let Some(ff) = tools::find_tool("ffmpeg") else { return c.check(false, "ffmpeg missing") };
+    let libass = export::has_subtitles_filter(&ff);
+    // 0~3초 전화번호, 3~6초 이메일, 내내 이름 (영어: 러너에 한국어 글자 인식이 없을 수 있다)
+    let mut p = Project::default();
+    p.canvas_width = 1280.0;
+    p.canvas_height = 720.0;
+    let mut text = |t: &str, y: f64, track: usize, at: f64, dur: f64| {
+        let id = p.insert_text(t, track, at, dur);
+        if let Some(cl) = p.clip_mut(id) {
+            cl.text_style.font_size = 60.0;
+            cl.text_style.position_y = y;
+        }
+    };
+    text("Call 010-2345-6789", 0.3, 0, 0.0, 3.0);
+    text("Mail kim.minsu@example.com", 0.55, 1, 3.0, 3.0);
+    text("Owner Hong Gildong", 0.8, 2, 0.0, 6.0);
+    p.normalize();
+    let src = dir.join("privacy_src.mp4");
+    let o = export::Options { path: src.to_string_lossy().to_string(), height: 0, burn_captions: false, format: "mp4".into(), range: None };
+    let made = if libass {
+        export::export(&p, &o, |_| {}, || false)
+    } else {
+        // 글자를 그릴 수 없는 ffmpeg (맥 개발 환경): 내보내기 필터만 검사
+        println!("  note: no libass → plain test video, OCR checks skipped");
+        run_ffmpeg(&["-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30:duration=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", &o.path])
+    };
+    if let Err(e) = made {
+        return c.check(false, &format!("make text video: {e}"));
+    }
+    let va = match media::probe(&src) {
+        Ok(a) => a,
+        Err(e) => return c.check(false, &format!("probe text video: {e}")),
+    };
+    let opt = Options { patterns: true, faces: false, keywords: vec!["Gildong".into()] };
+    let ocr = if libass { privacy::Reader::new(false) } else { Err("no text video".into()) };
+    let found: Vec<BlurRegion> = match &ocr {
+        Ok(r) => {
+            println!("  OCR language: {}", r.language());
+            let t0 = std::time::Instant::now();
+            match privacy::scan(&va, 0.0, va.duration, &opt, |_| {}, || false) {
+                Ok(f) => {
+                    println!("  {:.1}s video read in {:.1}s: {}", va.duration, t0.elapsed().as_secs_f64(),
+                        f.iter().map(|r| format!("{} {:.1}~{:.1} [{:.2},{:.2}]", r.label, r.start, r.end, r.y, r.h)).collect::<Vec<_>>().join(", "));
+                    let one = |l: &str| f.iter().filter(|r| r.label == l).cloned().collect::<Vec<_>>();
+                    let (ph, em, nm) = (one("전화번호"), one("이메일"), one("지정한 글자"));
+                    c.check(ph.len() == 1 && ph[0].start <= 0.01 && ph[0].end >= 2.9 && ph[0].end <= 4.0, "video: phone number 0~3s");
+                    c.check(em.len() == 1 && em[0].start >= 2.0 && em[0].start <= 3.01 && em[0].end >= 5.9, "video: email 3~6s");
+                    c.check(nm.len() == 1 && nm[0].end >= 5.9, "video: given name the whole time");
+                    if let Some(r) = ph.first() {
+                        c.check(r.y < 0.3 && r.y + r.h > 0.3 && r.x > 0.2, "video: phone box on the digits only");
+                    }
+                    f
+                }
+                Err(e) => {
+                    c.check(false, &format!("scan: {e}"));
+                    vec![]
+                }
+            }
+        }
+        Err(e) if cfg!(windows) && libass => {
+            c.check(false, &format!("OCR engine: {e}"));
+            vec![]
+        }
+        Err(_) => {
+            println!("  skip OCR (not Windows)");
+            vec![]
+        }
+    };
+
+    // 가린 영상 내보내기: 세 가지 방식이 모두 필터 그래프에 들어가는지
+    let mut blurs = found.clone();
+    if blurs.is_empty() {
+        blurs = vec![
+            BlurRegion { x: 0.3, y: 0.24, w: 0.4, h: 0.12, start: 0.0, end: 3.0, style: BlurStyle::Blur, label: "전화번호".into(), ..Default::default() },
+            BlurRegion { x: 0.25, y: 0.49, w: 0.5, h: 0.12, start: 3.0, end: 6.0, style: BlurStyle::Mosaic, label: "이메일".into(), ..Default::default() },
+            BlurRegion { x: 0.45, y: 0.75, w: 0.2, h: 0.1, start: 0.0, end: 6.0, style: BlurStyle::Box, label: "지정한 글자".into(), ..Default::default() },
+        ];
+    } else {
+        let n = blurs.len();
+        blurs[n - 1].style = BlurStyle::Box;
+        if n > 1 {
+            blurs[0].style = BlurStyle::Mosaic;
+        }
+    }
+    let mut q = Project::default();
+    q.canvas_width = 1280.0;
+    q.canvas_height = 720.0;
+    q.assets.push(va.clone());
+    let cid = q.insert(&va, 0, 0.0, va.duration);
+    if let Some(cl) = q.clip_mut(cid) {
+        cl.set_blurs(blurs.clone());
+    }
+    let out = dir.join("privacy_blurred.mp4");
+    let o = export::Options { path: out.to_string_lossy().to_string(), height: 720, burn_captions: false, format: "mp4".into(), range: None };
+    match export::export(&q, &o, |_| {}, || false).and_then(|_| media::probe(&out)) {
+        Ok(a) => c.check((a.duration - va.duration).abs() < 0.25, &format!("export with {} hidden areas ({:.2}s)", blurs.len(), a.duration)),
+        Err(e) => return c.check(false, &format!("export blurred: {e}")),
+    }
+    for t in [1.0, 4.0] {
+        let png = dir.join(format!("privacy_{t:.0}.png"));
+        let o = export::Options { path: png.to_string_lossy().to_string(), height: 0, burn_captions: false, format: "png".into(), range: Some((t, t + 0.04)) };
+        if let Err(e) = export::export(&q, &o, |_| {}, || false) {
+            c.check(false, &format!("snapshot {t}s: {e}"));
+            continue;
+        }
+        if ocr.is_err() {
+            c.check(std::fs::metadata(&png).map(|m| m.len() > 1000).unwrap_or(false), &format!("blurred snapshot {t}s written"));
+            continue;
+        }
+        let img = match media::probe(&png) {
+            Ok(a) => a,
+            Err(e) => {
+                c.check(false, &format!("probe snapshot: {e}"));
+                continue;
+            }
+        };
+        let left = privacy::scan(&img, 0.0, 0.0, &opt, |_| {}, || false).unwrap_or_default();
+        let lines = privacy::screen_text(&img, 0.0).unwrap_or_default().into_iter().map(|l| l.0).collect::<Vec<_>>().join(" / ");
+        c.check(left.is_empty(), &format!("after hiding, nothing found at {t}s (read: {lines})"));
+    }
+    // 사진: 가리기 전 장면에서 전화번호·이름
+    if ocr.is_ok() {
+        let still = dir.join("privacy_still.png");
+        let o = export::Options { path: still.to_string_lossy().to_string(), height: 0, burn_captions: false, format: "png".into(), range: Some((1.0, 1.04)) };
+        match export::export(&p, &o, |_| {}, || false).and_then(|_| media::probe(&still)) {
+            Ok(img) => {
+                let f = privacy::scan(&img, 0.0, 0.0, &opt, |_| {}, || false).unwrap_or_default();
+                let mut labels: Vec<_> = f.iter().map(|r| r.label.as_str()).collect();
+                labels.sort();
+                c.check(labels == ["전화번호", "지정한 글자"], &format!("photo: phone + name found ({})", labels.join(", ")));
+            }
+            Err(e) => c.check(false, &format!("still: {e}")),
+        }
+    }
 }

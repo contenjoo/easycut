@@ -169,12 +169,13 @@ fn build_ass(p: &Project, w: i64, h: i64, captions: bool) -> Option<String> {
 /// 구간만 남긴 프로젝트 (앞뒤를 잘라 내고 0초부터)
 fn slice(p: &Project, a: f64, b: f64) -> Project {
     let mut q = p.clone();
-    let end = q.duration() + 1.0;
-    if b < end {
-        q.ripple_delete(b, end);
-    }
+    // 앞부터 자른다: 뒤를 먼저 자르면 남은 꼬리가 짧아(장면 한 장은 1프레임) 나눌 수 없어 앞이 안 잘린다
     if a > 0.0 {
         q.ripple_delete(0.0, a);
+    }
+    let end = q.duration() + 1.0;
+    if b - a < end {
+        q.ripple_delete(b - a, end);
     }
     q
 }
@@ -252,7 +253,41 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
                 let y = (h - vh) as f64 / 2.0 + c.offset_y * h as f64;
                 let speed = if a.kind == MediaKind::Image { 1.0 } else { c.speed };
                 let crop = if shape == "circle" { "crop='min(iw,ih)':'min(iw,ih)'," } else { "" };
-                let mut chain = format!("[{i}:v]setpts=(PTS-STARTPTS)/{speed:.6},fps={fps},{crop}scale={vw}:{vh},format=yuva420p");
+                let mut head = format!("[{i}:v]setpts=(PTS-STARTPTS)/{speed:.6},fps={fps},");
+                // 가리기는 원본 크기에서 다른 효과보다 먼저 (맥과 같음)
+                let blurs = c.blurs();
+                if !blurs.is_empty() {
+                    let mut cur = format!("bl{k}_0");
+                    let (sw, sh) = (even(a.width), even(a.height));
+                    let _ = writeln!(graph, "{head}scale={sw}:{sh}[{cur}];");
+                    for (j, r) in blurs.iter().enumerate() {
+                        let (ta, tb) = ((r.start - c.source_in) / speed, (r.end - c.source_in) / speed);
+                        if tb <= 0.0 || ta >= dur {
+                            continue;
+                        }
+                        let rx = ((r.x * sw as f64).floor() as i64).clamp(0, sw - 2);
+                        let ry = ((r.y * sh as f64).floor() as i64).clamp(0, sh - 2);
+                        let rw = ((r.w * sw as f64).ceil() as i64).clamp(2, sw - rx);
+                        let rh = ((r.h * sh as f64).ceil() as i64).clamp(2, sh - ry);
+                        let en = format!("enable='between(t,{:.4},{:.4})'", ta.max(0.0), tb.min(dur + 1.0));
+                        let next = format!("bl{k}_{}", j + 1);
+                        if r.style == easycut_core::privacy::BlurStyle::Box {
+                            let _ = writeln!(graph, "[{cur}]drawbox=x={rx}:y={ry}:w={rw}:h={rh}:color=black:t=fill:{en}[{next}];");
+                        } else {
+                            let mosaic = r.style == easycut_core::privacy::BlurStyle::Mosaic;
+                            let cell = if mosaic { (rw.min(rh) / 5).max(6) } else { (rw.min(rh) / 3).max(4) };
+                            let (dw, dh) = ((rw / cell).max(1), (rh / cell).max(1));
+                            // 모자이크 위에 흐림을 겹쳐 글자를 되살릴 수 없게 한다
+                            let soft = if mosaic { String::new() } else { format!(",gblur=sigma={:.1}", cell as f64 * 0.8) };
+                            let _ = writeln!(graph, "[{cur}]split=2[m{next}][c{next}];");
+                            let _ = writeln!(graph, "[c{next}]crop={rw}:{rh}:{rx}:{ry},scale={dw}:{dh}:flags=area,scale={rw}:{rh}:flags=neighbor{soft}[b{next}];");
+                            let _ = writeln!(graph, "[m{next}][b{next}]overlay={rx}:{ry}:{en}[{next}];");
+                        }
+                        cur = next;
+                    }
+                    head = format!("[{cur}]");
+                }
+                let mut chain = format!("{head}{crop}scale={vw}:{vh},format=yuva420p");
                 match shape {
                     "circle" => {
                         let rim = (vw as f64 * 0.018).max(2.0);

@@ -9,6 +9,7 @@ import { showMenu } from "./menu.js";
 import { startDrag } from "./drag.js";
 import { initTranscript, renderTranscript as renderTranscriptTab, highlightWord, deleteWords, transcribeTimeline, transcribeAsset, silenceDialog, sttSettings, focusSearch, selectRange, fixSelectedWord, exportTxt } from "./transcript.js";
 import { SPEEDS } from "./player.js";
+import { privacyHTML, wirePrivacy, deleteSelectedBlur, cancelBlurEdit } from "./privacy.js";
 
 const tauri = window.__TAURI__;
 const invoke = (cmd, args) => tauri.core.invoke(cmd, args);
@@ -431,6 +432,7 @@ function renderInspector() {
         ${slider("opacity", "불투명도", 0, 1, 0.01, c.opacity, pct)}
         ${!isText ? `<div class="row"><label>${L("모양")}</label><div class="seg small">${[["none", "기본"], ["circle", "원"], ["rounded", "둥근 사각형"]].map(([v, t]) => `<button data-shape="${v}" class="${shape === v ? "on" : ""}">${L(t)}</button>`).join("")}</div></div>` : ""}
         <div class="row"><span class="hint">${L("화면 배치")}</span><button class="mini" data-layout="full">${L("전체")}</button><button class="mini" data-layout="br">PIP ↘</button><button class="mini" data-layout="bl">PIP ↙</button></div>` : ""}
+      ${!isText && a && (kind === "video" || kind === "image") ? `<div id="i-privacy">${privacyHTML(c, a)}</div>` : ""}
       <h3>${L("전환 (페이드)")}</h3>
       ${slider("fadeIn", "페이드 인", 0, 3, 0.1, c.fadeIn, fmts.fadeIn)}
       ${slider("fadeOut", "페이드 아웃", 0, 3, 0.1, c.fadeOut, fmts.fadeOut)}
@@ -455,6 +457,7 @@ function renderInspector() {
       const L0 = { full: { scale: 1, offsetX: 0, offsetY: 0 }, br: { scale: 0.3, offsetX: 0.33, offsetY: 0.32 }, bl: { scale: 0.3, offsetX: -0.33, offsetY: 0.32 } }[b.dataset.layout];
       run("update_clip", { id: c.id, props: L0 });
     }));
+    if (q("#i-privacy")) wirePrivacy(q("#i-privacy"), c, a, player);
     q("#i-split").onclick = split;
     q("#i-dup").onclick = commands.duplicate;
     q("#i-del").onclick = () => deleteSelection(true);
@@ -891,11 +894,12 @@ function onKey(e) {
     case "Delete": case "Backspace":
       e.preventDefault();
       if (S.selWords.size && document.querySelector("#tab-transcript.on")) return deleteWords();
+      if (deleteSelectedBlur()) return;
       return deleteSelection(false);
     case "Enter": case "NumpadEnter":
       if (S.selWords.size && document.querySelector("#tab-transcript.on")) { e.preventDefault(); fixSelectedWord(); }
       return;
-    case "Escape": commands.deselect(); return;
+    case "Escape": if (cancelBlurEdit()) { player.refresh(); return; } commands.deselect(); return;
     case "KeyS": split(); return;
     case "KeyI": setMark("in"); return;
     case "KeyO": setMark("out"); return;
@@ -947,7 +951,7 @@ async function init() {
   $("#vol-ic").textContent = S.volume === 0 ? "🔇" : "🔊";
   $("#zoom").oninput = (e) => timeline.setZoom(Math.pow(10, +e.target.value));
   window.addEventListener("keydown", onKey);
-  window.addEventListener("selection", () => { renderInspector(); timeline.drawSoon(); reportUi(); });
+  window.addEventListener("selection", () => { renderInspector(); timeline.drawSoon(); player?.refresh(); reportUi(); });
   await listen("job", (e) => jobUpdate(e.payload));
   await listen("project", (e) => setState(e.payload));
   await listen("toast", (e) => toast(L(e.payload.text)));

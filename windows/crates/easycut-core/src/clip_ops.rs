@@ -112,8 +112,16 @@ impl Project {
                     && (a.offset_y - b.offset_y).abs() < 0.0001;
                 if same {
                     let (out, fade) = (b.source_out, b.fade_out);
+                    // 가리기 영역은 원본 시간 기준이라 그대로 합친다
+                    let mut blurs = a.blurs();
+                    for r in b.blurs() {
+                        if !blurs.iter().any(|x| x.id == r.id) {
+                            blurs.push(r);
+                        }
+                    }
                     clips[p].source_out = out;
                     clips[p].fade_out = fade;
+                    clips[p].set_blurs(blurs);
                     clips.remove(i);
                     merged += 1;
                 } else {
