@@ -1,5 +1,20 @@
-EasyCut for Windows 0.2.0 (베타 / Beta)
+EasyCut for Windows 0.3.0 (베타 / Beta)
 
+[새 기능] 개인정보 가리기
+• 클립을 고르고 오른쪽 "가리기 (개인정보)"에서 "자동으로 찾아 가리기"를 누르면, 화면 글자를 읽어 전화번호·주민등록번호·이메일·카드번호·계좌번호·여권번호가 보이는 자리와 시간만 가립니다.
+• 이름·주소는 "가릴 글자" 칸에 쉼표로 적으면 함께 찾습니다. 얼굴도 가릴 수 있습니다.
+• 미리보기에서 직접 영역을 그리고, 끌어서 옮기고, 크기를 바꿀 수 있습니다. 방식: 흐리게, 모자이크, 검은 상자.
+• AI 편집에 "개인정보 찾아서 가려줘"라고 말해도 됩니다.
+• 한국어 글자를 읽으려면 윈도우에 한국어 언어가 설치되어 있어야 합니다.
+• 고친 점: "현재 장면 PNG 저장"이 고른 장면 대신 클립 첫 장면을 저장하던 문제
+
+[New in 0.3.0] Hide personal information
+• "Find and hide" reads the text on screen and hides phone, ID, card, account and passport numbers and emails only where and when they appear. Add names or other words, and optionally faces.
+• Draw, move and resize areas on the preview. Styles: blur, mosaic, black box. The AI editor can do it too.
+• Fixed: "Save current frame as PNG" saved the clip's first frame instead of the chosen one.
+
+
+[0.2.0 새 기능]
 맥 버전의 기능을 윈도우에도 넣었습니다.
 • AI 편집: "말 없는 부분 잘라줘"처럼 말로 편집 (Claude 또는 ChatGPT 계정으로 버튼 하나 로그인, API 키도 가능). Claude 데스크톱·Claude Code·Codex에서도 EasyCut 조작
 • 화면·얼굴 녹화: 전체 화면·창·영역, 원 모양 얼굴 카메라, 마이크·컴퓨터 소리, 일시정지, 마우스 클릭 강조
