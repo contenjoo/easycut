@@ -131,7 +131,10 @@ fn speech_test(c: &mut Checker, speech: &Path, expected: &str) {
                 &format!("caption sync: {} of {} measured (median {:+.2}s), after -0.25s shift: {}", r0.measures.len(), q.captions.len(), r0.median,
                     diffs.iter().map(|d| format!("{d:+.2}")).collect::<Vec<_>>().join(" ")));
             let r2 = { let mut z = q.clone(); z.snap_captions(&r1.measures); z.caption_sync(&loud, &ths, 0.0, f64::INFINITY, 0.6) };
-            c.check(r2.measures.iter().all(|m| m.offset().abs() < 0.03), "caption snap: all measured within 0.03s");
+            // 맞춘 자막만 본다 (맞추기 전에 잴 수 없던 자막은 그대로라 제외)
+            let snapped: Vec<String> = r2.measures.iter().filter(|m| r1.measures.iter().any(|b| b.index == m.index)).map(|m| format!("[{}]{:+.2}", m.index, m.offset())).collect();
+            let bad = r2.measures.iter().filter(|m| r1.measures.iter().any(|b| b.index == m.index)).any(|m| m.offset().abs() >= 0.03);
+            c.check(!snapped.is_empty() && !bad, &format!("caption snap: snapped captions within 0.03s: {}", snapped.join(" ")));
         }
         Err(e) => c.check(false, &format!("pcm for sync: {e}")),
     }
