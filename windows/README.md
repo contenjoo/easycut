@@ -1,4 +1,4 @@
-# EasyCut for Windows (beta)
+# EasyCut for Windows
 
 The Windows edition of EasyCut: a Tauri 2 app (Rust backend + HTML/JS UI) that shares the editing rules and the `.easycut` project format with the Mac app.
 
