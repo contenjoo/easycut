@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EasyCut — 말을 지우면 영상이 잘리는 무료 영상 편집기</title>
+<meta name="description" content="EasyCut은 대본으로 영상을 편집하는 무료 오픈소스 Mac·Windows 영상 편집기입니다. 음성 인식, 무음 컷, 자막, 화면 녹화, AI 편집.">
+<meta property="og:title" content="EasyCut — 말을 지우면 영상이 잘립니다">
+<meta property="og:description" content="대본으로 편집하는 무료 오픈소스 영상 편집기 (Mac · Windows)">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://contenjoo.github.io/easycut/">
+<meta property="og:image" content="https://contenjoo.github.io/easycut/screenshots/transcript.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect width='26' height='26' rx='7' fill='%231e1f24'/%3E%3Crect x='4' y='11' width='18' height='5' rx='2' fill='%232f6fc2'/%3E%3Crect x='14' y='4' width='2' height='18' fill='%23e5392f'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700;800&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 편집 프로그램의 대본 패널 + 타임라인을 그대로 첫 화면에 — 그 아래로 화면, 기능, 설치가 타임라인처럼 이어진다 */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --ink: #15171c;
+  --muted: #5b6070;
+  --line: #dfe2e8;
+  --clip: #2f6fc2;      /* 앱의 영상 클립 색 */
+  --clip-soft: #dbe7f7;
+  --audio: #26915f;     /* 오디오 클립 색 */
+  --caption: #8c4fb0;   /* 자막 클립 색 */
+  --playhead: #e5392f;  /* 재생헤드·잘라낼 곳 */
+  --cut-soft: #fbe1df;
+  --panel: #1e1f24;     /* 앱 타임라인 바탕 */
+  --panel-row: #26282e;
+  --panel-ink: #e9eaee;
+  --panel-muted: #9a9cab;
+  --display: "Hahmlet", "AppleMyungjo", "Noto Serif KR", serif;
+  --body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121317; --surface: #1a1c21; --ink: #eceef2; --muted: #a2a7b6; --line: #2c2f37;
+    --clip: #4d8ee0; --clip-soft: #1f3150; --audio: #3db67c; --caption: #b67ad8;
+    --playhead: #ff5a4f; --cut-soft: #4a2220;
+    --panel: #1e1f24; --panel-row: #26282e; --panel-ink: #e9eaee; --panel-muted: #9a9cab;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121317; --surface: #1a1c21; --ink: #eceef2; --muted: #a2a7b6; --line: #2c2f37;
+  --clip: #4d8ee0; --clip-soft: #1f3150; --audio: #3db67c; --caption: #b67ad8;
+  --playhead: #ff5a4f; --cut-soft: #4a2220;
+  --panel: #1e1f24; --panel-row: #26282e; --panel-ink: #e9eaee; --panel-muted: #9a9cab;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 16px; line-height: 1.65;
+  padding-inline: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin-inline: auto; }
+a { color: var(--clip); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--clip); outline-offset: 3px; border-radius: 6px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+p { margin: 0; }
+.tc { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* 머리 */
+header.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding-block: 18px; border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; color: var(--ink); font-size: 17px; }
+.brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--panel); position: relative; overflow: hidden; flex: none; }
+.brand-mark::before { content: ""; position: absolute; left: 4px; right: 4px; top: 11px; height: 5px; border-radius: 2px; background: var(--clip); }
+.brand-mark::after { content: ""; position: absolute; left: 14px; top: 4px; bottom: 4px; width: 2px; background: var(--playhead); }
+nav.links { display: flex; gap: 20px; flex-wrap: wrap; font-size: 15px; }
+nav.links a { color: var(--muted); text-decoration: none; }
+nav.links a:hover { color: var(--ink); }
+
+/* 첫 화면 */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 48px; align-items: center; padding-block: 64px 56px; }
+.eyebrow { font-family: var(--mono); font-size: 13px; color: var(--muted); letter-spacing: 0.04em; display: flex; gap: 10px; align-items: center; }
+.eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--playhead); }
+.hero h1 { font-size: clamp(38px, 5.4vw, 62px); line-height: 1.12; font-weight: 800; margin-top: 18px; }
+.hero h1 .struck { text-decoration: line-through; text-decoration-color: var(--playhead); text-decoration-thickness: 0.08em; color: var(--muted); }
+.lede { font-size: 18px; color: var(--muted); margin-top: 20px; max-width: 34em; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.btn {
+  display: inline-flex; flex-direction: column; gap: 2px; padding: 12px 20px; border-radius: 10px;
+  text-decoration: none; font-weight: 600; font-size: 16px; line-height: 1.3; border: 1px solid transparent;
+}
+.btn small { font-family: var(--mono); font-weight: 400; font-size: 12px; opacity: 0.8; }
+.btn-primary { background: var(--clip); color: #fff; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost { border-color: var(--line); color: var(--ink); background: var(--surface); }
+.btn-ghost:hover { border-color: var(--muted); }
+.fine { margin-top: 14px; font-size: 13px; color: var(--muted); }
+
+/* 실제로 해 보는 편집기 */
+.editor { background: var(--panel); color: var(--panel-ink); border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px -24px rgba(10, 14, 30, 0.55); }
+.editor-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #2f3138; font-size: 13px; color: var(--panel-muted); }
+.editor-bar .lights { display: flex; gap: 6px; }
+.editor-bar .lights i { width: 10px; height: 10px; border-radius: 50%; background: #3a3c44; display: block; }
+.editor-bar .name { margin-left: 6px; }
+.editor-bar .dur { margin-left: auto; color: var(--panel-ink); }
+.editor-bar .dur b { color: #ffd60a; font-weight: 500; }
+.script { padding: 18px 18px 8px; font-size: 17px; line-height: 2.1; min-height: 196px; }
+.script .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--panel-muted); display: block; margin-bottom: 4px; }
+.w {
+  font: inherit; color: inherit; background: none; border: 0; padding: 1px 3px; margin: 0 1px; border-radius: 4px; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.w:hover { background: #33363f; }
+.w.filler { color: #ffcf6a; }
+.w.cut { color: #6b6e79; text-decoration: line-through; text-decoration-color: var(--playhead); text-decoration-thickness: 2px; }
+.gap { display: inline-block; font-family: var(--mono); font-size: 11px; color: #6e717d; border: 1px dashed #4a4d57; border-radius: 4px; padding: 0 5px; margin: 0 3px; line-height: 1.6; vertical-align: 2px; }
+.gap.cut { color: var(--playhead); border-color: var(--playhead); text-decoration: line-through; }
+.tl { padding: 10px 18px 16px; }
+.track { position: relative; height: 34px; border-radius: 5px; background: var(--panel-row); overflow: hidden; display: flex; }
+.seg { height: 100%; flex: none; transition: width 0.45s cubic-bezier(.3,.8,.3,1), background 0.2s; border-right: 1px solid rgba(0,0,0,0.25); }
+.seg.word { background: #2f6fc2; }
+.seg.filler { background: #3d79c8; }
+.seg.silence { background: #2a4d78; }
+.seg.marked { background: repeating-linear-gradient(135deg, #a8322b 0 6px, #7d2620 6px 12px); }
+.track.audio { height: 18px; margin-top: 4px; }
+.track.audio .seg { background: #26915f; }
+.track.audio .seg.silence { background: #1d5a3f; }
+.track.audio .seg.marked { background: repeating-linear-gradient(135deg, #a8322b 0 6px, #7d2620 6px 12px); }
+.ruler { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--panel-muted); margin-top: 6px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 18px; }
+.tool {
+  font: 500 13px/1 var(--body); color: var(--panel-ink); background: #2d3038; border: 1px solid #3a3d47;
+  padding: 9px 12px; border-radius: 8px; cursor: pointer;
+}
+.tool:hover { background: #363a44; }
+.tool.go { background: var(--playhead); border-color: var(--playhead); color: #fff; }
+.tool[disabled] { opacity: 0.45; cursor: default; }
+.hint { padding: 0 18px 16px; font-size: 12.5px; color: var(--panel-muted); }
+
+/* 화면 */
+.shots { padding-block: 24px 40px; }
+.shot-main { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+.shot-main img, .shot-row img { display: block; width: 100%; height: auto; }
+.shot-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.shot-row figure { margin: 0; }
+.shot-row .frame { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+/* 기능 */
+section.block { padding-block: 64px; border-top: 1px solid var(--line); }
+.block-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 32px; align-items: end; margin-bottom: 36px; }
+.block-head h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.2; font-weight: 700; }
+.block-head p { color: var(--muted); max-width: 40em; }
+.lanes { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.lane { display: grid; grid-template-columns: 170px minmax(0, 1fr); border-top: 1px solid var(--line); }
+.lane:first-child { border-top: 0; }
+.lane-name { padding: 22px 20px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid var(--line); }
+.lane-name b { font-family: var(--display); font-size: 20px; font-weight: 700; }
+.lane-name .chip { height: 8px; border-radius: 3px; width: 56px; }
+.lane-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.item { padding: 22px 20px; border-left: 1px solid var(--line); min-width: 0; }
+.lane-items .item:first-child { border-left: 0; }
+.item h3 { font-family: var(--body); font-size: 16px; font-weight: 600; letter-spacing: 0; }
+.item p { font-size: 14.5px; color: var(--muted); margin-top: 6px; }
+.kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; color: var(--ink); background: var(--bg); white-space: nowrap; }
+
+/* AI 대화 */
+.chat { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.turn { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ask { align-self: flex-end; background: var(--clip); color: #fff; padding: 9px 14px; border-radius: 14px 14px 4px 14px; font-size: 15px; max-width: 95%; }
+.did { font-family: var(--mono); font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--audio); padding-left: 10px; line-height: 1.7; }
+.did b { color: var(--ink); font-weight: 500; }
+.note { margin-top: 20px; font-size: 14.5px; color: var(--muted); max-width: 48em; }
+
+/* 설치 */
+.install { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.os { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 26px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.os h3 { font-size: 24px; font-weight: 700; }
+.os .ver { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.os ol { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; font-size: 15px; }
+.os ol li::marker { font-family: var(--mono); color: var(--muted); }
+.os .btn { align-self: flex-start; }
+
+footer { padding-block: 40px 56px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; font-size: 14px; color: var(--muted); }
+footer a { color: var(--muted); }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding-block: 40px; gap: 32px; }
+  .block-head { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .lane { grid-template-columns: minmax(0, 1fr); }
+  .lane-name { border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; align-items: center; justify-content: space-between; }
+  .item { border-left: 0; border-top: 1px solid var(--line); }
+  .lane-items .item:first-child { border-top: 0; }
+  .install { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  nav.links { display: none; }
+  .shot-row { grid-template-columns: minmax(0, 1fr); }
+  .script { font-size: 15.5px; }
+}
+@media (prefers-reduced-motion: reduce) { .seg, .w { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#top" aria-label="EasyCut"><span class="brand-mark" aria-hidden="true"></span>EasyCut</a>
+    <nav class="links" aria-label="페이지 안 이동">
+      <a href="#features">기능</a>
+      <a href="#ai">AI 편집</a>
+      <a href="#install">설치</a>
+      <a href="https://github.com/contenjoo/easycut">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div>
+        <div class="eyebrow"><span class="dot" aria-hidden="true"></span>무료 · 오픈소스 · Mac과 Windows</div>
+        <h1>말을 지우면<br>영상이 <span class="struck">음</span> 잘립니다.</h1>
+        <p class="lede">EasyCut은 영상을 대본으로 편집하는 프로그램입니다. 음성 인식으로 대본을 만들고, 필요 없는 말을 지우면 그 부분이 영상에서 빠집니다. 무음 컷, 자막, 화면 녹화, AI 편집까지 한 앱에 있습니다.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/contenjoo/easycut/releases/download/v1.11.0/EasyCut-1.11.0.dmg">Mac용 내려받기<small>1.11.0 · Apple Silicon · macOS 14+</small></a>
+          <a class="btn btn-ghost" href="https://github.com/contenjoo/easycut/releases/download/win-v0.5.0/EasyCut_0.5.0_x64-setup.exe">Windows용 내려받기<small>0.5.0 · Windows 10/11</small></a>
+        </div>
+        <p class="fine">회원가입 없이 바로 씁니다. 음성 인식(Whisper)과 변환 도구(ffmpeg)가 앱 안에 들어 있습니다.</p>
+      </div>
+
+      <div class="editor" aria-label="대본 편집 체험">
+        <div class="editor-bar">
+          <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="name">인트로.easycut</span>
+          <span class="dur tc">길이 <b id="dur">00:00.00</b></span>
+        </div>
+        <div class="script" id="script"><span class="lbl">대본 — 말을 눌러 지워 보세요</span></div>
+        <div class="tl">
+          <div class="track" id="trackV" aria-hidden="true"></div>
+          <div class="track audio" id="trackA" aria-hidden="true"></div>
+          <div class="ruler tc" aria-hidden="true"><span>00:00</span><span id="rulerMid">00:05</span><span id="rulerEnd">00:10</span></div>
+        </div>
+        <div class="tools">
+          <button class="tool" id="bSilence" type="button">무음 컷</button>
+          <button class="tool" id="bFiller" type="button">군더더기 제거</button>
+          <button class="tool" id="bUndo" type="button">되돌리기</button>
+        </div>
+        <p class="hint">노란 말은 '음', '어' 같은 군더더기, 점선 칸은 말이 없는 구간입니다. 실제 앱에서는 ⌫ 하나로 지웁니다.</p>
+      </div>
+    </section>
+
+    <section class="shots" aria-label="앱 화면">
+      <div class="shot-main"><img src="screenshots/transcript.jpg" alt="EasyCut 화면: 왼쪽에 음성 인식된 대본, 가운데 미리보기, 아래에 여러 트랙 타임라인" width="1400" height="875"></div>
+      <div class="shot-row">
+        <figure><div class="frame"><img src="screenshots/silence.jpg" alt="무음 컷 미리보기: 타임라인에 지울 무음 구간이 빨갛게 표시됨" width="1400" height="875" loading="lazy"></div><figcaption>무음 구간을 빨갛게 미리 보여 주고 한 번에 지웁니다.</figcaption></figure>
+        <figure><div class="frame"><img src="screenshots/captions.jpg" alt="자막 스타일 설정 화면" width="1400" height="875" loading="lazy"></div><figcaption>대본으로 자막을 만들고 글꼴·색·위치를 고릅니다.</figcaption></figure>
+        <figure><div class="frame"><img src="screenshots/ai.jpg" alt="AI 편집 창에서 말로 편집을 요청하는 화면" width="1400" height="875" loading="lazy"></div><figcaption>"무음 다 잘라줘"처럼 말로 편집합니다.</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="block" id="features">
+      <div class="block-head">
+        <h2>타임라인처럼 정리한 기능</h2>
+        <p>트랙 색은 앱 안의 클립 색과 같습니다. 파란색은 영상, 초록색은 소리, 보라색은 자막입니다.</p>
+      </div>
+      <div class="lanes">
+        <div class="lane">
+          <div class="lane-name"><b>편집</b><span class="chip" style="background: var(--clip)"></span></div>
+          <div class="lane-items">
+            <div class="item"><h3>대본으로 편집</h3><p>대본에서 말을 골라 <span class="kbd">⌫</span>를 누르면 그 말이 영상에서 잘리고 뒤가 당겨집니다.</p></div>
+            <div class="item"><h3>원클릭 무음 컷</h3><p>음성 인식 없이 소리 크기만으로 말 없는 구간을 찾아 한 번에 지웁니다.</p></div>
+            <div class="item"><h3>최대 20배속</h3><p>미리보기는 0.25~20배속, 클립 속도는 0.1~20배까지 음정을 유지한 채 바꿉니다.</p></div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lane-name"><b>소리</b><span class="chip" style="background: var(--audio)"></span></div>
+          <div class="lane-items">
+            <div class="item"><h3>음성 인식</h3><p>Whisper가 앱 안에 들어 있어 인터넷 없이 한국어·영어 등 7개 언어를 받아씁니다.</p></div>
+            <div class="item"><h3>군더더기 제거</h3><p>'음', '어', '그' 같은 말을 대본에서 찾아 한꺼번에 지웁니다.</p></div>
+            <div class="item"><h3>화면·얼굴 녹화</h3><p>화면, 카메라, 마이크, 컴퓨터 소리를 함께 녹화하고 끝나면 트랙에 나눠 배치합니다.</p></div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lane-name"><b>자막</b><span class="chip" style="background: var(--caption)"></span></div>
+          <div class="lane-items">
+            <div class="item"><h3>자동 자막</h3><p>대본으로 자막을 만들고, SRT로 가져오거나 내보내고, 영상에 입힙니다.</p></div>
+            <div class="item"><h3>자막으로 컷 편집</h3><p>자막 한 줄을 지우면 그 구간 영상도 지워지고, 순서를 바꾸면 영상도 따라 움직입니다.</p></div>
+            <div class="item"><h3>자막 시간 맞추기</h3><p>자막마다 실제 말이 시작되는 순간을 소리로 재서 빠르거나 늦은 자막을 맞춥니다.</p></div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lane-name"><b>화면</b><span class="chip" style="background: var(--playhead)"></span></div>
+          <div class="lane-items">
+            <div class="item"><h3>개인정보 가리기</h3><p>화면 글자를 읽어 전화번호·주민번호·이메일이 보이는 자리와 시간만 흐리게 가립니다.</p></div>
+            <div class="item"><h3>화면 배치</h3><p>화면 속 화면, 원 모양 얼굴 카메라, 인물 배경 흐리기, 마우스 클릭 강조를 넣습니다.</p></div>
+            <div class="item"><h3>내보내기</h3><p>MP4(H.264·HEVC), ProRes, 소리만(M4A), 4K부터 480p까지, 장면 PNG 저장.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="ai">
+      <div class="block-head">
+        <h2>말로 시키는 편집</h2>
+        <p>Claude나 ChatGPT 구독 계정으로 버튼 하나만 누르면 로그인됩니다. AI가 앱의 편집 도구를 직접 써서 타임라인을 고치고, 모든 편집은 <span class="kbd">⌘Z</span>로 되돌릴 수 있습니다.</p>
+      </div>
+      <div class="chat">
+        <div class="turn">
+          <div class="ask">무음 다 잘라줘</div>
+          <div class="did"><b>무음 제거</b> 0.6초보다 긴 무음 41곳<br>길이 <span class="tc">12:48.20 → 10:31.05</span></div>
+        </div>
+        <div class="turn">
+          <div class="ask">3분부터 5분까지 2배속</div>
+          <div class="did"><b>속도 변경</b> <span class="tc">180.00~300.00</span>초 2배속<br>길이 <span class="tc">10:31.05 → 09:31.05</span></div>
+        </div>
+        <div class="turn">
+          <div class="ask">말 끊긴 곳 찾아서 고쳐줘</div>
+          <div class="did"><b>클립 확인</b> 경계 3곳에서 반쯤 잘린 말<br><b>잘린 말 되살리기</b> 원본 <span class="tc">84.20~84.61</span>초 "그래서"</div>
+        </div>
+        <div class="turn">
+          <div class="ask">자막이 말보다 빠른 것 같아</div>
+          <div class="did"><b>자막 시간 검사</b> 38개 중앙값 0.18초 빠름, 편차 0.03초<br><b>자막 시간 맞추기</b> 한꺼번에 0.18초 늦춤</div>
+        </div>
+      </div>
+      <p class="note">Claude Code, Claude 데스크톱, Codex에서도 EasyCut을 바로 조작할 수 있습니다(MCP). 위 대화는 기능을 보여 주기 위한 예시입니다.</p>
+    </section>
+
+    <section class="block" id="install">
+      <div class="block-head">
+        <h2>설치</h2>
+        <p>둘 다 무료이고 소스가 공개되어 있습니다(MIT). 새 버전이 나오면 앱이 알려 주고 바로 업데이트합니다.</p>
+      </div>
+      <div class="install">
+        <div class="os">
+          <div><h3>Mac</h3><span class="ver">1.11.0 · M1 이상 Apple Silicon · macOS 14 이상</span></div>
+          <ol>
+            <li>EasyCut-1.11.0.dmg를 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.</li>
+            <li>처음 열 때 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안에서 [그래도 열기]를 누릅니다.</li>
+            <li>대본 탭에서 [Whisper 켜기]를 누르면 음성 인식 모델(574MB)을 한 번 받습니다.</li>
+          </ol>
+          <a class="btn btn-primary" href="https://github.com/contenjoo/easycut/releases/download/v1.11.0/EasyCut-1.11.0.dmg">Mac용 내려받기<small>EasyCut-1.11.0.dmg · 25MB</small></a>
+        </div>
+        <div class="os">
+          <div><h3>Windows</h3><span class="ver">0.5.0 · Windows 10/11 64비트</span></div>
+          <ol>
+            <li>EasyCut_0.5.0_x64-setup.exe를 받아 실행합니다.</li>
+            <li>SmartScreen 경고가 뜨면 [추가 정보] › [실행]을 누릅니다.</li>
+            <li>한국어 화면 글자 인식(개인정보 가리기)은 Windows에 한국어 언어가 설치되어 있어야 합니다.</li>
+          </ol>
+          <a class="btn btn-ghost" href="https://github.com/contenjoo/easycut/releases/download/win-v0.5.0/EasyCut_0.5.0_x64-setup.exe">Windows용 내려받기<small>EasyCut_0.5.0_x64-setup.exe · 61MB</small></a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>EasyCut · MIT 라이선스 · <a href="https://github.com/contenjoo/easycut">github.com/contenjoo/easycut</a></span>
+    <span>만든 곳 <a href="https://learntoday.kr/services">주식회사 오늘배움</a></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // 대본 한 줄: [글자, 길이(초), 종류]  종류: w 말, f 군더더기, s 무음
+  const SCRIPT = [
+    ["안녕하세요", 0.8, "w"], ["음", 0.5, "f"], ["오늘은", 0.6, "w"], ["", 1.4, "s"],
+    ["EasyCut으로", 0.9, "w"], ["어", 0.4, "f"], ["영상을", 0.6, "w"], ["편집하는", 0.7, "w"], ["방법을", 0.6, "w"],
+    ["그", 0.3, "f"], ["알려", 0.5, "w"], ["드릴게요.", 0.8, "w"], ["", 1.8, "s"],
+    ["말을", 0.5, "w"], ["지우면", 0.6, "w"], ["음", 0.4, "f"], ["영상도", 0.6, "w"], ["같이", 0.5, "w"], ["잘립니다.", 0.9, "w"],
+  ];
+  const cut = SCRIPT.map(() => false);
+  const history = [];
+  const $ = (id) => document.getElementById(id);
+  const total = SCRIPT.reduce((s, x) => s + x[1], 0);
+  const fmt = (t) => {
+    const m = Math.floor(t / 60), s = Math.floor(t % 60), cs = Math.round((t * 100) % 100) % 100;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+  };
+
+  const script = $("script"), trackV = $("trackV"), trackA = $("trackA");
+  const words = [], segsV = [], segsA = [];
+  SCRIPT.forEach(([text, dur, kind], i) => {
+    let el;
+    if (kind === "s") {
+      el = document.createElement("span");
+      el.className = "gap tc";
+      el.textContent = dur.toFixed(1) + "초";
+      el.title = "말이 없는 구간";
+    } else {
+      el = document.createElement("button");
+      el.type = "button";
+      el.className = "w" + (kind === "f" ? " filler" : "");
+      el.textContent = text;
+      el.setAttribute("aria-pressed", "false");
+      el.addEventListener("click", () => apply([i], !cut[i]));
+    }
+    script.appendChild(el);
+    script.appendChild(document.createTextNode(" "));
+    words.push(el);
+    for (const [track, list] of [[trackV, segsV], [trackA, segsA]]) {
+      const s = document.createElement("div");
+      s.className = "seg " + (kind === "s" ? "silence" : kind === "f" ? "filler" : "word");
+      track.appendChild(s);
+      list.push(s);
+    }
+  });
+
+  function render() {
+    const left = SCRIPT.reduce((s, x, i) => s + (cut[i] ? 0 : x[1]), 0);
+    SCRIPT.forEach(([, dur], i) => {
+      const on = !cut[i];
+      words[i].classList.toggle("cut", !on);
+      if (words[i].tagName === "BUTTON") words[i].setAttribute("aria-pressed", String(!on));
+      for (const s of [segsV[i], segsA[i]]) s.style.width = on ? (dur / total) * 100 + "%" : "0%";
+    });
+    $("dur").textContent = fmt(left);
+    $("rulerMid").textContent = fmt(total / 2).slice(0, 5);
+    $("rulerEnd").textContent = fmt(total).slice(0, 5);
+    $("bUndo").disabled = history.length === 0;
+    $("bSilence").disabled = SCRIPT.every((x, i) => x[2] !== "s" || cut[i]);
+    $("bFiller").disabled = SCRIPT.every((x, i) => x[2] !== "f" || cut[i]);
+  }
+
+  // 지울 곳을 잠깐 빨갛게 보여 준 뒤 줄인다 (앱의 무음 컷 미리보기처럼)
+  function apply(ids, value) {
+    if (!ids.length) return;
+    history.push(cut.slice());
+    if (!value) { ids.forEach((i) => (cut[i] = false)); render(); return; }
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    ids.forEach((i) => { segsV[i].classList.add("marked"); segsA[i].classList.add("marked"); });
+    setTimeout(() => {
+      ids.forEach((i) => { cut[i] = true; segsV[i].classList.remove("marked"); segsA[i].classList.remove("marked"); });
+      render();
+    }, reduce ? 0 : 420);
+  }
+
+  $("bSilence").addEventListener("click", () => apply(SCRIPT.map((x, i) => (x[2] === "s" && !cut[i] ? i : -1)).filter((i) => i >= 0), true));
+  $("bFiller").addEventListener("click", () => apply(SCRIPT.map((x, i) => (x[2] === "f" && !cut[i] ? i : -1)).filter((i) => i >= 0), true));
+  $("bUndo").addEventListener("click", () => {
+    const prev = history.pop();
+    if (!prev) return;
+    prev.forEach((v, i) => (cut[i] = v));
+    render();
+  });
+  render();
+})();
+</script>
+
+</body>
+</html>
