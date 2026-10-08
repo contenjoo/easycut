@@ -231,7 +231,7 @@ struct TransportBar: View {
             HStack(spacing: 8) {
                 Text(TimeFormat.clock(player.time))
                     .font(.system(.callout, design: .monospaced).weight(.semibold))
-                Slider(value: Binding(get: { player.time }, set: { store.seek($0) }),
+                EZSlider(value: Binding(get: { player.time }, set: { store.seek($0) }),
                        in: 0...max(0.01, player.duration)) { editing in
                     if editing { player.pause() }
                 }
@@ -267,7 +267,7 @@ struct TransportBar: View {
                     .help("미리보기 볼륨")
                 LevelMeter(level: player.level)
                     .help("재생 중인 소리 크기 — 막대가 움직이는데 안 들리면 Mac 출력 장치/음량을 확인하세요")
-                Slider(value: Binding(get: { Double(player.volume) }, set: { player.volume = Float($0) }), in: 0...1)
+                EZSlider(value: Binding(get: { Double(player.volume) }, set: { player.volume = Float($0) }), in: 0...1)
                     .frame(width: 60)
                     .controlSize(.small)
             }
@@ -325,7 +325,7 @@ struct SpeedControl: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("재생 속도 (최대 20배속) — [ 느리게, ] 빠르게, \\ 1배속")
-            Slider(value: Binding(get: { log(player.speed) }, set: { v in
+            EZSlider(value: Binding(get: { log(player.speed) }, set: { v in
                 let s = exp(v)
                 // 보기 좋은 값에 맞춘다
                 let snapped = PlayerController.speeds.min { abs($0 - s) < abs($1 - s) } ?? s

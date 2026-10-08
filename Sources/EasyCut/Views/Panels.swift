@@ -255,7 +255,7 @@ struct TextStyleControls: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("크기").frame(width: 44, alignment: .leading)
-                Slider(value: $style.fontSize, in: 16...200)
+                EZSlider(value: $style.fontSize, in: 16...200)
                 Text("\(Int(style.fontSize))").monospacedDigit().frame(width: 32)
             }
             HStack {
@@ -278,7 +278,7 @@ struct TextStyleControls: View {
             if showPosition {
                 HStack {
                     Text("위치").frame(width: 44, alignment: .leading)
-                    Slider(value: $style.positionY, in: 0.05...0.95)
+                    EZSlider(value: $style.positionY, in: 0.05...0.95)
                     Text(L(style.positionY > 0.66 ? "아래" : (style.positionY < 0.33 ? "위" : "가운데"))).frame(width: 44)
                 }
             }
@@ -348,7 +348,7 @@ struct ValueSlider: View {
     var body: some View {
         HStack {
             Text(L(title)).frame(width: 58, alignment: .leading)
-            Slider(value: $value, in: range)
+            EZSlider(value: $value, in: range)
             Text(format(value)).monospacedDigit().font(.caption).frame(width: 46, alignment: .trailing)
         }
     }
@@ -388,7 +388,7 @@ struct ClipInspector: View {
             if kind == .video || kind == .audio {
                 SectionTitle(text: "속도 (최대 20배)")
                 HStack {
-                    Slider(value: Binding(get: { log(clip.speed) }, set: { v in
+                    EZSlider(value: Binding(get: { log(clip.speed) }, set: { v in
                         let s = (exp(v) * 100).rounded() / 100
                         store.setSpeed(s, for: [clip.id])
                     }), in: log(0.1)...log(20))

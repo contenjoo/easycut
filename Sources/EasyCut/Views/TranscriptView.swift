@@ -475,7 +475,7 @@ struct SilenceSheet: View {
             if mode == .audio {
                 HStack {
                     Text("기준 음량").frame(width: 100, alignment: .leading)
-                    Slider(value: Binding(get: { threshold }, set: { threshold = $0; autoThreshold = false }), in: -65 ... -15, step: 1)
+                    EZSlider(value: Binding(get: { threshold }, set: { threshold = $0; autoThreshold = false }), in: -65 ... -15, step: 1)
                     Text("\(Int(threshold)) dB").monospacedDigit().frame(width: 56)
                     Toggle("자동", isOn: $autoThreshold).toggleStyle(.checkbox)
                 }
@@ -484,12 +484,12 @@ struct SilenceSheet: View {
             }
             HStack {
                 Text("최소 무음 길이").frame(width: 100, alignment: .leading)
-                Slider(value: $minGap, in: 0.2...3, step: 0.1)
+                EZSlider(value: $minGap, in: 0.2...3, step: 0.1)
                 Text(String(format: "%.1f초", minGap)).monospacedDigit().frame(width: 56)
             }
             HStack {
                 Text("앞뒤 여유").frame(width: 100, alignment: .leading)
-                Slider(value: $keep, in: 0...0.6, step: 0.02)
+                EZSlider(value: $keep, in: 0...0.6, step: 0.02)
                 Text(String(format: "%.2f초", keep)).monospacedDigit().frame(width: 56)
             }
             HStack(spacing: 6) {
