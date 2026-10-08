@@ -31,8 +31,33 @@ pub fn definitions() -> Vec<Value> {
         tool("restore_cut", "같은 원본을 잘라 붙인 경계에서 잘라낸 원본을 되살린다. before/after를 모두 생략하면 잘린 구간 전체를 되살려 두 클립을 합친다. before=앞 클립 끝을 늘릴 원본 초, after=뒤 클립 시작을 당길 원본 초. 뒤의 영상·자막도 함께 밀린다. 되살린 말에는 자막이 없으므로 필요하면 edit_captions로 추가한다.",
              json!({ "time": num("경계 근처 타임라인 시간(초)"), "track": { "type": "integer", "description": "트랙 번호, 선택" },
                      "before": num("앞 클립 끝을 늘릴 원본 초, 선택"), "after": num("뒤 클립 시작을 당길 원본 초, 선택") }), &["time"]),
+        tool("check_caption_sync", "자막 시작 시간과 실제 말소리가 시작되는 순간(소리 크기 기준)을 자막마다 비교해, 자막이 빠른지 늦은지와 그 차이가 일정한지 알려 준다. 미리보기 소리 출력 지연에 대한 안내도 함께 준다. 자막 시간을 고치기 전에 먼저 쓴다.",
+             json!({ "from": num("시작(초), 선택"), "to": num("끝(초), 선택") }), &[]),
+        tool("align_captions", "check_caption_sync와 같은 측정으로 자막 시간을 실제 말소리에 맞춘다. mode=auto(기본): 차이가 일정하면 한꺼번에 옮기고 아니면 자막마다 맞춤. shift: seconds만큼(생략하면 측정한 중앙값) 한꺼번에 옮김. snap: 잴 수 있는 자막마다 말 시작에 맞춤.",
+             json!({ "mode": { "type": "string", "enum": ["auto", "shift", "snap"] }, "seconds": num("shift 때 옮길 초 (+늦추기, -앞당기기), 선택"),
+                     "from": num("시작(초), 선택"), "to": num("끝(초), 선택") }), &[]),
+        tool("export_range", "타임라인 구간만 짧게 MP4로 내보내 기본 플레이어로 연다. 미리보기에서만 어긋나는지, 내보낸 영상도 어긋나는지 사용자가 확인할 때 쓴다.",
+             json!({ "start": num("시작(초)"), "end": num("끝(초)"), "captions": { "type": "boolean", "description": "자막 굽기 (기본 true)" },
+                     "open": { "type": "boolean", "description": "내보낸 뒤 열기 (기본 true)" } }), &["start", "end"]),
     ]
 }
+
+/// 쓰인 미디어의 음량으로 자막 시간 측정
+pub(crate) fn sync_report(app: &AppHandle, from: f64, to: f64) -> easycut_core::review_ops::SyncReport {
+    let p = project(app);
+    let used: std::collections::HashSet<_> = p.tracks.iter().flat_map(|t| &t.clips).filter_map(|c| c.asset_id).collect();
+    let (mut loud, mut th) = (std::collections::HashMap::new(), std::collections::HashMap::new());
+    for a in p.assets.iter().filter(|a| used.contains(&a.id) && a.has_audio) {
+        if let Some(db) = asset_loudness(app, a) {
+            th.insert(a.id, auto_threshold(&db));
+            loud.insert(a.id, db);
+        }
+    }
+    p.caption_sync(&loud, &th, from, to, 0.6)
+}
+
+/// 윈도우는 출력 장치 지연을 알 수 없어 안내만 한다
+const OUTPUT_NOTE: &str = "미리보기 소리 출력: 윈도우에서는 장치 지연을 확인하지 못합니다. 블루투스 이어폰이면 미리보기 소리가 0.1~0.3초 늦게 들릴 수 있으니, 미리보기에서만 자막이 빠르게 느껴지면 자막을 옮기지 말고 export_range로 내보낸 영상을 확인하세요";
 
 fn short(c: &Clip) -> String {
     c.id.to_string()[..8].to_string()
@@ -287,6 +312,90 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> Option<(String, bo
                 if ws.is_empty() { " (말 없음)".to_string() } else { format!(" — 되살린 말: {ws} (이 말이 자막에 없으면 edit_captions로 추가)") }, project(app).duration()))
         }
 
+        "check_caption_sync" => {
+            if p.captions.is_empty() {
+                return err("자막이 없습니다");
+            }
+            let r = sync_report(app, d("from").unwrap_or(0.0), d("to").unwrap_or(f64::INFINITY));
+            let mut o = vec![];
+            if r.measures.is_empty() {
+                o.push(format!("잴 수 있는 자막이 없습니다 (자막 앞에 조용한 틈이 있어야 말 시작을 찾을 수 있습니다). 건너뜀 {}개", r.skipped));
+            } else {
+                let dir = if r.median.abs() < 0.03 { "차이 없음" } else if r.median > 0.0 { "빠름 (늦춰야 함)" } else { "늦음 (앞당겨야 함)" };
+                let verdict = if r.consistent() {
+                    if r.median.abs() < 0.05 { "자막 시간은 맞습니다" } else { "차이가 일정하므로 align_captions mode=shift로 한꺼번에 옮기면 됩니다" }
+                } else {
+                    "구간마다 달라서 align_captions mode=snap으로 자막마다 맞추는 게 좋습니다"
+                };
+                o.push(format!("자막 {}개를 잼 (건너뜀 {}개): 자막이 말보다 중앙값 {:.2}초 {dir}, 편차 {:.2}초 → {verdict}", r.measures.len(), r.skipped, r.median.abs(), r.spread));
+                for m in r.measures.iter().take(60) {
+                    o.push(format!("  [{}] 자막 {:.2} / 말 시작 {:.2} → {:+.2}초", m.index, m.caption_start, m.onset, m.offset()));
+                }
+                if r.measures.len() > 60 {
+                    o.push(format!("  … ({}개 더)", r.measures.len() - 60));
+                }
+            }
+            o.push(OUTPUT_NOTE.into());
+            ok(o.join("\n"))
+        }
+
+        "align_captions" => {
+            if p.captions.is_empty() {
+                return err("자막이 없습니다");
+            }
+            let (from, to) = (d("from").unwrap_or(0.0), d("to").unwrap_or(f64::INFINITY));
+            let r = sync_report(app, from, to);
+            let mut mode = input.get("mode").and_then(Value::as_str).unwrap_or("auto");
+            if mode == "auto" {
+                mode = if r.consistent() { "shift" } else { "snap" };
+            }
+            let st = app.state::<AppState>();
+            if mode == "shift" {
+                let Some(sec) = d("seconds").or(if r.measures.is_empty() { None } else { Some(r.median) }).filter(|s| s.abs() > 0.005) else {
+                    return ok(format!("옮길 만큼의 차이가 없습니다 (잰 자막 {}개)", r.measures.len()));
+                };
+                st.editor.lock().unwrap().apply(|q| q.shift_captions(sec, from, to));
+                emit_state(app);
+                return ok(format!("자막을 {:.2}초 {} ({})", sec.abs(), if sec > 0.0 { "늦춤" } else { "앞당김" }, if d("seconds").is_none() { "측정한 중앙값" } else { "지정한 값" }));
+            }
+            if r.measures.is_empty() {
+                return err("잴 수 있는 자막이 없어 맞추지 못했습니다");
+            }
+            st.editor.lock().unwrap().apply(|q| q.snap_captions(&r.measures));
+            emit_state(app);
+            let avg = r.measures.iter().map(|m| m.offset()).sum::<f64>() / r.measures.len() as f64;
+            ok(format!("자막 {}개의 시작을 실제 말 시작에 맞춤 (평균 {avg:+.2}초). 잴 수 없던 {}개는 그대로", r.measures.len(), r.skipped))
+        }
+
+        "export_range" => {
+            let (Some(st), Some(en)) = (d("start"), d("end")) else { return err("start < end 가 필요합니다") };
+            let total = p.duration();
+            if en - st <= 0.1 || st >= total {
+                return err("구간이 올바르지 않습니다");
+            }
+            let en = en.min(total);
+            let dir = dirs_videos().join("EasyCut 확인용");
+            let _ = std::fs::create_dir_all(&dir);
+            let stamp = chrono::Local::now().format("%H%M%S");
+            let path = dir.join(format!("구간 {st:.1}-{en:.1}초 {stamp}.mp4"));
+            let opts = crate::export::Options { path: path.to_string_lossy().to_string(), height: 720, burn_captions: input.get("captions").and_then(Value::as_bool).unwrap_or(true), format: "mp4".into(), range: Some((st, en)) };
+            if let Err(e) = crate::export::export(&p, &opts, |_| {}, || false) {
+                return err(&format!("내보내기 실패: {e}"));
+            }
+            let open = input.get("open").and_then(Value::as_bool).unwrap_or(true);
+            if open {
+                let _ = if cfg!(windows) { std::process::Command::new("explorer.exe").arg(&path).spawn() } else { std::process::Command::new("/usr/bin/open").arg(&path).spawn() };
+            }
+            ok(format!("{st:.2}~{en:.2}초를 내보냄: {}{}", path.display(), if open { " (기본 플레이어로 열었습니다. 사용자에게 내보낸 영상에서도 자막이 어긋나는지 물어보세요)" } else { "" }))
+        }
+
         _ => None,
     }
+}
+
+/// 사용자 동영상 폴더 (없으면 홈)
+fn dirs_videos() -> PathBuf {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let v = home.join(if cfg!(windows) { "Videos" } else { "Movies" });
+    if v.is_dir() { v } else { home }
 }

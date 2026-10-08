@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// 편집 결과를 검토하고 고치는 AI 도구: 전체 자막 읽기, 클립 경계·원본 연결 보기, 구간 소리 듣기, 경계 조정·잘린 말 되살리기.
 extension AITools {
@@ -19,7 +20,26 @@ extension AITools {
              ["time": num("경계 근처 타임라인 시간(초)"), "track": ["type": "integer", "description": "트랙 번호, 선택"],
               "before": num("앞 클립 끝을 늘릴 원본 초, 선택"), "after": num("뒤 클립 시작을 당길 원본 초, 선택")],
              required: ["time"]),
+        tool("check_caption_sync", "자막 시작 시간과 실제 말소리가 시작되는 순간(소리 크기 기준)을 자막마다 비교해, 자막이 빠른지 늦은지와 그 차이가 일정한지 알려 준다. 미리보기 소리 출력 장치(블루투스 등)의 지연도 함께 알려 준다. 자막 시간을 고치기 전에 먼저 쓴다.",
+             ["from": num("시작(초), 선택"), "to": num("끝(초), 선택")]),
+        tool("align_captions", "check_caption_sync와 같은 측정으로 자막 시간을 실제 말소리에 맞춘다. mode=auto(기본): 차이가 일정하면 한꺼번에 옮기고 아니면 자막마다 맞춤. shift: seconds만큼(생략하면 측정한 중앙값) 한꺼번에 옮김. snap: 잴 수 있는 자막마다 말 시작에 맞춤.",
+             ["mode": ["type": "string", "enum": ["auto", "shift", "snap"]] as [String: Any], "seconds": num("shift 때 옮길 초 (+늦추기, -앞당기기), 선택"),
+              "from": num("시작(초), 선택"), "to": num("끝(초), 선택")]),
+        tool("export_range", "타임라인 구간만 짧게 MP4로 내보내 기본 플레이어(QuickTime)로 연다. 미리보기에서만 어긋나는지, 내보낸 영상도 어긋나는지 사용자가 확인할 때 쓴다.",
+             ["start": num("시작(초)"), "end": num("끝(초)"), "captions": ["type": "boolean", "description": "자막 굽기 (기본 true)"],
+              "open": ["type": "boolean", "description": "내보낸 뒤 열기 (기본 true)"]],
+             required: ["start", "end"]),
     ]
+
+    @MainActor
+    static func syncReport(_ store: EditorStore, from: Double, to: Double) async -> CaptionSyncReport {
+        var loud: [UUID: [Float]] = [:], th: [UUID: Double] = [:]
+        let used = Set(store.project.tracks.flatMap(\.clips).compactMap(\.assetID))
+        for a in store.project.assets where used.contains(a.id) && a.hasAudio {
+            if let db = await store.loudness(of: a) { loud[a.id] = db; th[a.id] = SilenceDetector.autoThreshold(db) }
+        }
+        return store.project.captionSync(loudness: loud, thresholds: th, from: from, to: to)
+    }
 
     static func short(_ id: UUID) -> String { String(id.uuidString.prefix(8)) }
 
@@ -189,6 +209,65 @@ extension AITools {
             let rs = restored.map { String(format: "%.2f~%.2f", $0.lowerBound, $0.upperBound) }.joined(separator: ", ")
             return (String(format: "%.2f초 경계에서 원본 %@ 되살림%@. 길이 %.2f초 → %.2f초 (뒤 영상·자막도 밀림)", cp.time, rs,
                            ws.isEmpty ? " (말 없음)" : " — 되살린 말: \(ws) (이 말이 자막에 없으면 edit_captions로 추가)", before, store.project.duration), false)
+
+        case "check_caption_sync":
+            let from = d("from") ?? 0, to = d("to") ?? .infinity
+            guard !p.captions.isEmpty else { return ("자막이 없습니다", true) }
+            let r = await syncReport(store, from: from, to: to)
+            var o: [String] = []
+            if r.measures.isEmpty {
+                o.append("잴 수 있는 자막이 없습니다 (자막 앞에 조용한 틈이 있어야 말 시작을 찾을 수 있습니다). 건너뜀 \(r.skipped)개")
+            } else {
+                let dir = r.median > 0 ? "빠름 (늦춰야 함)" : "늦음 (앞당겨야 함)"
+                o.append(String(format: "자막 %d개를 잼 (건너뜀 %d개): 자막이 말보다 중앙값 %.2f초 %@, 편차 %.2f초 → %@", r.measures.count, r.skipped, abs(r.median), abs(r.median) < 0.03 ? "차이 없음" : dir, r.spread,
+                                r.consistent ? (abs(r.median) < 0.05 ? "자막 시간은 맞습니다" : "차이가 일정하므로 align_captions mode=shift로 한꺼번에 옮기면 됩니다") : "구간마다 달라서 align_captions mode=snap으로 자막마다 맞추는 게 좋습니다"))
+                for m in r.measures.prefix(60) {
+                    o.append(String(format: "  [%d] 자막 %.2f / 말 시작 %.2f → %+.2f초", m.index, m.captionStart, m.onset, m.offset))
+                }
+                if r.measures.count > 60 { o.append("  … (\(r.measures.count - 60)개 더)") }
+            }
+            o.append(AudioOutput.summary())
+            return (o.joined(separator: "\n"), false)
+
+        case "align_captions":
+            let from = d("from") ?? 0, to = d("to") ?? .infinity
+            guard !p.captions.isEmpty else { return ("자막이 없습니다", true) }
+            let r = await syncReport(store, from: from, to: to)
+            var mode = s("mode") ?? "auto"
+            if mode == "auto" { mode = r.consistent ? "shift" : "snap" }
+            if mode == "shift" {
+                guard let sec = d("seconds") ?? (r.measures.isEmpty ? nil : r.median), abs(sec) > 0.005 else {
+                    return ("옮길 만큼의 차이가 없습니다 (잰 자막 \(r.measures.count)개)", false)
+                }
+                store.apply { $0.shiftCaptions(by: sec, from: from, to: to) }
+                return (String(format: "자막을 %.2f초 %@ (%@)", abs(sec), sec > 0 ? "늦춤" : "앞당김", d("seconds") == nil ? "측정한 중앙값" : "지정한 값"), false)
+            }
+            guard !r.measures.isEmpty else { return ("잴 수 있는 자막이 없어 맞추지 못했습니다", true) }
+            store.apply { $0.snapCaptions(r.measures) }
+            return (String(format: "자막 %d개의 시작을 실제 말 시작에 맞춤 (평균 %+.2f초). 잴 수 없던 %d개는 그대로", r.measures.count,
+                           r.measures.map(\.offset).reduce(0, +) / Double(r.measures.count), r.skipped), false)
+
+        case "export_range":
+            guard let st = d("start"), let en = d("end"), en - st > 0.1 else { return ("start < end 가 필요합니다", true) }
+            var q = p
+            let total = q.duration
+            guard st < total else { return ("시작이 영상 길이보다 뒤입니다", true) }
+            if st > 0 { q.rippleDelete(from: 0, to: st) }
+            let len = min(en, total) - st
+            if q.duration > len { q.rippleDelete(from: len, to: q.duration + 1) }
+            let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Movies/EasyCut 확인용", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let f = DateFormatter(); f.dateFormat = "HHmmss"
+            let url = dir.appendingPathComponent(String(format: "구간 %.1f-%.1f초 %@.mp4", st, min(en, total), f.string(from: Date())))
+            let scale = min(1, 1080 / max(1, min(q.canvasWidth, q.canvasHeight)))
+            let size = CGSize(width: (q.canvasWidth * scale / 2).rounded() * 2, height: (q.canvasHeight * scale / 2).rounded() * 2)
+            do {
+                try await Exporter.export(project: q, format: .mp4H264, size: size, burnCaptions: b("captions") ?? true, to: url, cancel: Exporter.Box()) { _ in }
+            } catch {
+                return ("내보내기 실패: \(error.localizedDescription)", true)
+            }
+            if b("open") ?? true { NSWorkspace.shared.open(url) }
+            return (String(format: "%.2f~%.2f초를 내보냄: %@%@", st, min(en, total), url.path, (b("open") ?? true) ? " (기본 플레이어로 열었습니다. 사용자에게 내보낸 영상에서도 자막이 어긋나는지 물어보세요)" : ""), false)
 
         default:
             return nil

@@ -781,5 +781,8 @@ enum LocTable {
         "소리 확인": "Listen to range",
         "경계 조정": "Adjust clip edge",
         "잘린 말 되살리기": "Restore cut speech",
+        "자막 시간 검사": "Check caption timing",
+        "자막 시간 맞추기": "Align captions",
+        "구간 내보내기": "Export range",
     ]
 }

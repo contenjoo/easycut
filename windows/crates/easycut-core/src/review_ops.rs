@@ -164,3 +164,172 @@ mod tests {
         assert!((grow - 1.0).abs() < 1e-9 && (full.duration() - 10.0).abs() < 1e-9);
     }
 }
+
+// MARK: 자막 시간 검사 (맥 CaptionSync.swift와 같음)
+
+/// 자막 하나의 측정: + = 자막이 말보다 빠름 (늦춰야 함)
+#[derive(Clone, Debug, PartialEq)]
+pub struct SyncMeasure {
+    pub index: usize,
+    pub caption_start: f64,
+    pub onset: f64,
+}
+
+impl SyncMeasure {
+    pub fn offset(&self) -> f64 {
+        self.onset - self.caption_start
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SyncReport {
+    pub measures: Vec<SyncMeasure>,
+    pub skipped: usize,
+    pub median: f64,
+    pub spread: f64,
+}
+
+impl SyncReport {
+    /// 차이가 거의 일정하면 한꺼번에 옮기면 된다
+    pub fn consistent(&self) -> bool {
+        self.measures.len() >= 3 && self.spread <= 0.06
+    }
+}
+
+impl Project {
+    /// t에 소리가 나는 클립 (아래 트랙부터, 음소거 제외)
+    pub fn audible_clip(&self, t: f64) -> Option<&Clip> {
+        self.tracks.iter().filter(|tr| !tr.muted).find_map(|tr| {
+            tr.clips.iter().find(|c| c.kind == ClipKind::Media && t >= c.start - 0.001 && t < c.end() && c.volume > 0.001 && self.asset(c.asset_id).is_some_and(|a| a.has_audio))
+        })
+    }
+
+    /// 자막마다 근처(±window초)에서 조용하다가 소리가 나기 시작한 곳 중 앞의 조용함이 가장 긴 곳을 말 시작으로 본다
+    pub fn caption_sync(&self, loudness: &std::collections::HashMap<Id, Vec<f32>>, thresholds: &std::collections::HashMap<Id, f64>, from: f64, to: f64, window: f64) -> SyncReport {
+        let hop = crate::silence::HOP;
+        let mut r = SyncReport::default();
+        for (n, cap) in self.captions.iter().enumerate() {
+            if cap.start < from || cap.start >= to {
+                continue;
+            }
+            let Some(c) = self.audible_clip(cap.start + 0.001).or_else(|| self.audible_clip(cap.start + window / 2.0)) else { r.skipped += 1; continue };
+            let (Some(db), Some(&th)) = (c.asset_id.and_then(|a| loudness.get(&a)), c.asset_id.and_then(|a| thresholds.get(&a))) else { r.skipped += 1; continue };
+            let s = c.source_time(cap.start);
+            let (lo, hi) = ((s - window * c.speed).max(c.source_in), (s + window * c.speed).min(c.source_out));
+            let i0 = ((lo / hop) as usize).max(1);
+            let i1 = ((hi / hop) as usize).min(db.len().saturating_sub(4));
+            if i1 <= i0 {
+                r.skipped += 1;
+                continue;
+            }
+            let below = |k: usize| (db[k] as f64) < th;
+            let back = i0.saturating_sub(100);
+            let mut quiet = (back..i0).rev().take_while(|&k| below(k)).count();
+            if quiet == i0 - back && i0 < 100 {
+                quiet = 100; // 파일 맨 앞까지 조용함
+            }
+            let mut best: Option<(usize, usize)> = None;
+            for i in i0..=i1 {
+                if below(i) {
+                    quiet += 1;
+                    continue;
+                }
+                if quiet >= 12 && (i..i + 4).all(|k| !below(k)) {
+                    let q = quiet.min(100);
+                    let t = i as f64 * hop;
+                    let better = match best {
+                        None => true,
+                        Some((bi, bq)) => q > bq || (q == bq && (t - s).abs() < (bi as f64 * hop - s).abs()),
+                    };
+                    if better {
+                        best = Some((i, q));
+                    }
+                }
+                quiet = 0;
+            }
+            let Some((b, _)) = best else { r.skipped += 1; continue };
+            let onset = c.timeline_time(b as f64 * hop);
+            // 앞뒤 자막의 말 시작을 잡았으면 이 자막은 문장 중간이라 잴 수 없다
+            let prev_end = n.checked_sub(1).map(|k| self.captions[k].end);
+            let next_end = self.captions.get(n + 1).map(|x| x.end);
+            if prev_end.is_some_and(|p| onset < p - 0.35) || next_end.is_some_and(|x| onset > x - 0.1) {
+                r.skipped += 1;
+                continue;
+            }
+            r.measures.push(SyncMeasure { index: n, caption_start: cap.start, onset });
+        }
+        let mut offs: Vec<f64> = r.measures.iter().map(|m| m.offset()).collect();
+        offs.sort_by(f64::total_cmp);
+        r.median = offs.get(offs.len() / 2).copied().unwrap_or(0.0);
+        let mut dev: Vec<f64> = offs.iter().map(|o| (o - r.median).abs()).collect();
+        dev.sort_by(f64::total_cmp);
+        r.spread = dev.get(dev.len() / 2).copied().unwrap_or(0.0);
+        r
+    }
+
+    /// 자막을 d초 옮긴다 (+ = 늦추기)
+    pub fn shift_captions(&mut self, d: f64, from: f64, to: f64) {
+        for c in &mut self.captions {
+            if c.start >= from && c.start < to {
+                let len = c.end - c.start;
+                c.start = (c.start + d).max(0.0);
+                c.end = c.start + len;
+            }
+        }
+        self.captions.sort_by(|a, b| a.start.total_cmp(&b.start));
+    }
+
+    /// 잰 자막마다 시작을 실제 말 시작에 맞춘다 (앞 자막과 겹치지 않게, 늦출 때는 길이 유지)
+    pub fn snap_captions(&mut self, measures: &[SyncMeasure]) {
+        for m in measures {
+            if m.index >= self.captions.len() {
+                continue;
+            }
+            let mut start = m.onset;
+            if m.index > 0 {
+                start = start.max(self.captions[m.index - 1].end);
+            }
+            let c = &self.captions[m.index];
+            let mut end = c.end + (start - c.start).max(0.0);
+            if let Some(next) = self.captions.get(m.index + 1) {
+                end = end.min(next.start);
+            }
+            let c = &mut self.captions[m.index];
+            c.start = start;
+            c.end = end.max(start + 0.3);
+        }
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn finds_speech_start_after_longest_pause() {
+        // 0~1초 조용, 1~2초 말(1.4초에 짧은 틈), 2~3초 조용, 3~4초 말
+        let mut db = vec![-80f32; 400];
+        for (i, v) in db.iter_mut().enumerate() {
+            let t = i as f64 * 0.01;
+            if (1.0..2.0).contains(&t) && !(1.4..1.55).contains(&t) || (3.0..4.0).contains(&t) {
+                *v = -20.0;
+            }
+        }
+        let a = MediaAsset { path: "/x.wav".into(), name: "x".into(), kind: MediaKind::Audio, duration: 4.0, has_audio: true, ..Default::default() };
+        let mut p = Project::default();
+        p.assets.push(a.clone());
+        p.insert(&a, 0, 0.0, 5.0);
+        p.captions = vec![Caption::new(0.8, 1.45, "하나"), Caption::new(1.45, 1.9, "중간"), Caption::new(3.2, 3.9, "둘")];
+        let loud: HashMap<Id, Vec<f32>> = [(a.id, db)].into();
+        let th: HashMap<Id, f64> = [(a.id, -50.0)].into();
+        let r = p.caption_sync(&loud, &th, 0.0, f64::INFINITY, 0.6);
+        let offs: Vec<(usize, f64)> = r.measures.iter().map(|m| (m.index, (m.offset() * 100.0).round() / 100.0)).collect();
+        assert_eq!(offs, vec![(0, 0.2), (2, -0.2)]);
+        assert_eq!(r.skipped, 1);
+        p.snap_captions(&r.measures);
+        assert!((p.captions[0].start - 1.0).abs() < 1e-9 && (p.captions[2].start - 3.0).abs() < 1e-9);
+        p.shift_captions(0.5, 0.0, f64::INFINITY);
+        assert!((p.captions[2].start - 3.5).abs() < 1e-9);
+    }
+}

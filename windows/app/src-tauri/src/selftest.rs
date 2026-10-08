@@ -108,6 +108,33 @@ fn speech_test(c: &mut Checker, speech: &Path, expected: &str) {
         &format!("delete 3 words from transcript → {removed:.2}s cut, {} words left", tw2.len()));
     let caps = p.generated_captions_default();
     c.check(!caps.is_empty(), &format!("captions from transcript: {} (first: {})", caps.len(), caps.first().map(|c| c.text.as_str()).unwrap_or("")));
+
+    // 자막 시간 검사: 소리로 잰 말 시작과 자막 시작 비교, 0.25초 앞당기면 그만큼 빠르게 잰다
+    let mut q = Project::default();
+    q.assets.push(asset.clone());
+    let mut qa = asset.clone();
+    qa.words = Some(stt::transcribe(speech, "en", |_, _| {}, |_| {}, || false).unwrap_or_default());
+    q.assets[0] = qa.clone();
+    q.insert(&qa, 0, 0.0, 5.0);
+    q.captions = q.generated_captions_default();
+    match media::pcm(speech, 8000) {
+        Ok(pcm) => {
+            let db = easycut_core::silence::loudness(&pcm);
+            let th = auto_threshold(&db);
+            let loud: HashMap<_, _> = [(qa.id, db)].into();
+            let ths: HashMap<_, _> = [(qa.id, th)].into();
+            let r0 = q.caption_sync(&loud, &ths, 0.0, f64::INFINITY, 0.6);
+            q.shift_captions(-0.25, 0.0, f64::INFINITY);
+            let r1 = q.caption_sync(&loud, &ths, 0.0, f64::INFINITY, 0.6);
+            let diffs: Vec<f64> = r1.measures.iter().filter(|m| m.caption_start > 0.01).filter_map(|m| r0.measures.iter().find(|b| b.index == m.index).map(|b| m.offset() - b.offset())).collect();
+            c.check(r0.measures.len() >= 2 && !diffs.is_empty() && diffs.iter().all(|d| (d - 0.25).abs() < 0.02),
+                &format!("caption sync: {} of {} measured (median {:+.2}s), after -0.25s shift: {}", r0.measures.len(), q.captions.len(), r0.median,
+                    diffs.iter().map(|d| format!("{d:+.2}")).collect::<Vec<_>>().join(" ")));
+            let r2 = { let mut z = q.clone(); z.snap_captions(&r1.measures); z.caption_sync(&loud, &ths, 0.0, f64::INFINITY, 0.6) };
+            c.check(r2.measures.iter().all(|m| m.offset().abs() < 0.03), "caption snap: all measured within 0.03s");
+        }
+        Err(e) => c.check(false, &format!("pcm for sync: {e}")),
+    }
 }
 
 pub fn run(dir: &Path) -> i32 {

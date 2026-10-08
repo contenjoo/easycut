@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import SwiftUI
 
 /// `EasyCut --selftest [작업폴더]` : 화면 없이 편집 엔진 전체를 검사한다.
 enum SelfTest {
@@ -59,6 +60,8 @@ enum SelfTest {
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "review" { try await testReview(dir); return }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "slider" { await testSlider(dir); return }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "sync" { try await testSync(dir); return }
         print("1) 모델 연산")
         testTimelineOps()
         check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
@@ -259,6 +262,93 @@ enum SelfTest {
 
         try await testPrivacy(dir)
         try await testReview(dir)
+        try await testSync(dir)
+    }
+
+    /// 11) 자막 시간 검사·맞추기, 구간 내보내기, 소리 출력 장치
+    static func testSync(_ dir: URL) async throws {
+        print("11) 자막 시간 검사")
+        let speech = dir.appendingPathComponent("sync_speech.aiff")
+        if !FileManager.default.fileExists(atPath: speech.path) {
+            let pr = Process()
+            pr.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            pr.arguments = ["-v", "Yuna", "-o", speech.path,
+                            "첫 번째 문장입니다. [[slnc 700]] 두 번째 문장은 조금 깁니다. [[slnc 700]] 세 번째입니다. [[slnc 700]] 네 번째 문장도 있습니다. [[slnc 700]] 마지막 문장입니다."]
+            try pr.run(); pr.waitUntilExit()
+        }
+        var a = try await MediaProbe.probe(speech)
+        guard Transcriber.whisperReady, let model = WhisperModel.all.first(where: \.isInstalled) else { print("  (Whisper 미설치 — 건너뜀)"); return }
+        a.words = try await Transcriber.transcribe(url: a.url, engine: .whisper, language: STTLanguage.all[0], whisperModel: model) { _, _ in }
+        var p = Project()
+        p.assets = [a]
+        p.insert(asset: a, track: 0, at: 0)
+        p.captions = p.generatedCaptions()
+        let store = await MainActor.run { EditorStore() }
+        let base = p
+        await MainActor.run { store.apply { $0 = base } }
+        func run(_ name: String, _ input: [String: Any]) async -> String {
+            let (out, err) = await AITools.execute(name, input, store: store)
+            print("  [\(name)] " + out.replacingOccurrences(of: "\n", with: "\n    "))
+            return err ? "ERROR " + out : out
+        }
+        let r0 = await MainActor.run { () -> Task<CaptionSyncReport, Never> in Task { await AITools.syncReport(store, from: 0, to: .infinity) } }.value
+        print(String(format: "  기준: 자막 %d개 중 %d개 잼, 중앙값 %+.3f초 (", base.captions.count, r0.measures.count, r0.median) + r0.measures.map { String(format: "%+.2f", $0.offset) }.joined(separator: " ") + ")")
+        check(r0.measures.count >= 3, "말 시작 찾기: 문장 앞 조용한 틈에서 \(r0.measures.count)개")
+        // 자막을 0.25초 앞당겨 놓고 다시 잰다
+        await MainActor.run { store.apply { $0.shiftCaptions(by: -0.25) } }
+        let early = await run("check_caption_sync", [:])
+        let r1 = await MainActor.run { () -> Task<CaptionSyncReport, Never> in Task { await AITools.syncReport(store, from: 0, to: .infinity) } }.value
+        // 자막마다 정확히 0.25초 더 빠르게 재야 한다 (0초에 붙은 첫 자막은 더 앞당길 수 없어 제외)
+        let diffs = r1.measures.compactMap { m -> Double? in
+            guard m.captionStart > 0.01, let b = r0.measures.first(where: { $0.index == m.index }) else { return nil }
+            return m.offset - b.offset
+        }
+        check(diffs.count >= 3 && diffs.allSatisfy { abs($0 - 0.25) < 0.02 } && early.contains("빠름"),
+              "0.25초 앞당긴 자막을 자막마다 0.25초 빠르게 잼: " + diffs.map { String(format: "%+.3f", $0) }.joined(separator: " "))
+        _ = await run("align_captions", [:])
+        let r2 = await MainActor.run { () -> Task<CaptionSyncReport, Never> in Task { await AITools.syncReport(store, from: 0, to: .infinity) } }.value
+        check(abs(r2.median) < 0.03, String(format: "자동 맞추기 뒤 중앙값 %+.3f초", r2.median))
+        // 자막마다 다르게 틀어 놓으면 하나씩 맞춘다
+        await MainActor.run {
+            store.apply { q in
+                for i in q.captions.indices { let d = i % 2 == 0 ? -0.3 : 0.15; q.captions[i].start += d; q.captions[i].end += d }
+            }
+        }
+        let r3 = await MainActor.run { () -> Task<CaptionSyncReport, Never> in Task { await AITools.syncReport(store, from: 0, to: .infinity) } }.value
+        check(!r3.consistent, String(format: "들쭉날쭉한 자막: 편차 %.2f초", r3.spread))
+        let snapped = await run("align_captions", [:])
+        let r4 = await MainActor.run { () -> Task<CaptionSyncReport, Never> in Task { await AITools.syncReport(store, from: 0, to: .infinity) } }.value
+        check(snapped.contains("맞춤") && r4.measures.allSatisfy { abs($0.offset) < 0.03 }, "자막마다 맞추기: 모두 ±0.03초 안")
+        let ex = await run("export_range", ["start": 1.0, "end": 3.0, "open": false])
+        if let path = ex.components(separatedBy: "내보냄: ").last?.trimmingCharacters(in: .whitespaces), FileManager.default.fileExists(atPath: path) {
+            let d = try await AVURLAsset(url: URL(fileURLWithPath: path)).load(.duration).seconds
+            check(abs(d - 2.0) < 0.1, String(format: "구간 내보내기 %.2f초", d))
+            try? FileManager.default.removeItem(atPath: path)
+        } else {
+            check(false, "구간 내보내기 파일")
+        }
+        check(AudioOutput.summary().hasPrefix("미리보기 소리 출력"), "소리 출력 장치: \(AudioOutput.summary())")
+    }
+
+    /// 직접 그리는 슬라이더 모양 (PNG로 저장해 눈으로 확인)
+    @MainActor
+    static func testSlider(_ dir: URL) {
+        let view = VStack(alignment: .leading, spacing: 10) {
+            EZSlider(value: .constant(0.3)).frame(width: 240)
+            EZSlider(value: .constant(75), in: 0...100).controlSize(.small).frame(width: 240)
+            EZSlider(value: .constant(-1), in: -1...1).frame(width: 240)
+            EZSlider(value: .constant(0.6)).disabled(true).frame(width: 240)
+        }
+        .padding(16)
+        .background(Color(nsColor: .windowBackgroundColor))
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        guard let cg = r.cgImage else { check(false, "슬라이더 그리기"); return }
+        let png = dir.appendingPathComponent("sliders.png")
+        if let d = CGImageDestinationCreateWithURL(png as CFURL, "public.png" as CFString, 1, nil) {
+            CGImageDestinationAddImage(d, cg, nil); CGImageDestinationFinalize(d)
+        }
+        check(cg.width > 400, "슬라이더 그림 저장: \(png.lastPathComponent)")
     }
 
     /// 10) 편집 검토 도구: 자막 전체, 클립 경계, 구간 소리, 경계 조정·잘린 말 되살리기

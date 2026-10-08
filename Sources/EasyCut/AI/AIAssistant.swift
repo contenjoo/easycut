@@ -139,6 +139,7 @@ final class AIAssistant: ObservableObject {
     - "무음/공백 없애기"는 remove_silences, "음·어 같은 말 빼기"는 remove_fillers, 특정 말이나 구간을 지우는 요청은 delete_words 또는 delete_time_ranges를 씁니다.
     - 대본이 없는데 말 내용 기반 편집이 필요하면 transcribe를 먼저 실행합니다.
     - 편집 결과 검토: 자막 전체 교정은 get_captions로 읽고 edit_captions로 고칩니다. 말이 끊겨 들리는 곳은 get_clips로 잘린 경계와 잘린 말을 보고, listen_range로 경계의 소리(필요하면 recognize=true로 원음 받아쓰기)를 확인한 뒤 restore_cut 또는 adjust_clip_edge로 되살립니다. 되살린 말에는 자막이 없으니 edit_captions로 추가합니다.
+    - 자막이 말보다 빠르거나 늦다는 요청은 짐작으로 옮기지 말고 check_caption_sync로 먼저 잽니다. 결과에 미리보기 출력 지연(블루투스 등)이 크면 미리보기 문제일 수 있으니 export_range로 구간을 내보내 사용자에게 확인을 받습니다. 자막 시간이 실제로 틀렸을 때만 align_captions로 맞춥니다.
     - 화면 속 개인정보(번호·이메일 등) 가리기는 scan_privacy를 씁니다. 이름·주소처럼 형태가 없는 정보는 이름을 알면 scan_privacy의 keywords로, 모르면 read_screen_text로 화면 글자를 읽고 add_blur로 가립니다.
     - 모든 편집은 사용자가 ⌘Z로 되돌릴 수 있습니다. 요청이 분명하면 되묻지 말고 실행하고, 정말 모호할 때만 짧게 확인합니다.
     - 할 수 있는 도구가 없으면 추측하지 말고 할 수 없다고 말합니다.
@@ -517,7 +518,8 @@ final class AIAssistant: ObservableObject {
             "set_playback_speed": "재생 속도", "transcribe": "음성 인식", "undo": "되돌리기",
             "get_project_state": "상태 확인", "get_transcript": "대본 읽기",
             "read_screen_text": "화면 글자 읽기", "get_captions": "자막 읽기", "get_clips": "클립 확인", "listen_range": "소리 확인",
-            "adjust_clip_edge": "경계 조정", "restore_cut": "잘린 말 되살리기", "scan_privacy": "개인정보 가리기", "add_blur": "영역 가리기", "remove_blurs": "가리기 지우기",
+            "adjust_clip_edge": "경계 조정", "restore_cut": "잘린 말 되살리기",
+            "check_caption_sync": "자막 시간 검사", "align_captions": "자막 시간 맞추기", "export_range": "구간 내보내기", "scan_privacy": "개인정보 가리기", "add_blur": "영역 가리기", "remove_blurs": "가리기 지우기",
         ][tool] ?? tool
     }
 
