@@ -1,6 +1,14 @@
-EasyCut for Windows 0.4.0 (베타 / Beta)
+EasyCut for Windows 0.5.0 (베타 / Beta)
 
-[새 기능] AI 편집 검토 도구
+[새 기능] 자막 시간 검사·맞추기
+• AI가 자막마다 실제 말이 시작되는 순간을 소리로 재서, 자막이 빠른지 늦은지 알려 줍니다. (예: "자막이 말보다 빠른 것 같아")
+• 차이가 일정하면 한꺼번에, 들쭉날쭉하면 자막마다 맞춥니다.
+• 문제 구간만 짧게 내보내 기본 플레이어로 열어 확인할 수 있습니다. 블루투스 이어폰은 미리보기 소리가 늦게 들릴 수 있으니 내보낸 영상으로 확인하세요.
+
+[New in 0.5.0] Caption timing
+• The AI editor measures where speech really starts for each caption, reports early/late captions, and aligns them (all at once or one by one). It can export a short range and open it in your player to check.
+
+[0.4.0 새 기능] AI 편집 검토 도구
 • AI가 자막 전체를 읽고 교정할 수 있습니다.
 • 잘라 붙인 경계마다 잘린 말과 반쯤 잘린 말을 찾고, 경계의 소리를 확인하고(원음 다시 받아쓰기 포함), 잘린 말을 원본에서 되살립니다. 뒤의 영상·자막도 함께 맞춰집니다.
 • 예: "말이 끊긴 곳 찾아서 고쳐줘", "자막 전체 맞춤법 고쳐줘"

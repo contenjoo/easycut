@@ -392,6 +392,7 @@
 "구간 %lld – %lld · ⌫ 잘라내기 · 해제는 빈 곳 클릭, X, esc" = "Range %lld – %lld · ⌫ to cut · click empty space, X or esc to clear";
 "구간 끝  (O)" = "Mark Out  (O)";
 "구간 끝 (O)" = "Mark out (O)";
+"구간 내보내기" = "Export range";
 "구간 삭제" = "Delete range";
 "구간 시작  (I)" = "Mark In  (I)";
 "구간 시작 (I)" = "Mark in (I)";
@@ -960,6 +961,8 @@
 "자막 모두 삭제" = "Delete All Captions";
 "자막 생성" = "Generate captions";
 "자막 스타일" = "Caption style";
+"자막 시간 검사" = "Check caption timing";
+"자막 시간 맞추기" = "Align captions";
 "자막 읽기" = "Read captions";
 "자막 추가" = "Add caption";
 "자막 추가  (C)" = "Add Caption  (C)";
