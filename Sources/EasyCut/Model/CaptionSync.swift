@@ -94,7 +94,11 @@ extension Project {
         for m in measures where captions.indices.contains(m.index) {
             var c = captions[m.index]
             var start = m.onset
-            if m.index > 0 { start = max(start, captions[m.index - 1].end) }
+            // 앞 자막이 말 시작을 덮고 있으면 앞 자막 끝을 줄인다 (최소 0.3초는 남김)
+            if m.index > 0, captions[m.index - 1].end > start {
+                captions[m.index - 1].end = max(captions[m.index - 1].start + 0.3, start)
+                start = max(start, captions[m.index - 1].end)
+            }
             // 늦출 때는 길이를 유지, 다음 자막을 넘지 않게
             var end = c.end + max(0, start - c.start)
             if m.index + 1 < captions.count { end = min(end, captions[m.index + 1].start) }

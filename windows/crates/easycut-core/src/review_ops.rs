@@ -286,8 +286,11 @@ impl Project {
                 continue;
             }
             let mut start = m.onset;
-            if m.index > 0 {
-                start = start.max(self.captions[m.index - 1].end);
+            // 앞 자막이 말 시작을 덮고 있으면 앞 자막 끝을 줄인다 (최소 0.3초는 남김)
+            if m.index > 0 && self.captions[m.index - 1].end > start {
+                let prev = &mut self.captions[m.index - 1];
+                prev.end = (prev.start + 0.3).max(start);
+                start = start.max(prev.end);
             }
             let c = &self.captions[m.index];
             let mut end = c.end + (start - c.start).max(0.0);
@@ -329,6 +332,13 @@ mod sync_tests {
         assert_eq!(r.skipped, 1);
         p.snap_captions(&r.measures);
         assert!((p.captions[0].start - 1.0).abs() < 1e-9 && (p.captions[2].start - 3.0).abs() < 1e-9);
+        // 앞 자막 끝이 말 시작을 덮고 있으면 줄여서 맞춘다
+        let mut q = p.clone();
+        q.captions[1].end = 3.15;
+        let m = SyncMeasure { index: 2, caption_start: q.captions[2].start, onset: 3.0 };
+        q.captions[2].start = 3.2;
+        q.snap_captions(&[m]);
+        assert!((q.captions[2].start - 3.0).abs() < 1e-9 && (q.captions[1].end - 3.0).abs() < 1e-9);
         p.shift_captions(0.5, 0.0, f64::INFINITY);
         assert!((p.captions[2].start - 3.5).abs() < 1e-9);
     }
