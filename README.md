@@ -4,7 +4,7 @@
 
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 macOS 설치형 영상 편집기입니다.
 
-**[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)**
+**[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
 윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.5.0/EasyCut_0.5.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
 
