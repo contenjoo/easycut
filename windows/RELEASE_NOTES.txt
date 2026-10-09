@@ -1,6 +1,20 @@
-EasyCut for Windows 0.5.0
+EasyCut for Windows 0.5.1
 
-[새 기능] 자막 시간 검사·맞추기
+[고친 점]
+• 미리보기에서 아래 트랙의 가리기가 위 트랙(얼굴 화면·텍스트)까지 흐리게 하던 문제, 원 모양 클립에서 가리기 위치가 어긋나던 문제
+• 클립 경계 바로 뒤에서 "현재 장면 PNG 저장"이나 구간 내보내기를 하면 비거나 틀리게 나오던 문제
+• AI가 클립 끝을 줄일 때 배경음악 등 다른 트랙까지 잘리던 문제
+• 개인정보를 다시 찾으면 AI가 직접 가린 영역이 사라지던 문제
+• 가리기 영역을 끌 때 바로 움직이지 않던 문제, 손상된 영상에서 글자 인식이 멈출 수 있던 문제
+
+[Fixed in 0.5.1]
+• Preview blur no longer blurs tracks above (face cam, text); correct position on circle clips
+• Frame PNG / range export right after a clip edge came out empty or wrong
+• Shrinking a clip edge (AI) no longer cuts background music on other tracks
+• Re-running privacy scan keeps areas the AI added
+• Dragging a hidden area moves right away; OCR can't stall on damaged files
+
+[0.5.0 새 기능] 자막 시간 검사·맞추기
 • AI가 자막마다 실제 말이 시작되는 순간을 소리로 재서, 자막이 빠른지 늦은지 알려 줍니다. (예: "자막이 말보다 빠른 것 같아")
 • 차이가 일정하면 한꺼번에, 들쭉날쭉하면 자막마다 맞춥니다.
 • 문제 구간만 짧게 내보내 기본 플레이어로 열어 확인할 수 있습니다. 블루투스 이어폰은 미리보기 소리가 늦게 들릴 수 있으니 내보낸 영상으로 확인하세요.
