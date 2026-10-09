@@ -62,6 +62,8 @@ body {
   font-family: var(--body); font-size: 16px; line-height: 1.65;
   padding-inline: 20px;
   -webkit-font-smoothing: antialiased;
+  word-break: keep-all;      /* 한국어는 단어(어절) 단위로 줄바꿈 */
+  overflow-wrap: anywhere;   /* 긴 영문·파일 이름은 넘치지 않게 */
 }
 .wrap { max-width: 1120px; margin-inline: auto; }
 a { color: var(--clip); }
