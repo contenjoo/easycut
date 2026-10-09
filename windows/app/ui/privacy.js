@@ -126,7 +126,18 @@ export function cancelBlurEdit() {
   return true;
 }
 
-/// 미리보기 위 가리기 층. 재생 중에는 효과만, 멈추면 선택 클립의 영역을 고치게 한다
+/// 클립 원본 화면 전체가 미리보기에서 차지하는 자리.
+/// 원 모양 클립은 가운데 정사각형만 보이므로(_rect) 원본 전체로 넓혀 계산한다 (가리기 좌표는 원본 전체 기준)
+function fullRect(c, a, rect) {
+  if (c.shape !== "circle" || !a?.width || !a?.height) return rect;
+  const k = rect.w / Math.min(a.width, a.height);
+  const w = a.width * k, h = a.height * k;
+  return { left: rect.left - (w - rect.w) / 2, top: rect.top - (h - rect.h) / 2, w, h };
+}
+
+/// 미리보기 위 가리기.
+/// 효과(흐림·검은 상자)는 클립마다 그 클립 바로 위 층에 그려 위 트랙(얼굴 화면·텍스트)은 가리지 않는다.
+/// 고치기(테두리·손잡이·그리기)는 맨 위 층에서 한다.
 export class BlurLayer {
   constructor(box, player) {
     this.box = box;
@@ -135,50 +146,74 @@ export class BlurLayer {
     this.el.id = "blurfx";
     this.el.style.cssText = "position:absolute;inset:0;z-index:80;pointer-events:none";
     box.appendChild(this.el);
+    this.fx = new Map(); // clip id → 효과 층
     this.sig = "";
     this.drag = null;
   }
 
   draw(act, t) {
     const editing = !this.player.playing && S.sel.size === 1 ? [...S.sel][0] : null;
-    const items = [];
+    const clips = [];
     for (const { c, ti, tr, a } of act) {
       if (c.kind === "text" || !a || a.kind === "audio" || tr.hidden || !c.blurs?.length) continue;
-      const rect = this.player.els.get(c.id)?._rect;
+      const el = this.player.els.get(c.id);
+      const rect = el?._rect;
       if (!rect) continue;
       const s = srcTime(c, t);
-      for (const r of c.blurs) if (active(r, s)) items.push({ c, ti, r, rect, edit: c.id === editing });
+      const regions = c.blurs.filter((r) => active(r, s));
+      if (regions.length) clips.push({ c, ti, a, el, rect, full: fullRect(c, a, rect), regions, edit: c.id === editing });
     }
     let drawClip = null;
     if (S.drawBlur && editing) {
       const x = act.find((x) => x.c.id === editing && x.a && x.a.kind !== "audio");
-      if (x && this.player.els.get(x.c.id)?._rect) drawClip = x.c;
+      const rect = x && this.player.els.get(x.c.id)?._rect;
+      if (rect) drawClip = { c: x.c, rect, full: fullRect(x.c, x.a, rect) };
     }
-    const sig = JSON.stringify([items.map((x) => [x.r, x.rect, x.edit, x.ti]), S.selBlur, drawClip?.id, this.player.cw, this.player.ch]);
+    const sig = JSON.stringify([clips.map((x) => [x.c.id, x.ti, x.regions, x.rect, x.edit, x.c.shape]), S.selBlur, drawClip?.c.id, this.player.cw, this.player.ch]);
     if (sig === this.sig || this.drag) return;
     this.sig = sig;
+
+    // 효과 층: 클립 영상 바로 다음에 같은 z-index로 (모양대로 잘라서)
+    const keep = new Set(clips.map((x) => x.c.id));
+    for (const [id, node] of this.fx) if (!keep.has(id)) { node.remove(); this.fx.delete(id); }
+    for (const { c, ti, el, rect, full, regions } of clips) {
+      let node = this.fx.get(c.id);
+      if (!node) {
+        node = document.createElement("div");
+        node.className = "blurclip";
+        this.fx.set(c.id, node);
+      }
+      if (node.previousSibling !== el) el.after(node);
+      node.style.cssText = `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.w}px;height:${rect.h}px;z-index:${1 + ti};pointer-events:none;overflow:hidden;` +
+        `border-radius:${c.shape === "circle" ? "50%" : c.shape === "rounded" ? Math.min(rect.w, rect.h) * 0.08 + "px" : "0"}`;
+      node.innerHTML = "";
+      for (const r of regions) {
+        const d = document.createElement("div");
+        const w = r.w * full.w, h = r.h * full.h;
+        d.style.cssText = `position:absolute;left:${full.left - rect.left + r.x * full.w}px;top:${full.top - rect.top + r.y * full.h}px;width:${w}px;height:${h}px`;
+        // 미리보기는 근사: 흐리게·모자이크 모두 강하게 흐림 (내보내기는 맥과 같은 모자이크)
+        const k = Math.max(6, Math.min(w, h) * (r.style === "mosaic" ? 0.5 : 0.35));
+        if (r.style === "box") d.style.background = "#000";
+        else d.style.backdropFilter = d.style.webkitBackdropFilter = `blur(${k}px)` + (r.style === "mosaic" ? " contrast(1.2)" : "");
+        node.appendChild(d);
+      }
+    }
+
+    // 고치기 층
     this.el.innerHTML = "";
     this.el.style.pointerEvents = drawClip ? "auto" : "none";
     this.el.style.cursor = drawClip ? "crosshair" : "";
     this.el.style.background = drawClip ? "rgba(0,0,0,.15)" : "";
-    if (drawClip) this.el.onpointerdown = (e) => this.startDraw(e, drawClip);
-    else this.el.onpointerdown = null;
-    for (const it of items) this.el.appendChild(this.regionEl(it));
+    this.el.onpointerdown = drawClip ? (e) => this.startDraw(e, drawClip) : null;
+    for (const x of clips) if (x.edit) for (const r of x.regions) this.el.appendChild(this.handleEl(x, r));
   }
 
-  regionEl({ c, ti, r, rect, edit }) {
+  handleEl({ c, rect, full }, r) {
     const d = document.createElement("div");
-    const px = { left: rect.left + r.x * rect.w, top: rect.top + r.y * rect.h, w: r.w * rect.w, h: r.h * rect.h };
-    d.style.cssText = `position:absolute;left:${px.left}px;top:${px.top}px;width:${px.w}px;height:${px.h}px;z-index:${1 + ti}`;
-    // 미리보기는 근사: 흐리게·모자이크 모두 강하게 흐림 (내보내기는 맥과 같은 모자이크)
-    const k = Math.max(6, Math.min(px.w, px.h) * (r.style === "mosaic" ? 0.5 : 0.35));
-    if (r.style === "box") d.style.background = "#000";
-    else d.style.backdropFilter = d.style.webkitBackdropFilter = `blur(${k}px)` + (r.style === "mosaic" ? " contrast(1.2)" : "");
-    if (!edit) return d;
+    const px = { left: full.left + r.x * full.w, top: full.top + r.y * full.h, w: r.w * full.w, h: r.h * full.h };
     const sel = S.selBlur === r.id;
-    d.style.pointerEvents = "auto";
-    d.style.cursor = "move";
-    d.style.outline = sel ? "2px solid var(--accent, #0a84ff)" : "1px dashed rgba(255,255,255,.85)";
+    d.style.cssText = `position:absolute;left:${px.left}px;top:${px.top}px;width:${px.w}px;height:${px.h}px;pointer-events:auto;cursor:move;` +
+      `outline:${sel ? "2px solid var(--accent, #0a84ff)" : "1px dashed rgba(255,255,255,.85)"}`;
     d.title = r.text ? `${L(r.label)}: ${r.text}` : L(r.label);
     if (sel || px.w > 60) {
       const tag = document.createElement("span");
@@ -186,31 +221,46 @@ export class BlurLayer {
       tag.style.cssText = `position:absolute;left:0;top:-16px;font-size:10px;font-weight:600;padding:0 4px;color:#fff;white-space:nowrap;background:${sel ? "var(--accent, #0a84ff)" : "rgba(0,0,0,.6)"}`;
       d.appendChild(tag);
     }
-    d.onpointerdown = (e) => this.startMove(e, c, r, rect, false);
+    d.onpointerdown = (e) => this.startMove(e, c, r, full, false, d);
     if (sel) {
       const h = document.createElement("div");
       h.style.cssText = "position:absolute;right:-5px;bottom:-5px;width:10px;height:10px;background:var(--accent, #0a84ff);cursor:nwse-resize";
       h.title = L("끌어서 크기 조절");
-      h.onpointerdown = (e) => this.startMove(e, c, r, rect, true);
+      h.onpointerdown = (e) => this.startMove(e, c, r, full, true, d);
       d.appendChild(h);
     }
     return d;
   }
 
-  startMove(e, c, r, rect, resize) {
+  /// 끌기가 끝나거나 취소될 때 한 번 정리
+  track(move, done) {
+    const end = (ev) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      this.drag = null;
+      this.sig = "";
+      done(ev.type === "pointerup");
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
+
+  startMove(e, c, r, full, resize, target) {
     e.preventDefault();
     e.stopPropagation();
+    // 고르는 순간 화면이 다시 그려지지 않게 먼저 끌기 상태로
+    this.drag = true;
     if (S.selBlur !== r.id) {
       S.selBlur = r.id;
       window.dispatchEvent(new Event("selection"));
     }
-    const target = e.currentTarget.closest("#blurfx > div") || e.currentTarget;
     const x0 = e.clientX, y0 = e.clientY;
     const o = { ...r };
     let moved = false;
-    this.drag = true;
-    const move = (ev) => {
-      const dx = (ev.clientX - x0) / rect.w, dy = (ev.clientY - y0) / rect.h;
+    this.track((ev) => {
+      const dx = (ev.clientX - x0) / full.w, dy = (ev.clientY - y0) / full.h;
       if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) > 1) moved = true;
       if (resize) {
         r.w = Math.min(1 - r.x, Math.max(0.01, o.w + dx));
@@ -219,27 +269,15 @@ export class BlurLayer {
         r.x = Math.min(1 - r.w, Math.max(0, o.x + dx));
         r.y = Math.min(1 - r.h, Math.max(0, o.y + dy));
       }
-      target.style.left = rect.left + r.x * rect.w + "px";
-      target.style.top = rect.top + r.y * rect.h + "px";
-      target.style.width = r.w * rect.w + "px";
-      target.style.height = r.h * rect.h + "px";
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      this.drag = null;
-      this.sig = "";
-      // 다 옮긴 뒤 한 번만 기록 (되돌리기 한 번에 돌아온다)
-      if (moved) setBlurs(c, c.blurs.map((x) => (x.id === r.id ? { ...r } : x)));
-      else this.player.refresh();
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+      Object.assign(target.style, { left: full.left + r.x * full.w + "px", top: full.top + r.y * full.h + "px", width: r.w * full.w + "px", height: r.h * full.h + "px" });
+    }, (ok) => {
+      // 다 옮긴 뒤 한 번만 기록 (되돌리기 한 번에 돌아온다). 취소되면 원래대로
+      if (ok && moved) setBlurs(c, c.blurs.map((x) => (x.id === r.id ? { ...r } : x)));
+      else { Object.assign(r, o); this.player.refresh(); }
+    });
   }
 
-  startDraw(e, c) {
-    const rect = this.player.els.get(c.id)?._rect;
-    if (!rect) return;
+  startDraw(e, { c, rect, full }) {
     e.preventDefault();
     const box = this.el.getBoundingClientRect();
     const p0 = { x: e.clientX - box.left, y: e.clientY - box.top };
@@ -248,30 +286,23 @@ export class BlurLayer {
     this.el.appendChild(ghost);
     this.drag = true;
     let p1 = p0;
-    const move = (ev) => {
+    this.track((ev) => {
       p1 = { x: ev.clientX - box.left, y: ev.clientY - box.top };
       Object.assign(ghost.style, { left: Math.min(p0.x, p1.x) + "px", top: Math.min(p0.y, p1.y) + "px", width: Math.abs(p1.x - p0.x) + "px", height: Math.abs(p1.y - p0.y) + "px" });
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      this.drag = null;
-      this.sig = "";
+    }, (ok) => {
       S.drawBlur = false;
-      // 클립 화면 안으로 자른 뒤 원본 비율로
+      // 보이는 클립 화면 안으로 자른 뒤 원본 전체 비율로
       const x0 = Math.max(Math.min(p0.x, p1.x), rect.left), y0 = Math.max(Math.min(p0.y, p1.y), rect.top);
       const x1 = Math.min(Math.max(p0.x, p1.x), rect.left + rect.w), y1 = Math.min(Math.max(p0.y, p1.y), rect.top + rect.h);
-      if (x1 - x0 < 4 || y1 - y0 < 4) { window.dispatchEvent(new Event("selection")); this.player.refresh(); return; }
+      if (!ok || x1 - x0 < 4 || y1 - y0 < 4) { window.dispatchEvent(new Event("selection")); this.player.refresh(); return; }
       const a = U.asset(c.assetID);
       const image = a?.kind === "image";
       let s = srcTime(c, Math.min(Math.max(S.time, c.start), U.clipEnd(c)));
       if (s >= c.sourceOut - 0.05) s = c.sourceIn;
-      const r = { id: uuid(), x: (x0 - rect.left) / rect.w, y: (y0 - rect.top) / rect.h, w: (x1 - x0) / rect.w, h: (y1 - y0) / rect.h,
+      const r = { id: uuid(), x: (x0 - full.left) / full.w, y: (y0 - full.top) / full.h, w: (x1 - x0) / full.w, h: (y1 - y0) / full.h,
         start: image ? 0 : s, end: image ? 1e6 : c.sourceOut, style: pref("style", "blur"), label: MANUAL };
       S.selBlur = r.id;
       setBlurs(c, [...(c.blurs || []), r]);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    });
   }
 }

@@ -588,21 +588,29 @@ final class EditorStore: ObservableObject {
         player.pause()
         privacyScanning[clipID] = JobProgress(value: 0, message: "화면 읽는 중…")
         let from = asset.kind == .image ? 0 : clip.sourceIn, to = asset.kind == .image ? 0 : clip.sourceOut
+        // 실제 찾기는 따로 돌리고, 중지하면 그 작업까지 멈춘다
+        let worker = Task.detached(priority: .userInitiated) {
+            try await PrivacyScanner.scan(asset: asset, from: from, to: to, options: options) { v in
+                Task { @MainActor [weak self] in
+                    guard let self, self.privacyTasks[clipID] != nil else { return }
+                    self.privacyScanning[clipID]?.value = v
+                }
+            }
+        }
         privacyTasks[clipID] = Task { [weak self] in
-            do {
-                var found = try await Task.detached(priority: .userInitiated) {
-                    try await PrivacyScanner.scan(asset: asset, from: from, to: to, options: options) { v in
-                        Task { @MainActor in self?.privacyScanning[clipID]?.value = v }
-                    }
-                }.value
-                guard let self else { return }
-                self.privacyScanning[clipID] = nil
-                self.privacyTasks[clipID] = nil
+            let result = await withTaskCancellationHandler { await worker.result } onCancel: { worker.cancel() }
+            guard let self, !Task.isCancelled else { return }
+            self.privacyScanning[clipID] = nil
+            self.privacyTasks[clipID] = nil
+            switch result {
+            case .failure(let error):
+                if !(error is CancellationError) { self.alert = error.localizedDescription }
+            case .success(var found):
                 for i in found.indices { found[i].style = style }
                 self.apply { p in
                     guard let loc = p.locate(clip: clipID) else { return }
-                    let manual = (p.tracks[loc.track].clips[loc.index].blurs ?? []).filter { $0.label == Self.manualBlurLabel }
-                    let all = manual + found
+                    let keep = (p.tracks[loc.track].clips[loc.index].blurs ?? []).filter { !$0.isAutoFound }
+                    let all = keep + found
                     p.tracks[loc.track].clips[loc.index].blurs = all.isEmpty ? nil : all
                 }
                 if found.isEmpty {
@@ -611,14 +619,12 @@ final class EditorStore: ObservableObject {
                     let kinds = Dictionary(grouping: found, by: \.label).map { "\(L($0.key)) \($0.value.count)" }.sorted().joined(separator: ", ")
                     self.showToast("\(found.count)곳을 가렸습니다 (\(kinds))")
                 }
-            } catch {
-                guard let self else { return }
-                self.privacyScanning[clipID] = nil
-                self.privacyTasks[clipID] = nil
-                if !(error is CancellationError) { self.alert = error.localizedDescription }
             }
         }
     }
+
+    /// 패널에서 중지할 수 있는 찾기인지 (AI가 돌리는 찾기는 AI 쪽에서 끝난다)
+    func canCancelPrivacyScan(_ clipID: UUID) -> Bool { privacyTasks[clipID] != nil }
 
     func cancelPrivacyScan(_ clipID: UUID) {
         privacyTasks[clipID]?.cancel()
@@ -658,7 +664,8 @@ final class EditorStore: ObservableObject {
 
     /// ids가 nil이면 클립의 가리기를 모두 지운다
     func removeBlurs(_ clipID: UUID, _ ids: Set<UUID>? = nil) {
-        updateClip(clipID, key: "blurdel") { c in
+        // 지울 때마다 따로 되돌릴 수 있게 묶지 않는다
+        updateClip(clipID, key: "blurdel-\(UUID())") { c in
             if let ids { c.blurs?.removeAll { ids.contains($0.id) } } else { c.blurs = nil }
             if c.blurs?.isEmpty == true { c.blurs = nil }
         }

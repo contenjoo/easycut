@@ -110,7 +110,9 @@ struct BlurOverlay: View {
               a.width > 0, a.height > 0 else { return nil }
         let t = player.time
         guard t >= clip.start - 0.001, t < clip.end + 0.001 else { return nil }
-        let fit = min(size.width / a.width, size.height / a.height) * clip.scale
+        // 원 모양은 가운데 정사각형을 화면에 맞추므로(컴포지터와 같게) 그 기준으로 원본 전체 자리를 구한다
+        let side = clip.shape == .circle ? min(a.width, a.height) : 0
+        let fit = (side > 0 ? min(size.width / side, size.height / side) : min(size.width / a.width, size.height / a.height)) * clip.scale
         let fw = a.width * fit, fh = a.height * fit
         let fx = (size.width - fw) / 2 + clip.offsetX * size.width
         let fy = (size.height - fh) / 2 + clip.offsetY * size.height

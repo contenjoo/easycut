@@ -54,12 +54,18 @@ impl Project {
             self.ripple_shift(t, x / c.speed, Some(id));
             return x;
         }
+        // 줄이기: 이 클립만 줄이고, 클립 끝 뒤에 시작하는 것만 당긴다 (다른 트랙의 배경음악 등은 자르지 않는다)
         let x = (-seconds).min(((c.source_out - c.source_in) - MIN_CLIP_DURATION * c.speed).max(0.0));
         if x <= 1e-6 {
             return 0.0;
         }
-        let d = x / c.speed;
-        if at_end { self.ripple_delete(c.end() - d, c.end()) } else { self.ripple_delete(c.start, c.start + d) }
+        if let Some(m) = self.clip_mut(id) {
+            if at_end { m.source_out -= x } else { m.source_in += x }
+        }
+        self.ripple_shift(c.end(), -x / c.speed, Some(id));
+        for ti in 0..self.tracks.len() {
+            self.resolve_overlaps(ti, None);
+        }
         -x
     }
 
@@ -156,6 +162,28 @@ mod tests {
         full.restore_cut(&cps[0], None, None);
         assert_eq!(full.tracks[0].clips.len(), 1);
         assert!((full.duration() - 10.0).abs() < 1e-9 && (full.captions[1].start - 6.0).abs() < 1e-9);
+
+        // 경계 0.02초 뒤부터 자르기 (장면 저장·구간 내보내기)
+        let mut edge = m.clone();
+        edge.ripple_delete(0.0, 3.02);
+        edge.normalize();
+        assert_eq!(edge.tracks[0].clips.len(), 1);
+        assert!((edge.tracks[0].clips[0].source_in - 5.02).abs() < 1e-6 && edge.tracks[0].clips[0].start.abs() < 1e-9);
+
+        // 늘렸다 줄이기: 다른 트랙(배경음악)은 잘리지 않고 원래대로
+        let mut bgm = m.clone();
+        let music = MediaAsset { path: "/tmp/m.m4a".into(), name: "m".into(), kind: MediaKind::Audio, duration: 30.0, has_audio: true, ..Default::default() };
+        bgm.assets.push(music.clone());
+        let mid = bgm.insert(&music, 1, 0.0, 5.0);
+        bgm.clip_mut(mid).unwrap().source_out = 8.0;
+        let snapshot = bgm.clone();
+        let right = cps[0].right;
+        bgm.adjust_edge(right, false, 1.0, 10.0);
+        bgm.adjust_edge(right, false, -1.0, 10.0);
+        assert_eq!(bgm.tracks[1].clips.len(), 1);
+        assert_eq!(bgm.tracks[1].clips[0].source_out, 8.0);
+        assert_eq!(bgm.clip(right).unwrap().source_in, 5.0);
+        assert!((bgm.duration() - snapshot.duration()).abs() < 1e-9);
 
         let id = full.tracks[0].clips[0].id;
         full.adjust_edge(id, true, -1.0, 10.0);
@@ -282,7 +310,8 @@ impl Project {
     /// 잰 자막마다 시작을 실제 말 시작에 맞춘다 (앞 자막과 겹치지 않게, 늦출 때는 길이 유지)
     pub fn snap_captions(&mut self, measures: &[SyncMeasure]) {
         for m in measures {
-            if m.index >= self.captions.len() {
+            // 재는 동안 자막이 바뀌었으면(지우거나 옮김) 그 자막은 건드리지 않는다
+            if m.index >= self.captions.len() || (self.captions[m.index].start - m.caption_start).abs() >= 0.0005 {
                 continue;
             }
             let mut start = m.onset;
@@ -335,10 +364,15 @@ mod sync_tests {
         // 앞 자막 끝이 말 시작을 덮고 있으면 줄여서 맞춘다
         let mut q = p.clone();
         q.captions[1].end = 3.15;
-        let m = SyncMeasure { index: 2, caption_start: q.captions[2].start, onset: 3.0 };
         q.captions[2].start = 3.2;
+        let m = SyncMeasure { index: 2, caption_start: q.captions[2].start, onset: 3.0 };
         q.snap_captions(&[m]);
         assert!((q.captions[2].start - 3.0).abs() < 1e-9 && (q.captions[1].end - 3.0).abs() < 1e-9);
+        // 재는 동안 바뀐 자막은 건드리지 않는다
+        let mut z = q.clone();
+        let stale = SyncMeasure { index: 2, caption_start: 9.9, onset: 2.5 };
+        z.snap_captions(&[stale]);
+        assert_eq!(z.captions[2].start, q.captions[2].start);
         p.shift_captions(0.5, 0.0, f64::INFINITY);
         assert!((p.captions[2].start - 3.5).abs() < 1e-9);
     }

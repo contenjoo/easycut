@@ -154,9 +154,14 @@ impl Project {
 
     /// 클립을 t 지점에서 둘로 나눈다. 새 오른쪽 클립 id를 돌려준다.
     pub fn split(&mut self, id: Id, t: f64) -> Option<Id> {
+        self.split_min(id, t, MIN_CLIP_DURATION)
+    }
+
+    /// min_piece: 양쪽 조각이 이보다 짧아지면 나누지 않는다 (구간 삭제는 아주 작은 값으로 정확히 자른다)
+    pub fn split_min(&mut self, id: Id, t: f64, min_piece: f64) -> Option<Id> {
         let (ti, ci) = self.locate(id)?;
         let c = self.tracks[ti].clips[ci].clone();
-        if !(t > c.start + MIN_CLIP_DURATION && t < c.end() - MIN_CLIP_DURATION) {
+        if !(t > c.start + min_piece && t < c.end() - min_piece) {
             return None;
         }
         let cut = c.source_time(t);
@@ -175,6 +180,10 @@ impl Project {
     }
 
     pub fn split_all(&mut self, t: f64, only: Option<&HashSet<usize>>) {
+        self.split_all_min(t, only, MIN_CLIP_DURATION)
+    }
+
+    pub fn split_all_min(&mut self, t: f64, only: Option<&HashSet<usize>>, min_piece: f64) {
         for ti in 0..self.tracks.len() {
             if only.is_some_and(|s| !s.contains(&ti)) {
                 continue;
@@ -186,7 +195,7 @@ impl Project {
                 .map(|c| c.id)
                 .collect();
             for id in ids {
-                self.split(id, t);
+                self.split_min(id, t, min_piece);
             }
         }
     }
@@ -227,8 +236,9 @@ impl Project {
         if len <= EPS {
             return;
         }
-        self.split_all(a, None);
-        self.split_all(b, None);
+        // 클립 경계 바로 옆(40ms 안)이라도 정확히 잘라야 구간이 남거나 겹치지 않는다. 남은 아주 작은 조각은 normalize가 지운다
+        self.split_all_min(a, None, EPS);
+        self.split_all_min(b, None, EPS);
         for t in &mut self.tracks {
             t.clips
                 .retain(|c| !(c.start >= a - EPS && c.end() <= b + EPS));

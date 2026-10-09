@@ -64,10 +64,11 @@ extension Project {
 
     /// 클립을 t 지점에서 둘로 나눈다. 새 오른쪽 클립 id를 돌려준다.
     @discardableResult
-    mutating func split(clip id: UUID, at t: Double) -> UUID? {
+    /// minPiece: 양쪽 조각이 이보다 짧아지면 나누지 않는다 (구간 삭제는 아주 작은 값으로 정확히 자른다)
+    mutating func split(clip id: UUID, at t: Double, minPiece: Double = Project.minClipDuration) -> UUID? {
         guard let loc = locate(clip: id) else { return nil }
         let c = tracks[loc.track].clips[loc.index]
-        guard t > c.start + Project.minClipDuration, t < c.end - Project.minClipDuration else { return nil }
+        guard t > c.start + minPiece, t < c.end - minPiece else { return nil }
         let cut = c.sourceTime(atTimeline: t)
         var left = c
         var right = c
@@ -82,10 +83,10 @@ extension Project {
         return right.id
     }
 
-    mutating func splitAll(at t: Double, tracks only: Set<Int>? = nil) {
+    mutating func splitAll(at t: Double, tracks only: Set<Int>? = nil, minPiece: Double = Project.minClipDuration) {
         for ti in tracks.indices where only?.contains(ti) ?? true {
             for c in tracks[ti].clips where t > c.start && t < c.end {
-                split(clip: c.id, at: t)
+                split(clip: c.id, at: t, minPiece: minPiece)
             }
         }
     }
@@ -113,8 +114,9 @@ extension Project {
         let a = max(0, min(t0, t1)), b = max(t0, t1)
         let len = b - a
         guard len > Project.eps else { return }
-        splitAll(at: a)
-        splitAll(at: b)
+        // 클립 경계 바로 옆(40ms 안)이라도 정확히 잘라야 구간이 남거나 겹치지 않는다. 남은 아주 작은 조각은 normalize가 지운다
+        splitAll(at: a, minPiece: Project.eps)
+        splitAll(at: b, minPiece: Project.eps)
         for ti in tracks.indices {
             tracks[ti].clips.removeAll { $0.start >= a - Project.eps && $0.end <= b + Project.eps }
             for ci in tracks[ti].clips.indices where tracks[ti].clips[ci].start >= b - Project.eps {
@@ -392,10 +394,12 @@ extension Project {
             rippleShift(from: t, by: x / c.speed, except: id)
             return x
         }
+        // 줄이기: 이 클립만 줄이고, 클립 끝 뒤에 시작하는 것만 당긴다 (다른 트랙의 배경음악 등은 자르지 않는다)
         let x = min(-seconds, max(0, (c.sourceOut - c.sourceIn) - Project.minClipDuration * c.speed))
         guard x > 1e-6 else { return 0 }
-        let d = x / c.speed
-        if atEnd { rippleDelete(from: c.end - d, to: c.end) } else { rippleDelete(from: c.start, to: c.start + d) }
+        if atEnd { tracks[loc.track].clips[loc.index].sourceOut -= x } else { tracks[loc.track].clips[loc.index].sourceIn += x }
+        rippleShift(from: c.end, by: -x / c.speed, except: id)
+        for ti in tracks.indices { resolveOverlaps(track: ti) }
         return -x
     }
 

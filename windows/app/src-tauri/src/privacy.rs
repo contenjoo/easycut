@@ -27,7 +27,8 @@ fn frames(a: &MediaAsset, from: f64, to: f64, step: f64, mut each: impl FnMut(us
         cmd.args(["-an", "-vf", &format!("fps=1/{step:.4}:round=down,scale={w}:{h}")]);
     }
     cmd.args(["-f", "rawvideo", "-pix_fmt", "bgra", "pipe:1"]);
-    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
+    // stderr는 읽지 않으므로 버린다 (파이프가 차면 ffmpeg가 멈춘다)
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
     let mut out = child.stdout.take().unwrap();
     let mut buf = vec![0u8; w * h * 4];
     let mut n = 0;

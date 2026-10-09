@@ -11,6 +11,8 @@ use std::sync::OnceLock;
 pub const BLURS_KEY: &str = "blurs";
 /// 직접 그린 영역 (다시 찾아도 남는다)
 pub const MANUAL_LABEL: &str = "직접 지정";
+/// 자동 찾기가 붙이는 이름. 다시 찾으면 이 영역들만 새 결과로 바뀌고, 직접 그렸거나 AI가 추가한 영역은 남는다
+pub const AUTO_LABELS: &[&str] = &["전화번호", "주민등록번호", "이메일", "카드번호", "계좌번호", "여권번호", "지정한 글자", "얼굴"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -56,6 +58,10 @@ impl Default for BlurRegion {
 }
 
 impl BlurRegion {
+    pub fn is_auto_found(&self) -> bool {
+        AUTO_LABELS.contains(&self.label.as_str())
+    }
+
     pub fn is_active(&self, s: f64) -> bool {
         s >= self.start - 0.0001 && s < self.end
     }

@@ -102,6 +102,10 @@ struct BlurRegion: Codable, Hashable, Identifiable {
     var text: String?
 
     func isActive(atSource s: Double) -> Bool { s >= start - 0.0001 && s < end }
+
+    /// 자동 찾기가 붙이는 이름. 다시 찾으면 이 영역들만 새 결과로 바뀌고, 직접 그렸거나 AI가 추가한 영역은 남는다
+    static let autoLabels: Set<String> = ["전화번호", "주민등록번호", "이메일", "카드번호", "계좌번호", "여권번호", "지정한 글자", "얼굴"]
+    var isAutoFound: Bool { Self.autoLabels.contains(label) }
 }
 
 struct TextStyle: Codable, Hashable {

@@ -503,7 +503,7 @@ struct PrivacySection: View {
                 HStack {
                     ProgressView(value: job.value).controlSize(.small)
                     Text("\(Int(job.value * 100))%").monospacedDigit().font(.caption)
-                    Button("중지") { store.cancelPrivacyScan(clip.id) }.controlSize(.small)
+                    if store.canCancelPrivacyScan(clip.id) { Button("중지") { store.cancelPrivacyScan(clip.id) }.controlSize(.small) }
                 }
                 Text(L(job.message)).font(.caption).foregroundStyle(.secondary)
             } else {
@@ -541,7 +541,7 @@ struct PrivacySection: View {
                     Spacer()
                     Menu("방식 모두 바꾸기") {
                         ForEach(BlurStyle.allCases) { st in
-                            Button(L(st.label)) { store.updateClip(clip.id, key: "blurstyle") { c in for i in c.blurs!.indices { c.blurs![i].style = st } } }
+                            Button(L(st.label)) { store.updateClip(clip.id, key: "blurstyle") { c in for i in c.blurs?.indices ?? 0..<0 { c.blurs?[i].style = st } } }
                         }
                     }
                     .fixedSize()

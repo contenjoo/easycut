@@ -376,6 +376,31 @@ enum SelfTest {
         check(abs(trim.duration - 9) < 1e-9, "끝 1초 줄이기")
         let grow = trim.adjustEdge(clip: trim.tracks[0].clips[0].id, end: true, seconds: 5, sourceDuration: 10)
         check(abs(grow - 1) < 1e-9 && abs(trim.duration - 10) < 1e-9, "원본 끝까지만 늘리기")
+        // 클립 경계 바로 뒤(40ms 안)에서 시작하는 구간 삭제도 정확히 (장면 저장·구간 내보내기)
+        var edgeP = Project()
+        edgeP.assets = [ma]
+        let ea = edgeP.insert(asset: ma, track: 0, at: 0)
+        edgeP.rippleDelete(from: 5, to: 7)
+        edgeP.rippleDelete(from: 0, to: 5.02)
+        edgeP.normalize()
+        let ec = edgeP.tracks[0].clips
+        check(ec.count == 1 && abs(ec[0].start) < 1e-9 && abs(ec[0].sourceIn - 7.02) < 1e-6 && abs(edgeP.duration - 2.98) < 1e-6,
+              String(format: "경계 0.02초 뒤부터 자르기: 남은 %.2f초", edgeP.duration))
+        _ = ea
+        // 경계 늘렸다 줄이기: 다른 트랙(배경음악)은 잘리지 않고 원래대로
+        var bgm = Project()
+        let music = MediaAsset(path: "/tmp/m.m4a", name: "m", kind: .audio, duration: 30, width: 0, height: 0, hasAudio: true)
+        bgm.assets = [ma, music]
+        bgm.insert(asset: ma, track: 0, at: 0)
+        bgm.rippleDelete(from: 5, to: 7)
+        bgm.insert(asset: music, track: 1, at: 0)
+        if let loc = bgm.locate(clip: bgm.tracks[1].clips[0].id) { bgm.tracks[loc.track].clips[loc.index].sourceOut = 8 }
+        let bgmBefore = bgm
+        let bid = bgm.tracks[0].clips[1].id
+        bgm.adjustEdge(clip: bid, end: false, seconds: 1, sourceDuration: 10)
+        bgm.adjustEdge(clip: bid, end: false, seconds: -1, sourceDuration: 10)
+        check(bgm.tracks[1].clips.count == 1 && bgm.tracks[1].clips[0].sourceOut == 8 && bgm.tracks[0].clips[1].sourceIn == 7
+              && abs(bgm.duration - bgmBefore.duration) < 1e-9, "늘렸다 줄이기: 원래대로, 배경음악은 안 잘림")
 
         // 실제 말소리로 AI 도구
         let speech = dir.appendingPathComponent("review_speech.aiff")
@@ -701,9 +726,11 @@ enum AudioProbe {
             guard let mp = p.mutableCopy() as? AVMutableAudioMixInputParameters else { continue }
             var cb = MTAudioProcessingTapCallbacks(
                 version: kMTAudioProcessingTapCallbacksVersion_0,
-                clientInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(box).toOpaque()),
+                // 탭은 측정이 끝난 뒤에도 잠시 돌 수 있으므로 box를 붙잡고 있다가 탭이 끝날 때 놓는다
+                clientInfo: UnsafeMutableRawPointer(Unmanaged.passRetained(box).toOpaque()),
                 init: { _, info, storage in storage.pointee = info },
-                finalize: nil, prepare: nil, unprepare: nil,
+                finalize: { tap in Unmanaged<Box>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).release() },
+                prepare: nil, unprepare: nil,
                 process: { tap, frames, _, abl, framesOut, flagsOut in
                     guard MTAudioProcessingTapGetSourceAudio(tap, frames, abl, flagsOut, nil, framesOut) == noErr else { return }
                     let b = Unmanaged<Box>.fromOpaque(MTAudioProcessingTapGetStorage(tap)).takeUnretainedValue()

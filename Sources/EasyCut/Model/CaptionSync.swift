@@ -91,7 +91,8 @@ extension Project {
 
     /// 잰 자막마다 시작을 실제 말소리 시작에 맞춘다. 앞 자막과 겹치지 않게, 너무 짧아지지 않게.
     mutating func snapCaptions(_ measures: [CaptionSyncMeasure]) {
-        for m in measures where captions.indices.contains(m.index) {
+        // 재는 동안 자막이 바뀌었으면(지우거나 옮김) 그 자막은 건드리지 않는다
+        for m in measures where captions.indices.contains(m.index) && abs(captions[m.index].start - m.captionStart) < 0.0005 {
             var c = captions[m.index]
             var start = m.onset
             // 앞 자막이 말 시작을 덮고 있으면 앞 자막 끝을 줄인다 (최소 0.3초는 남김)

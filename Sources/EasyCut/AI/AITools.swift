@@ -296,8 +296,8 @@ enum AITools {
                 store.privacyScanning[id] = nil
                 store.apply { p in
                     guard let loc = p.locate(clip: id) else { return }
-                    let manual = (p.tracks[loc.track].clips[loc.index].blurs ?? []).filter { $0.label == EditorStore.manualBlurLabel }
-                    let all = manual + found.map { var r = $0; r.style = st; return r }
+                    let keep = (p.tracks[loc.track].clips[loc.index].blurs ?? []).filter { !$0.isAutoFound }
+                    let all = keep + found.map { var r = $0; r.style = st; return r }
                     p.tracks[loc.track].clips[loc.index].blurs = all.isEmpty ? nil : all
                 }
                 total += found.count

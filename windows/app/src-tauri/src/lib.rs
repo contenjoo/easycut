@@ -630,7 +630,6 @@ fn update_clip(app: AppHandle, st: State<AppState>, id: Id, props: HashMap<Strin
 
 /// 클립 화면을 읽어 개인정보 자리를 찾아 가린다. 전에 자동으로 찾은 영역은 바뀌고 직접 그린 영역은 남는다.
 pub(crate) fn privacy_scan_blocking(app: &AppHandle, clip: Id, opt: &easycut_core::privacy::Options, style: easycut_core::privacy::BlurStyle) -> Res<Vec<easycut_core::privacy::BlurRegion>> {
-    use easycut_core::privacy::MANUAL_LABEL;
     let st = app.state::<AppState>();
     let (c, a) = with(&st, |e| {
         let c = e.project.clip(clip).cloned();
@@ -656,7 +655,7 @@ pub(crate) fn privacy_scan_blocking(app: &AppHandle, clip: Id, opt: &easycut_cor
     with(&st, |e| {
         e.apply(|p| {
             if let Some(c) = p.clip_mut(clip) {
-                let mut all: Vec<_> = c.blurs().into_iter().filter(|b| b.label == MANUAL_LABEL).collect();
+                let mut all: Vec<_> = c.blurs().into_iter().filter(|b| !b.is_auto_found()).collect();
                 all.extend(found.iter().cloned());
                 c.set_blurs(all);
             }
