@@ -6,7 +6,7 @@
 
 **[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.5.0/EasyCut_0.5.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.5.1/EasyCut_0.5.1_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
 
 만든 곳: [주식회사 오늘배움](https://learntoday.kr/services) — 주이즈·JooShow 등 오늘배움이 만든 다른 서비스도 이 페이지에서 볼 수 있습니다.
 

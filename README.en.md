@@ -6,7 +6,7 @@ EasyCut is a macOS video editor that puts simple cut editing, transcript-based e
 
 **[⬇︎ Download the latest version (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [Website](https://contenjoo.github.io/easycut/)
 
-Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.5.0/EasyCut_0.5.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.5.1/EasyCut_0.5.1_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
 
 Made by [Learn Today (주식회사 오늘배움)](https://learntoday.kr/services), which also builds Joo.is and JooShow.
 
