@@ -156,6 +156,8 @@ fn item(app: &AppHandle, role: &str, text: &str) {
 fn status(app: &AppHandle, text: &str) {
     let _ = app.emit("ai", json!({ "type": "status", "text": text }));
 }
+pub(crate) fn is_busy(app: &AppHandle) -> bool { ai(app).chat.lock().unwrap().busy }
+
 fn set_busy(app: &AppHandle, busy: bool) {
     ai(app).chat.lock().unwrap().busy = busy;
     let _ = app.emit("ai", json!({ "type": "busy", "value": busy }));

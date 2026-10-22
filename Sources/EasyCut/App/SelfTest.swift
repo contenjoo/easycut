@@ -57,6 +57,7 @@ enum SelfTest {
     }
 
     static func runAsync(_ dir: URL) async throws {
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural" { testTimelineOps(); return }
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "review" { try await testReview(dir); return }
@@ -535,6 +536,16 @@ enum SelfTest {
     }
 
     static func testTimelineOps() {
+        check(NaturalEdit.filenameRequest("강의_말줄이고_3분.mp4") == "말줄이고 · 3분", "파일명 편집: 제목·확장자 제외")
+        check(NaturalEdit.filenameRequest("일반영상.mp4").isEmpty, "일반 파일명은 편집 지시 아님")
+        let voiceAsset = UUID(), voiceClip = UUID()
+        func voiceWord(_ text: String, _ start: Double, _ end: Double) -> TimelineWord {
+            TimelineWord(word: Word(text: text, start: start, end: end), assetID: voiceAsset, clipID: voiceClip, track: 0, start: start, end: end)
+        }
+        let commands = NaturalEdit.commands([voiceWord("편집아,", 0, 0.3), voiceWord("여기", 0.4, 0.6), voiceWord("확대해줘.", 0.7, 1), voiceWord("이제", 1.1, 1.4), voiceWord("설명합니다", 1.5, 2)])
+        check(commands.count == 1 && commands[0].end == 1, "음성 지시: 문장 끝에서 멈추고 설명 보존")
+        check(NaturalEdit.commands([voiceWord("일반", 0, 0.5), voiceWord("설명", 0.6, 1)]).isEmpty, "호출어 없는 설명 보존")
+
         var p = Project()
         let a = MediaAsset(path: "/tmp/x.mp4", name: "x", kind: .video, duration: 10, width: 1920, height: 1080, hasAudio: true)
         p.assets = [a]

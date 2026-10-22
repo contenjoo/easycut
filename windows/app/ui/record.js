@@ -79,9 +79,12 @@ export async function openRecordDialog() {
       <select id="r-mic-id" ${mics.length ? "" : "disabled"}>${mics.length ? opt(mics, o.micId) : `<option>${L("마이크 없음")}</option>`}</select></div>
     <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-sys" ${o.systemAudio ? "checked" : ""}/> ${L("컴퓨터 소리도 녹음 (전체 화면일 때)")}</label></div>
     <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-clicks" ${o.clicks ? "checked" : ""}/> ${L("마우스 클릭 강조 (전체 화면일 때)")}</label></div>
+    <div class="row"><label><input id="r-spoken" type="checkbox" ${localStorage.getItem("spokenEditEnabled") === "1" ? "checked" : ""}> 말하면서 편집 (녹화 후 지시 검토)</label></div>
+    <p class="hint">‘편집아, 여기 확대해줘’처럼 한 문장으로 말하고 잠깐 쉬세요. 음성 인식 후 지시를 검토합니다.</p>
     <p class="hint">${L("녹화 중 단축키: Ctrl+Alt+P 일시정지 · Ctrl+Alt+S 정지")}<br>${L("녹화 파일은 동영상 폴더의 'EasyCut 녹화'에 저장됩니다.")}</p>
     <div class="btns"><button id="r-cancel">${L("취소")}</button><button class="danger" id="r-go">● ${L("녹화 시작")}</button></div>`;
   const q = (s) => box.querySelector(s);
+  q("#r-spoken").onchange = e => localStorage.setItem("spokenEditEnabled", e.target.checked ? "1" : "0");
   q("#r-cancel").onclick = api.modal.hide;
   q("#r-target").onchange = (e) => { setPref("target", e.target.value); openRecordDialog(); };
   q("#r-area").onclick = pickArea;

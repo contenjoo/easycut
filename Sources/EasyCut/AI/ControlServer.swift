@@ -5,7 +5,7 @@ import Network
 /// 127.0.0.1에만 열리고, 앱 지원 폴더의 비밀 토큰(사용자만 읽기 가능)을 가진 요청만 받는다.
 @MainActor
 final class ControlServer {
-    nonisolated static let port: UInt16 = 47_821
+    nonisolated static var port: UInt16 { AppPaths.isNaturalEditTest ? 47_823 : 47_821 }
     private var listener: NWListener?
     unowned let store: EditorStore
 

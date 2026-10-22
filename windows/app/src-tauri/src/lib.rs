@@ -32,6 +32,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Default)]
 struct Editor {
+    natural_edit_backup: Option<Project>,
     project: Project,
     path: Option<PathBuf>,
     undo: Vec<Project>,
@@ -45,6 +46,13 @@ struct Editor {
 }
 
 impl Editor {
+    fn begin_natural_edit(&mut self) { self.natural_edit_backup = Some(self.project.clone()); }
+    fn restore_natural_edit(&mut self) -> Res<()> {
+        let backup = self.natural_edit_backup.take().ok_or("복원할 초안이 없습니다")?;
+        self.apply(|p| *p = backup);
+        Ok(())
+    }
+
     fn apply(&mut self, f: impl FnOnce(&mut Project)) {
         let before = self.project.clone();
         f(&mut self.project);
@@ -159,6 +167,20 @@ fn emit_state(app: &AppHandle) -> Value {
 }
 
 // MARK: 프로젝트
+
+#[tauri::command]
+fn natural_edit_backup(app: AppHandle, st: State<AppState>) -> Res<()> {
+    if ai::is_busy(&app) { return Err("AI 편집이 끝난 뒤 사용하세요.".into()); }
+    with(&st, |e| e.begin_natural_edit());
+    Ok(())
+}
+
+#[tauri::command]
+fn natural_edit_restore(app: AppHandle, st: State<AppState>) -> Res<Value> {
+    if ai::is_busy(&app) { return Err("AI 편집이 끝난 뒤 복원하세요.".into()); }
+    with(&st, |e| e.restore_natural_edit())?;
+    Ok(changed(&app, &st))
+}
 
 #[tauri::command]
 fn get_state(st: State<AppState>) -> Value {
@@ -1434,6 +1456,7 @@ pub fn run() {
         .manage(clicks::Clicks::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            natural_edit_backup, natural_edit_restore,
             get_state, new_project, open_project, save_project, undo, redo,
             import_files, add_to_timeline, remove_asset,
             split, delete_clips, ripple_delete_range, move_clips, reorder_clip, trim_clip, set_speed, update_clip, update_track, add_text, update_project,
@@ -1457,4 +1480,24 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("EasyCut 실행 실패");
+}
+
+#[cfg(test)]
+mod natural_edit_tests {
+    use super::*;
+    #[test]
+    fn draft_restores_all_ai_steps_and_remains_undoable() {
+        let mut e = Editor::default();
+        let original = e.project.clone();
+        assert!(e.restore_natural_edit().is_err());
+        e.begin_natural_edit();
+        e.apply(|p| p.canvas_width = 800.0);
+        e.apply(|p| p.canvas_height = 600.0);
+        e.restore_natural_edit().unwrap();
+        assert_eq!(e.project, original);
+        assert!(e.natural_edit_backup.is_none());
+        assert!(e.undo_step());
+        assert_eq!(e.project.canvas_width, 800.0);
+        assert_eq!(e.project.canvas_height, 600.0);
+    }
 }

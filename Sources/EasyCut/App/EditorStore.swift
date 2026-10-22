@@ -47,6 +47,13 @@ final class EditorStore: ObservableObject {
     @Published var showSilenceSheet = false
     @Published var showLinkSheet = false
     @Published var showClaudeSheet = false
+    @Published var showNaturalEdit = false
+    @AppStorage("spokenEditEnabled") var spokenEditEnabled = false
+    @Published var naturalEditBackup: Project?
+    func restoreNaturalEdit() {
+        guard let backup = naturalEditBackup, !ai.busy else { return }
+        apply { $0 = backup }; naturalEditBackup = nil
+    }
     @Published var showRecordSheet = false
     @Published var snapping = true
     @Published var followPlayhead = true
@@ -330,6 +337,7 @@ final class EditorStore: ObservableObject {
         undoStack.removeAll(); redoStack.removeAll()
         player.clear()
         project = Project()
+        naturalEditBackup = nil
         projectURL = nil
         dirty = false
         selection = []
@@ -366,6 +374,7 @@ final class EditorStore: ObservableObject {
             let p = try JSONDecoder().decode(Project.self, from: data)
             undoStack.removeAll(); redoStack.removeAll()
             project = p
+            naturalEditBackup = nil
             projectURL = url
             dirty = false
             selection = []
@@ -800,6 +809,7 @@ final class EditorStore: ObservableObject {
                     if let i = p.assets.firstIndex(where: { $0.id == assetID }) { p.assets[i].words = words }
                 }
                 self.showToast("\(asset.name): \(words.count)개 단어 인식 완료")
+                if self.spokenEditEnabled && !NaturalEdit.commands(self.project.timelineWords()).isEmpty { self.showNaturalEdit = true }
                 // 자막이 비어 있으면 자동 생성
                 if self.project.captions.isEmpty && !words.isEmpty { self.generateCaptions(confirm: false) }
             } catch {

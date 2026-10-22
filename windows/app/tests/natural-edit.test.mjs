@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { filenameRequest, spokenCommands } from '../ui/natural-edit-core.js';
+assert.equal(filenameRequest('강의_말줄이고_3분.mp4'), '말줄이고 · 3분');
+assert.equal(filenameRequest('C:\\Videos\\수업_자막추가.MP4'), '자막추가');
+assert.equal(filenameRequest('일반영상.mp4'), '');
+const w = (text,start,end,clip='a') => ({text,start,end,clip});
+assert.deepEqual(spokenCommands([w('일반',0,.3),w('설명입니다.',.4,1)]), []);
+assert.deepEqual(spokenCommands([w('편집아,',0,.3),w('여기',.4,.6),w('확대해줘.',.7,1),w('이제',1.1,1.3),w('설명합니다',1.4,2)]), [{start:0,end:1,text:'편집아, 여기 확대해줘.'}]);
+assert.equal(spokenCommands([w('편집',0,.2),w('아',.25,.3),w('잘라줘.',.4,1)])[0].end,1);
+assert.equal(spokenCommands([w('편집아',0,.3),w('확대해줘',.4,1,'b')]).length,0);
+assert.equal(spokenCommands([w('편집아',0,.3),w('확대해줘',2,3)]).length,0);
+assert.equal(spokenCommands([w('편집아',0,.3),w('확대.',.4,1),w('편집아',2,2.3),w('자막.',2.4,3)]).length,2);
+assert.deepEqual(spokenCommands([w('편집아닌',0,.3), w('영상',.4,1)]), []);
+console.log('Natural edit: 10 parser cases passed');

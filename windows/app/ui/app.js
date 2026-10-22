@@ -1,3 +1,4 @@
+import { naturalEditDialog } from "./natural-edit.js";
 // EasyCut for Windows — 화면 로직 (상태, 명령, 패널)
 import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
@@ -376,7 +377,8 @@ async function autoTranscribe(assetId) {
   const st = await invoke("whisper_status").catch(() => ({}));
   if (!st.engine || !st.model) return toast(L("음성 인식 모델을 받으면 대본으로 편집할 수 있습니다. [음성 인식]을 눌러 주세요."));
   switchTab("transcript");
-  run("transcribe", { asset: assetId, language: S.language });
+  const v = await run("transcribe", { asset: assetId, language: S.language });
+  if (v && localStorage.getItem("spokenEditEnabled") === "1") naturalEditDialog();
 }
 
 
@@ -933,6 +935,7 @@ async function init() {
   window.addEventListener("error", (e) => toast("JS: " + e.message));
   window.addEventListener("unhandledrejection", (e) => toast("JS: " + (e.reason?.message ?? e.reason)));
   applyI18n();
+  document.querySelector("#natural-edit").onclick = naturalEditDialog;
   initSplitters();
   timeline = new Timeline($("#timeline"), $("#tl-scroll"));
   player = new Player($("#canvas"), $("#stage"));

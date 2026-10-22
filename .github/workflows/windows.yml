@@ -55,7 +55,9 @@ jobs:
 
       - name: Core tests
         working-directory: windows
-        run: cargo test -p easycut-core
+        run: |
+          cargo test --workspace
+          node app/tests/natural-edit.test.mjs
 
       - name: Build installer
         working-directory: windows/app
@@ -148,6 +150,29 @@ jobs:
         with:
           name: EasyCut-Windows-setup
           path: windows/target/release/bundle/nsis/*.exe
+
+      - name: Native WebView2 recording and natural edit UI
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
+          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+          $env:EASYCUT_NATIVE_SPEECH = "$env:RUNNER_TEMP/speech.wav"
+          $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
+          New-Item -ItemType Directory -Force $env:EASYCUT_NATIVE_OUTPUT | Out-Null
+          $app = Start-Process windows/target/release/easycut-windows.exe -PassThru
+          try {
+            node windows/app/tests/natural-edit-native.cjs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: natural-edit-native-evidence
+          path: ${{ runner.temp }}/native-evidence
+          if-no-files-found: ignore
 
       # 정식 릴리스로 올리되 "최신"은 맥 버전에 남긴다 (맥 자동 업데이트가 releases/latest를 본다)
       - name: Publish release

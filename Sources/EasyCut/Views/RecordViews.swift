@@ -4,6 +4,7 @@ import ScreenCaptureKit
 
 /// 녹화 설정 (화면 · 카메라 · 마이크)
 struct RecordSheet: View {
+    @AppStorage("spokenEditEnabled") private var spokenEditEnabled = false
     @ObservedObject var rec: RecordController
     @Environment(\.dismiss) private var dismiss
 
@@ -64,6 +65,8 @@ struct RecordSheet: View {
                 if rec.systemAudio && rec.target == .window {
                     Text("창 녹화에서는 그 창을 띄운 앱의 소리만 녹음됩니다").font(.caption).foregroundStyle(.secondary)
                 }
+                Toggle("말하면서 편집 (녹화 후 지시 검토)", isOn: $spokenEditEnabled)
+                if spokenEditEnabled { Text("‘편집아, 여기 확대해줘’처럼 한 문장으로 말하고 잠깐 쉬세요. 음성 인식 후 지시를 검토합니다.").font(.caption) }
                 Toggle("마이크(목소리)", isOn: $rec.useMic)
                 if rec.useMic {
                     Picker("마이크", selection: $rec.micID) {

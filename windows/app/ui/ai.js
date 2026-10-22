@@ -66,6 +66,8 @@ export function focusAI() {
   root?.querySelector("#ai-input")?.focus();
 }
 
+export function aiIsBusy() { return A.busy; }
+
 export function sendAI(text) {
   const t = text.trim();
   if (!t || A.busy) return;

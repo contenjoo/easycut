@@ -77,24 +77,25 @@ final class RecordController: ObservableObject {
         microphones = CaptureDevices.microphones
         if !cameras.contains(where: { $0.uniqueID == cameraID }) { cameraID = cameras.first?.uniqueID ?? "" }
         if !microphones.contains(where: { $0.uniqueID == micID }) { micID = (AVCaptureDevice.default(for: .audio) ?? microphones.first)?.uniqueID ?? "" }
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            let a = NSAlert()
-            a.messageText = "화면 녹화 권한이 필요합니다"
-            a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › 화면 및 시스템 오디오 녹음에서 EasyCut을 켠 뒤, EasyCut을 다시 시작해 주세요."
-            a.addButton(withTitle: "시스템 설정 열기")
-            a.addButton(withTitle: "닫기")
-            if a.localized().runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings("Privacy_ScreenCapture") }
-            return
-        }
         Task {
-            await refreshContent()
+            // ScreenCaptureKit is authoritative; CoreGraphics preflight can stay false
+            // after the user has granted a rebuilt app screen + system audio access.
+            guard await refreshContent() else {
+                let a = NSAlert()
+                a.messageText = "화면 녹화 권한이 필요합니다"
+                a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › 화면 및 시스템 오디오 녹음에서 EasyCut을 켠 뒤, EasyCut을 다시 시작해 주세요."
+                a.addButton(withTitle: "시스템 설정 열기")
+                a.addButton(withTitle: "닫기")
+                if a.localized().runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings("Privacy_ScreenCapture") }
+                return
+            }
             store?.showRecordSheet = true
         }
     }
 
-    func refreshContent() async {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return }
+    @discardableResult
+    func refreshContent() async -> Bool {
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return false }
         displays = content.displays
         excludeApp = content.applications.first { $0.processID == getpid() }
         if !displays.contains(where: { $0.displayID == displayID }) { displayID = displays.first?.displayID ?? CGMainDisplayID() }
@@ -104,6 +105,7 @@ final class RecordController: ObservableObject {
         }
         .sorted { ($0.owningApplication?.applicationName ?? "") < ($1.owningApplication?.applicationName ?? "") }
         if !windows.contains(where: { $0.windowID == windowID }) { windowID = windows.first?.windowID ?? 0 }
+        return !displays.isEmpty
     }
 
     static func windowLabel(_ w: SCWindow) -> String {
