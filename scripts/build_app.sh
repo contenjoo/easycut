@@ -131,6 +131,7 @@ PLIST
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 echo "▶ 앱 서명"
+xattr -cr "$APP"
 codesign --force --deep --sign "$SIGN_ID" --timestamp=none "$APP"
 
 if [ "${1:-}" = "--dmg" ]; then
