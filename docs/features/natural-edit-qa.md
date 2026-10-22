@@ -21,7 +21,7 @@
 - Rust 전체 검사 및 여러 편집 단계를 한 번에 복원/복원 실행취소하는 검사.
 - GitHub Windows runner의 실제 설치/Whisper/MCP/내보내기 검사.
 - 새 native 검사는 devtools 기능만 켠 별도 검증 빌드의 실제 WebView2 MediaRecorder에서 합성 canvas와 테스트 음성을 녹화하고, 실제 Tauri rec_begin/chunk/finish → MP4 → Whisper → 검토 UI → native 프로젝트 복원을 확인한다. 실제 데스크탑/마이크 장치 선택과 유료 AI 계정은 이 CI 검사에서 사용하지 않는다.
-- native 실행은 배포 빌드에서 devtools가 꺼져 CDP 포트가 열리지 않아 실패했다. wry/tauri-runtime-wry 소스를 대조해 확인했다. 배포 설치 파일은 그대로 검사하고, UI 검사는 `tauri/devtools`만 켠 별도 빌드에서 실행한다. 최종 CI 결과는 출시 전 확인한다.
+- native 실행은 배포 빌드에서 devtools가 꺼져 CDP 포트가 열리지 않아 실패했다. wry/tauri-runtime-wry 소스를 대조했다. devtools 기능만 켠 재검사에서도 환경 변수의 CDP 옵션이 브라우저 인자에 포함되지 않았다. 검증 전용 임시 config의 additionalBrowserArgs에 직접 명시했다. 배포 설치 파일은 그대로 검사하고, UI 검사는 `tauri/devtools`만 켠 별도 빌드에서 실행한다. 최종 CI 결과는 출시 전 확인한다.
 
 ## 임시 증거
 

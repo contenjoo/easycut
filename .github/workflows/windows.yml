@@ -155,9 +155,14 @@ jobs:
       # UI instrumentation is a separate build; the installer above keeps devtools disabled.
       - name: Native WebView2 recording and natural edit UI
         run: |
+          $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $testConfig.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+          $testConfig.app.windows[0] | Add-Member -NotePropertyName devtools -NotePropertyValue $true
+          $configPath = "$env:RUNNER_TEMP/native-tauri.conf.json"
+          $testConfig | ConvertTo-Json -Depth 100 | Set-Content $configPath
           Push-Location windows/app
           try {
-            npx tauri build --no-bundle --features tauri/devtools
+            npx tauri build --no-bundle --features tauri/devtools --config $configPath
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally { Pop-Location }
           npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
