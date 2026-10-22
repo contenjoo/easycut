@@ -4,11 +4,12 @@ const { chromium } = require('playwright-core');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 (async () => {
-  let browser;
+  let browser, lastError;
   for (let n=0;n<60;n++) {
     try { browser = await chromium.connectOverCDP('http://127.0.0.1:9222'); break; }
-    catch { await new Promise(r => setTimeout(r,1000)); }
+    catch (e) { lastError = e; await new Promise(r => setTimeout(r,1000)); }
   }
+  if (!browser) console.error('Last CDP error:',lastError?.message);
   assert(browser, 'WebView2 remote debugging endpoint did not start');
   const page = browser.contexts()[0].pages().find(p=>p.url().includes('tauri')) || browser.contexts()[0].pages()[0];
   page.setDefaultTimeout(30000);
@@ -50,6 +51,13 @@ const assert = require('node:assert/strict');
   },speech);
   assert.match(recorded.words.toLowerCase(), /video|windows|editor/);
   console.log('NATIVE RECORD → FILE → WHISPER',JSON.stringify(recorded));
+  const gutter = await page.evaluate(() => {
+    const scroller=document.querySelector('#tl-scroll');
+    return scroller.offsetHeight-scroller.clientHeight;
+  });
+  assert(gutter >= 12, 'Timeline horizontal scrollbar must reserve visible space without hover');
+  await page.mouse.move(0,0);
+  await page.screenshot({path:process.env.EASYCUT_NATIVE_OUTPUT+'/persistent-scrollbar.png'});
   await page.click('#natural-edit');
   await page.check('#ne-file-on');
   await page.fill('#ne-filename','강의_소리꺼줘_자막추가.mp4');

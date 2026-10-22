@@ -11,6 +11,8 @@ struct TimelineContainer: NSViewRepresentable {
         scroll.hasHorizontalScroller = true
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = false
+        // Reserve a permanent gutter, independent of macOS overlay-scrollbar preference.
+        scroll.scrollerStyle = .legacy
         scroll.drawsBackground = true
         scroll.backgroundColor = Theme.timelineBG
         let view = TimelineNSView(store: store)

@@ -57,6 +57,16 @@ enum SelfTest {
     }
 
     static func runAsync(_ dir: URL) async throws {
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural-export",
+           let path = ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_PROJECT"] {
+            let p = try JSONDecoder().decode(Project.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            let output = dir.appendingPathComponent("natural-edit-render.mp4")
+            try? FileManager.default.removeItem(at: output)
+            try await Exporter.export(project: p, format: .mp4H264, size: CGSize(width: 640, height: 360), burnCaptions: true, to: output, cancel: Exporter.Box()) { _ in }
+            let duration = try await AVURLAsset(url: output).load(.duration).seconds
+            check(abs(duration - p.duration) < 0.2, "실제 AI 편집 프로젝트 내보내기 길이 일치")
+            return
+        }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural" { testTimelineOps(); return }
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
@@ -544,6 +554,8 @@ enum SelfTest {
         }
         let commands = NaturalEdit.commands([voiceWord("편집아,", 0, 0.3), voiceWord("여기", 0.4, 0.6), voiceWord("확대해줘.", 0.7, 1), voiceWord("이제", 1.1, 1.4), voiceWord("설명합니다", 1.5, 2)])
         check(commands.count == 1 && commands[0].end == 1, "음성 지시: 문장 끝에서 멈추고 설명 보존")
+        let recordedCommand = NaturalEdit.commands([voiceWord("편집아,", 9.17, 9.93), voiceWord("이", 9.93, 10.25), voiceWord("영상의", 10.25, 10.65), voiceWord("소리를", 10.65, 11.03), voiceWord("꺼주어", 11.03, 13), voiceWord("설명을", 13.65, 14.09), voiceWord("이어갑니다.", 14.09, 15.11)])
+        check(recordedCommand.count == 1 && recordedCommand[0].end == 13 && !recordedCommand[0].text.contains("설명"), "실제 녹음 회귀: 지시 뒤 정상 설명 보존")
         check(NaturalEdit.commands([voiceWord("일반", 0, 0.5), voiceWord("설명", 0.6, 1)]).isEmpty, "호출어 없는 설명 보존")
 
         var p = Project()

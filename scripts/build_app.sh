@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 APP="$ROOT/dist/EasyCut.app"
-VERSION="1.11.1"
+VERSION="1.12.0"
 
 # 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
 SIGN_ID="${EASYCUT_SIGN_ID:-EasyCut Self-Signed}"
@@ -16,7 +16,14 @@ else
 fi
 
 echo "▶ 릴리스 빌드"
-swift build -c release --arch arm64 2>&1 | grep -E "error|Compiling|Build complete" || true
+BUILD_LOG=$(mktemp)
+if ! swift build -c release --arch arm64 > "$BUILD_LOG" 2>&1; then
+  cat "$BUILD_LOG"
+  rm -f "$BUILD_LOG"
+  exit 1
+fi
+grep -E "error|Compiling|Build complete" "$BUILD_LOG" || true
+rm -f "$BUILD_LOG"
 BIN="$ROOT/.build/arm64-apple-macosx/release/EasyCut"
 [ -x "$BIN" ] || BIN="$ROOT/.build/release/EasyCut"
 [ -x "$BIN" ] || { echo "빌드 실패"; exit 1; }
@@ -40,8 +47,13 @@ cp "$BIN" "$APP/Contents/MacOS/EasyCut"
 echo "▶ 내장 도구 (Whisper·ffmpeg)"
 if [ -x "$ROOT/vendor/bin/whisper-cli" ] && [ -x "$ROOT/vendor/bin/ffmpeg" ]; then
   mkdir -p "$APP/Contents/Resources/bin" "$APP/Contents/Resources/licenses"
-  cp "$ROOT/vendor/bin/"* "$APP/Contents/Resources/bin/"
+  for tool in whisper-cli ffmpeg ffprobe; do
+    if [ -f "$ROOT/vendor/bin/$tool" ]; then
+      COPYFILE_DISABLE=1 cp "$ROOT/vendor/bin/$tool" "$APP/Contents/Resources/bin/"
+    fi
+  done
   cp "$ROOT/vendor/licenses/"* "$APP/Contents/Resources/licenses/" 2>/dev/null || true
+  xattr -cr "$APP/Contents/Resources/bin"
   for b in "$APP/Contents/Resources/bin/"*; do codesign --force --sign "$SIGN_ID" --timestamp=none "$b"; done
 else
   echo "  (vendor/bin 없음 — ./scripts/build_deps.sh 를 먼저 실행하면 Whisper·ffmpeg가 내장됩니다)"
@@ -70,7 +82,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>17</string>
+  <key>CFBundleVersion</key><string>18</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

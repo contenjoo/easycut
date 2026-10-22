@@ -205,7 +205,7 @@ final class AIAssistant: ObservableObject {
         let work = AppPaths.support.appendingPathComponent("ai-work", isDirectory: true)
         try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         // 한글이 명령 인자로 넘어가면 자모로 분해되므로(파일시스템 표기) 프롬프트는 stdin, 나머지는 파일로 전달한다
-        let mcp: [String: Any] = ["mcpServers": ["easycut": ["command": appBin, "args": ["--mcp"]]]]
+        let mcp: [String: Any] = ["mcpServers": ["easycut": ["command": appBin, "args": ["--mcp"], "env": ["EASYCUT_CONTROL_PORT": String(ControlServer.port), "EASYCUT_SUPPORT_DIR": AppPaths.support.path]]]]
         let mcpFile = work.appendingPathComponent("mcp.json")
         let sysFile = work.appendingPathComponent("system.txt")
         try? JSONSerialization.data(withJSONObject: mcp).write(to: mcpFile)
@@ -311,6 +311,8 @@ final class AIAssistant: ObservableObject {
                    "mcp_servers.easycut.args=[\"--mcp\"]",
                    "mcp_servers.easycut.default_tools_approval_mode=\"approve\"",
                    "sandbox_mode=\"read-only\""]
+        cfg += ["mcp_servers.easycut.env.EASYCUT_CONTROL_PORT=\"\(ControlServer.port)\"",
+                "mcp_servers.easycut.env.EASYCUT_SUPPORT_DIR=\"\(AppPaths.support.path)\""]
         // 명령 실행·브라우저 등 편집과 상관없는 기본 도구는 끈다 (모르는 키는 무시되므로 -c로)
         for f in ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "in_app_browser", "computer_use", "image_generation"] {
             cfg.append("features.\(f)=false")

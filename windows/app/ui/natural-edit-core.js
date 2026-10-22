@@ -10,7 +10,7 @@ export function spokenCommands(words) {
     const split = text === "편집" && words[i + 1]?.clip === w.clip && token(words[i + 1]?.text || "") === "아" && words[i + 1].start - w.end < .6;
     if (token(text) !== "편집아" && !split) { i++; continue; }
     let j = i + (split ? 2 : 1);
-    while (j < words.length && words[j].clip === w.clip && words[j].start - words[j - 1].end < 1.2 && words[j].end - w.start < 8 && token(words[j].text) !== "편집아" && !(j > i + 1 && /[.!?。！？]$/.test(words[j - 1].text))) j++;
+    while (j < words.length && words[j].clip === w.clip && words[j].start - words[j - 1].end < .55 && words[j].end - w.start < 8 && token(words[j].text) !== "편집아" && !(j > i + 1 && (/[.!?。！？]$/.test(words[j - 1].text) || /(?:줘|줘요|주세요|주어|지워|넣어|만들어|잘라|늘려|줄여|꺼|켜|해)$/.test(token(words[j - 1].text))))) j++;
     if (j > i + (split ? 2 : 1)) out.push({ start: w.start, end: words[j - 1].end, text: words.slice(i, j).map(x => x.text).join(" ") });
     i = j;
   }

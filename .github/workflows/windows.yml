@@ -155,6 +155,9 @@ jobs:
         run: |
           npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
           $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
+          # Avoid reusing a browser process started by an earlier app/install test.
+          Get-Process easycut-windows -ErrorAction SilentlyContinue | Stop-Process -Force
+          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/natural-webview-data"
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
           $env:EASYCUT_NATIVE_SPEECH = "$env:RUNNER_TEMP/speech.wav"
           $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
@@ -164,6 +167,7 @@ jobs:
             node windows/app/tests/natural-edit-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally {
+            Get-CimInstance Win32_Process | Where-Object { $_.Name -match "easycut|msedgewebview2" } | Select-Object Name,ProcessId,ParentProcessId,CommandLine | Format-List
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           }
 

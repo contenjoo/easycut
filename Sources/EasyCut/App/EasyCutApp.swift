@@ -162,6 +162,7 @@ struct AppCommands: Commands {
             Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")
             Button("링크로 가져오기 (유튜브 등)…") { store.showLinkSheet = true }.keyboardShortcut("i", modifiers: [.command, .shift])
             Button("화면·얼굴 녹화…") { store.recording.open() }.keyboardShortcut("r", modifiers: [.command, .option])
+            Button("녹화 정지") { Task { await store.recording.stop() } }.keyboardShortcut(".", modifiers: [.command, .option])
         }
         CommandGroup(replacing: .saveItem) {
             Button("저장") { store.save() }.keyboardShortcut("s")

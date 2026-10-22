@@ -10,6 +10,10 @@ struct SpokenEdit: Identifiable {
 enum NaturalEdit {
     static func commands(_ words: [TimelineWord]) -> [SpokenEdit] {
         func token(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)) }
+        func endsCommand(_ s: String) -> Bool {
+            let t = token(s)
+            return ["줘", "줘요", "주세요", "주어", "지워", "넣어", "만들어", "잘라", "늘려", "줄여", "꺼", "켜", "해"].contains { t.hasSuffix($0) }
+        }
         var result: [SpokenEdit] = []
         var i = 0
         while i < words.count {
@@ -18,7 +22,7 @@ enum NaturalEdit {
             let splitWake = normalized == "편집" && i + 1 < words.count && words[i + 1].clipID == w.clipID && token(words[i + 1].word.text) == "아" && words[i + 1].start - w.end < 0.6
             guard token(normalized) == "편집아" || splitWake else { i += 1; continue }
             var j = i + (splitWake ? 2 : 1)
-            while j < words.count && words[j].clipID == w.clipID && words[j].start - words[j - 1].end < 1.2 && words[j].end - w.start < 8 && token(words[j].word.text) != "편집아" && !(j > i + 1 && ".!?。！？".contains(words[j - 1].word.text.last ?? " ")) { j += 1 }
+            while j < words.count && words[j].clipID == w.clipID && words[j].start - words[j - 1].end < 0.55 && words[j].end - w.start < 8 && token(words[j].word.text) != "편집아" && !(j > i + 1 && (endsCommand(words[j - 1].word.text) || ".!?。！？".contains(words[j - 1].word.text.last ?? " "))) { j += 1 }
             let text = words[i..<j].map { $0.word.text }.joined(separator: " ")
             if j > i + (splitWake ? 2 : 1) { result.append(SpokenEdit(start: w.start, end: words[j - 1].end, text: text)) }
             i = j

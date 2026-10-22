@@ -110,8 +110,13 @@ enum BlankVideo {
 }
 
 enum AppPaths {
-    static var isNaturalEditTest: Bool { Bundle.main.bundleIdentifier == "com.contenjoo.easycut.naturaledit.dev" }
+    static var isNaturalEditTest: Bool { Bundle.main.bundleIdentifier == "com.contenjoo.easycut.naturaledit.dev" || Bundle.main.object(forInfoDictionaryKey: "EasyCutTestInstance") as? Bool == true }
     static var support: URL {
+        if let path = ProcessInfo.processInfo.environment["EASYCUT_SUPPORT_DIR"], !path.isEmpty {
+            let dir = URL(fileURLWithPath: path, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = Self.isNaturalEditTest ? FileManager.default.temporaryDirectory.appendingPathComponent("EasyCut-NaturalEdit-Dev", isDirectory: true) : base.appendingPathComponent("EasyCut", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

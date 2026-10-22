@@ -11,4 +11,7 @@ assert.equal(spokenCommands([w('편집아',0,.3),w('확대해줘',.4,1,'b')]).le
 assert.equal(spokenCommands([w('편집아',0,.3),w('확대해줘',2,3)]).length,0);
 assert.equal(spokenCommands([w('편집아',0,.3),w('확대.',.4,1),w('편집아',2,2.3),w('자막.',2.4,3)]).length,2);
 assert.deepEqual(spokenCommands([w('편집아닌',0,.3), w('영상',.4,1)]), []);
-console.log('Natural edit: 10 parser cases passed');
+const recorded = [w('편집아,',9.17,9.93),w('이',9.93,10.25),w('영상의',10.25,10.65),w('소리를',10.65,11.03),w('꺼주어',11.03,13),w('설명을',13.65,14.09),w('이어갑니다.',14.09,15.11)];
+assert.equal(spokenCommands(recorded)[0].end,13);
+assert(!spokenCommands(recorded)[0].text.includes('설명'));
+console.log('Natural edit: 12 parser cases passed');

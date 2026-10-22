@@ -95,7 +95,14 @@ final class RecordController: ObservableObject {
 
     @discardableResult
     func refreshContent() async -> Bool {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return false }
+        let content: SCShareableContent
+        do { content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) }
+        catch {
+            if AppPaths.isNaturalEditTest {
+                try? String(describing: error).write(to: AppPaths.support.appendingPathComponent("capture-error.txt"), atomically: true, encoding: .utf8)
+            }
+            return false
+        }
         displays = content.displays
         excludeApp = content.applications.first { $0.processID == getpid() }
         if !displays.contains(where: { $0.displayID == displayID }) { displayID = displays.first?.displayID ?? CGMainDisplayID() }
@@ -366,6 +373,7 @@ extension EditorStore {
             if let aa { media.prepare(aa) }
             showToast(ca == nil ? "녹화를 타임라인에 넣었습니다" : "녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)")
             if sa.hasAudio { transcribe(sa.id) }
+            else if let aa, aa.hasAudio { transcribe(aa.id) }
         } catch {
             alert = "녹화 파일을 가져오지 못했습니다: \(error.localizedDescription)\n파일 위치: \(screen.deletingLastPathComponent().path)"
         }
