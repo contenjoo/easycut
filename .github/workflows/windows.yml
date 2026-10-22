@@ -33,6 +33,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: windows
+          cache-on-failure: true
 
       - name: Bundle ffmpeg and Whisper
         env:
@@ -151,8 +152,14 @@ jobs:
           name: EasyCut-Windows-setup
           path: windows/target/release/bundle/nsis/*.exe
 
+      # UI instrumentation is a separate build; the installer above keeps devtools disabled.
       - name: Native WebView2 recording and natural edit UI
         run: |
+          Push-Location windows/app
+          try {
+            npx tauri build --no-bundle --features tauri/devtools
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally { Pop-Location }
           npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
           $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
           # Avoid reusing a browser process started by an earlier app/install test.

@@ -20,8 +20,8 @@
 - 파서 검사: 일반 설명 제외, 호출어 구분, 실제 Mac 녹음 회귀, 파일명 해석.
 - Rust 전체 검사 및 여러 편집 단계를 한 번에 복원/복원 실행취소하는 검사.
 - GitHub Windows runner의 실제 설치/Whisper/MCP/내보내기 검사.
-- 새 native 검사는 실제 WebView2의 MediaRecorder에서 합성 canvas와 테스트 음성을 녹화하고, 실제 Tauri rec_begin/chunk/finish → MP4 → Whisper → 검토 UI → native 프로젝트 복원을 확인한다. 실제 데스크탑/마이크 장치 선택과 유료 AI 계정은 이 CI 검사에서 사용하지 않는다.
-- 최초 native 실행은 CDP 연결 포트가 열리지 않아 실패했다. 별도 WebView2 사용자 데이터 폴더와 기존 runner 테스트 프로세스 정리를 추가했다. 최종 CI 결과는 출시 전 확인한다.
+- 새 native 검사는 devtools 기능만 켠 별도 검증 빌드의 실제 WebView2 MediaRecorder에서 합성 canvas와 테스트 음성을 녹화하고, 실제 Tauri rec_begin/chunk/finish → MP4 → Whisper → 검토 UI → native 프로젝트 복원을 확인한다. 실제 데스크탑/마이크 장치 선택과 유료 AI 계정은 이 CI 검사에서 사용하지 않는다.
+- native 실행은 배포 빌드에서 devtools가 꺼져 CDP 포트가 열리지 않아 실패했다. wry/tauri-runtime-wry 소스를 대조해 확인했다. 배포 설치 파일은 그대로 검사하고, UI 검사는 `tauri/devtools`만 켠 별도 빌드에서 실행한다. 최종 CI 결과는 출시 전 확인한다.
 
 ## 임시 증거
 
