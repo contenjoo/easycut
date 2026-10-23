@@ -39,7 +39,7 @@ Needs Xcode Command Line Tools (Swift 5.10+), `cmake` (`brew install cmake`) and
 
 ```bash
 ./scripts/build_deps.sh      # build Whisper and ffmpeg from source into vendor/bin (once, ~10 minutes)
-./scripts/build_app.sh --dmg # app bundle + DMG (dist/)
+./scripts/build_app.sh --dmg # zipped app + DMG (dist/)
 ```
 
 ## Features
@@ -145,8 +145,10 @@ The connection stays inside this Mac (127.0.0.1) and only accepts requests carry
 ```bash
 swift build                                  # debug build
 .build/debug/EasyCut --selftest /tmp/ectest  # engine self-test (creates test media → edits → verifies export)
-./scripts/build_app.sh --dmg                 # app bundle + DMG
+./scripts/build_app.sh --dmg                 # zipped app + DMG
 ```
+
+Builds are stored as `dist/EasyCut.app.zip`. Use `./scripts/build_app.sh --install` to install, or `./scripts/relaunch.sh` to rebuild and reopen. Temporary app bundles are removed when the build ends so only `/Applications/EasyCut.app` remains in the app list.
 
 Layout:
 

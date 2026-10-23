@@ -35,7 +35,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 
 ```bash
 ./scripts/build_deps.sh      # Whisper·ffmpeg를 소스에서 빌드해 vendor/bin 에 (처음 한 번, 10분 내외)
-./scripts/build_app.sh --dmg # 앱 번들 + DMG (dist/)
+./scripts/build_app.sh --dmg # 압축 앱 + DMG (dist/)
 ```
 
 ## 주요 기능
@@ -141,8 +141,10 @@ MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁�
 ```bash
 swift build                                  # 디버그 빌드
 .build/debug/EasyCut --selftest /tmp/ectest  # 편집 엔진 자체 검사 (테스트 미디어 생성 → 편집 → 내보내기 검증)
-./scripts/build_app.sh --dmg                 # 앱 번들 + DMG
+./scripts/build_app.sh --dmg                 # 압축 앱 + DMG
 ```
+
+빌드 결과는 `dist/EasyCut.app.zip`으로 보관하며, 설치하려면 `./scripts/build_app.sh --install`을 실행합니다. 개발 중 다시 실행하려면 `./scripts/relaunch.sh`를 사용합니다. 앱 목록에는 `/Applications/EasyCut.app` 하나만 남기도록 임시 앱 번들은 빌드가 끝나면 정리됩니다.
 
 구조:
 

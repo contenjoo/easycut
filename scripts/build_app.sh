@@ -1,9 +1,21 @@
 #!/bin/bash
-# EasyCut.app 빌드 → dist/EasyCut.app, dist/EasyCut.dmg
+# 빌드 결과는 ZIP/DMG로 보관. --install이면 /Applications/EasyCut.app에 설치
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-APP="$ROOT/dist/EasyCut.app"
+MAKE_DMG=false
+INSTALL_APP=false
+for arg in "$@"; do
+  case "$arg" in
+    --dmg) MAKE_DMG=true ;;
+    --install) INSTALL_APP=true ;;
+    *) echo "사용법: $0 [--dmg] [--install]" >&2; exit 2 ;;
+  esac
+done
+mkdir -p "$ROOT/.build" "$ROOT/dist"
+WORK=$(mktemp -d "$ROOT/.build/app-build.XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+APP="$WORK/EasyCut.app"
 VERSION="1.12.0"
 
 # 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
@@ -134,9 +146,9 @@ echo "▶ 앱 서명"
 xattr -cr "$APP"
 codesign --force --deep --sign "$SIGN_ID" --timestamp=none "$APP"
 
-if [ "${1:-}" = "--dmg" ]; then
+if [ "$MAKE_DMG" = true ]; then
   echo "▶ DMG 생성"
-  STAGE="$ROOT/.build/dmg"
+  STAGE="$WORK/dmg"
   rm -rf "$STAGE"; mkdir -p "$STAGE"
   cp -R "$APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
@@ -146,4 +158,20 @@ if [ "${1:-}" = "--dmg" ]; then
   hdiutil create -volname "EasyCut $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/EasyCut-$VERSION.dmg" >/dev/null
   echo "  → dist/EasyCut-$VERSION.dmg ($(du -h "$ROOT/dist/EasyCut-$VERSION.dmg" | cut -f1))"
 fi
-echo "✅ 완료: $APP"
+echo "▶ 앱 압축 보관"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$WORK/EasyCut.app.zip"
+unzip -tq "$WORK/EasyCut.app.zip" >/dev/null
+mv -f "$WORK/EasyCut.app.zip" "$ROOT/dist/EasyCut.app.zip"
+if [ "$INSTALL_APP" = true ]; then
+  # 정상 종료는 저장 확인창을 거친다. 취소하면 설치하지 않는다.
+  osascript -e 'if application id "com.contenjoo.easycut" is running then tell application id "com.contenjoo.easycut" to quit'
+  running_status=0
+  pgrep -f '^/Applications/EasyCut.app/Contents/MacOS/EasyCut([[:space:]]|$)' >/dev/null || running_status=$?
+  if [ "$running_status" -ne 1 ]; then
+    echo "EasyCut을 종료한 뒤 다시 설치해 주세요." >&2
+    exit 1
+  fi
+  ditto "$APP" /Applications/EasyCut.app
+  echo "✅ 설치: /Applications/EasyCut.app"
+fi
+echo "✅ 완료: dist/EasyCut.app.zip"
