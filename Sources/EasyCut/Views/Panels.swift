@@ -2,6 +2,19 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+extension EditorStore {
+    /// 목록과 인스펙터는 값 복사본·개별 초안 대신 같은 현재 자막을 읽는다.
+    func captionTextBinding(_ id: UUID) -> Binding<String> {
+        Binding(
+            get: { self.project.captions.first(where: { $0.id == id })?.text ?? "" },
+            set: { value in
+                guard let current = self.project.captions.first(where: { $0.id == id }), current.text != value else { return }
+                self.updateCaption(id, key: "text") { $0.text = value }
+            }
+        )
+    }
+}
+
 // MARK: 미디어 목록
 
 struct MediaBinPanel: View {
@@ -194,7 +207,6 @@ struct CaptionsPanel: View {
 struct CaptionRow: View {
     @ObservedObject var store: EditorStore
     let caption: Caption
-    @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -207,12 +219,11 @@ struct CaptionRow: View {
                 .font(.system(size: 10, design: .monospaced))
             }
             .buttonStyle(.borderless)
-            TextField("자막", text: $text, axis: .vertical)
+            TextField("자막", text: store.captionTextBinding(caption.id), axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...3)
                 .focused($focused)
-                .onSubmit(commit)
-                .onChange(of: focused) { _, f in if !f { commit() } }
+                .simultaneousGesture(TapGesture().onEnded { focused = true })
             Button { store.deleteCaptions([caption.id]) } label: {
                 Image(systemName: store.captionCutsVideo ? "scissors.circle.fill" : "xmark.circle.fill")
                     .foregroundStyle(store.captionCutsVideo ? Color.red.opacity(0.8) : .secondary)
@@ -221,14 +232,6 @@ struct CaptionRow: View {
             .help(L(store.captionCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제"))
         }
         .padding(.vertical, 2)
-        .onAppear { text = caption.text }
-        .onChange(of: caption.text) { _, t in if !focused { text = t } }
-    }
-
-    func commit() {
-        guard text != caption.text else { return }
-        let t = text
-        store.updateCaption(caption.id, key: "text") { $0.text = t }
     }
 }
 
@@ -633,30 +636,13 @@ struct MultiInspector: View {
 struct CaptionInspector: View {
     @ObservedObject var store: EditorStore
     let caption: Caption
-    @State private var text: String
-    @FocusState private var focused: Bool
-
-    init(store: EditorStore, caption: Caption) {
-        self.store = store
-        self.caption = caption
-        _text = State(initialValue: caption.text)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("자막", systemImage: "captions.bubble").font(.headline)
-            // 입력값을 자막의 값 복사본과 분리해, 다시 그릴 때 이전 글자로 되돌아가지 않게 한다.
-            TextEditor(text: $text)
-                .focused($focused)
+            TextEditor(text: store.captionTextBinding(caption.id))
                 .frame(height: 70)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
-                .onChange(of: text) { _, value in
-                    guard store.project.captions.first(where: { $0.id == caption.id })?.text != value else { return }
-                    store.updateCaption(caption.id, key: "text") { $0.text = value }
-                }
-                .onChange(of: caption.text) { _, value in
-                    if !focused && text != value { text = value }
-                }
             ValueSlider(title: "시작", value: Binding(get: { caption.start }, set: { v in store.updateCaption(caption.id, key: "s") { $0.start = v } }),
                         range: 0...max(caption.end, store.project.duration)) { TimeFormat.clock($0) }
             ValueSlider(title: "끝", value: Binding(get: { caption.end }, set: { v in store.updateCaption(caption.id, key: "e") { $0.end = v } }),

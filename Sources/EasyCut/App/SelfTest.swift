@@ -67,7 +67,11 @@ enum SelfTest {
             check(abs(duration - p.duration) < 0.2, "실제 AI 편집 프로젝트 내보내기 길이 일치")
             return
         }
-        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "caption-text" { testCaptionText(); return }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "caption-text" {
+            testCaptionText()
+            await MainActor.run { testCaptionBindings() }
+            return
+        }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural" { testTimelineOps(); return }
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
@@ -77,6 +81,7 @@ enum SelfTest {
         print("1) 모델 연산")
         testTimelineOps()
         testCaptionText()
+        await MainActor.run { testCaptionBindings() }
         check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
               && !Updater.isNewer("1.2.0", than: "1.2.0") && !Updater.isNewer("1.2", than: "1.2.0") && Updater.isNewer("2.0", than: "1.99.1"),
               "업데이트 버전 비교")
@@ -574,6 +579,34 @@ enum SelfTest {
         p.captions.append(Caption(start: 8, end: 8.01, text: "너무 짧음"))
         p.normalize()
         check(p.captions.count == 3, "자막 정리: 길이가 없는 조각은 계속 제거")
+    }
+
+    @MainActor
+    static func testCaptionBindings() {
+        let store = EditorStore()
+        let caption = Caption(start: 0, end: 3, text: "원래 자막")
+        store.apply { $0.captions = [caption] }
+        let list = store.captionTextBinding(caption.id)
+        let inspector = store.captionTextBinding(caption.id)
+        list.wrappedValue = "목록에서 수정"
+        check(inspector.wrappedValue == "목록에서 수정", "자막 동기화: 목록 수정 즉시 인스펙터 반영")
+        inspector.wrappedValue += " 후 이어쓰기"
+        check(list.wrappedValue == "목록에서 수정 후 이어쓰기", "자막 동기화: 인스펙터에서 이어 써도 이전 값으로 덮어쓰지 않음")
+        store.undo()
+        check(list.wrappedValue == "원래 자막" && inspector.wrappedValue == "원래 자막", "자막 동기화: 실행 취소가 두 입력칸에 반영")
+        store.redo()
+        check(inspector.wrappedValue == "목록에서 수정 후 이어쓰기", "자막 동기화: 다시 실행 반영")
+        inspector.wrappedValue = ""
+        check(store.project.captions.count == 1 && list.wrappedValue.isEmpty, "자막 동기화: 전체 삭제 후에도 두 입력칸 유지")
+        for text in ["ㅎ", "하", "한", "한ㄱ", "한그", "한글"] { list.wrappedValue = text }
+        check(inspector.wrappedValue == "한글", "자막 동기화: 연속 한글 값 변경 반영")
+        var replacement = Project()
+        replacement.captions = [Caption(id: caption.id, start: 0, end: 3, text: "다른 프로젝트")]
+        store.apply { $0 = replacement }
+        check(list.wrappedValue == "다른 프로젝트" && inspector.wrappedValue == "다른 프로젝트", "자막 동기화: 같은 자막 ID의 프로젝트를 열어도 최신 값 사용")
+        store.apply { $0.captions = [] }
+        inspector.wrappedValue = "삭제된 자막"
+        check(store.project.captions.isEmpty, "자막 동기화: 삭제된 자막은 입력으로 되살리지 않음")
     }
 
     static func testTimelineOps() {
