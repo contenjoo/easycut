@@ -67,6 +67,7 @@ enum SelfTest {
             check(abs(duration - p.duration) < 0.2, "실제 AI 편집 프로젝트 내보내기 길이 일치")
             return
         }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "caption-text" { testCaptionText(); return }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural" { testTimelineOps(); return }
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
@@ -75,6 +76,7 @@ enum SelfTest {
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "sync" { try await testSync(dir); return }
         print("1) 모델 연산")
         testTimelineOps()
+        testCaptionText()
         check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
               && !Updater.isNewer("1.2.0", than: "1.2.0") && !Updater.isNewer("1.2", than: "1.2.0") && Updater.isNewer("2.0", than: "1.99.1"),
               "업데이트 버전 비교")
@@ -543,6 +545,35 @@ enum SelfTest {
         let ia = try await MediaProbe.probe(still)
         let ifound = try await PrivacyScanner.scan(asset: ia, from: 0, to: 0, options: opt) { _ in }
         check(Set(ifound.map(\.label)) == ["전화번호", "지정한 글자"], "사진: 전화번호·이름 찾기")
+    }
+
+    static func testCaptionText() {
+        var p = Project()
+        let caption = Caption(start: 0, end: 3, text: "기존 자막")
+        p.captions = [caption]
+        p.captions[0].text = ""
+        p.normalize()
+        check(p.captions.count == 1 && p.captions.first?.id == caption.id,
+              "자막 입력: 글자를 모두 지워도 자막 ID 유지")
+        guard p.captions.count == 1 else { return }
+        p.captions[0].text = " \n "
+        p.normalize()
+        check(p.captions.count == 1, "자막 입력: 공백·줄바꿈 상태에서도 편집 유지")
+        p.captions[0].text = "새 자막 입력"
+        p.normalize()
+        check(p.captions.first?.text == "새 자막 입력" && p.captions.first?.id == caption.id,
+              "자막 입력: 지운 뒤 새 한글 입력")
+        p.captions.append(Caption(start: 3, end: 5, text: ""))
+        let restored = try? JSONDecoder().decode(Project.self, from: JSONEncoder().encode(p))
+        check(restored?.captions.count == 2 && restored?.captions.last?.text == "",
+              "자막 입력: 빈 자막도 프로젝트 저장·읽기 유지")
+        p.captions.append(Caption(start: 5, end: 7, text: "다음 자막"))
+        let srt = SRT.make(p.captions)
+        check(SRT.parse(srt).map(\.text) == ["새 자막 입력", "다음 자막"] && srt.contains("2\n00:00:05,000"),
+              "SRT: 편집 중 빈 자막 제외·연속 번호 유지")
+        p.captions.append(Caption(start: 8, end: 8.01, text: "너무 짧음"))
+        p.normalize()
+        check(p.captions.count == 3, "자막 정리: 길이가 없는 조각은 계속 제거")
     }
 
     static func testTimelineOps() {

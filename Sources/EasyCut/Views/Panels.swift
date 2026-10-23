@@ -324,6 +324,7 @@ struct InspectorPanel: View {
                     MultiInspector(store: store)
                 } else if let cid = store.selectedCaption, let cap = store.project.captions.first(where: { $0.id == cid }) {
                     CaptionInspector(store: store, caption: cap)
+                        .id(cid)
                 } else {
                     ProjectInspector(store: store)
                 }
@@ -632,13 +633,30 @@ struct MultiInspector: View {
 struct CaptionInspector: View {
     @ObservedObject var store: EditorStore
     let caption: Caption
+    @State private var text: String
+    @FocusState private var focused: Bool
+
+    init(store: EditorStore, caption: Caption) {
+        self.store = store
+        self.caption = caption
+        _text = State(initialValue: caption.text)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("자막", systemImage: "captions.bubble").font(.headline)
-            TextEditor(text: Binding(get: { caption.text }, set: { v in store.updateCaption(caption.id, key: "text") { $0.text = v } }))
+            // 입력값을 자막의 값 복사본과 분리해, 다시 그릴 때 이전 글자로 되돌아가지 않게 한다.
+            TextEditor(text: $text)
+                .focused($focused)
                 .frame(height: 70)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
+                .onChange(of: text) { _, value in
+                    guard store.project.captions.first(where: { $0.id == caption.id })?.text != value else { return }
+                    store.updateCaption(caption.id, key: "text") { $0.text = value }
+                }
+                .onChange(of: caption.text) { _, value in
+                    if !focused && text != value { text = value }
+                }
             ValueSlider(title: "시작", value: Binding(get: { caption.start }, set: { v in store.updateCaption(caption.id, key: "s") { $0.start = v } }),
                         range: 0...max(caption.end, store.project.duration)) { TimeFormat.clock($0) }
             ValueSlider(title: "끝", value: Binding(get: { caption.end }, set: { v in store.updateCaption(caption.id, key: "e") { $0.end = v } }),

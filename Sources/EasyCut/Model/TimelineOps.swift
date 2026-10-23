@@ -15,7 +15,8 @@ extension Project {
             }
             tracks[ti].clips.sort { $0.start < $1.start }
         }
-        captions.removeAll { $0.end - $0.start < 0.05 || $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        // 글자를 모두 지운 상태도 편집 중인 자막이다. 여기서 삭제하면 인스펙터와 입력 포커스가 사라진다.
+        captions.removeAll { $0.end - $0.start < 0.05 }
         captions.sort { $0.start < $1.start }
     }
 

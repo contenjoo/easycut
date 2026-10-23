@@ -143,7 +143,7 @@ enum SRT {
     }
 
     static func make(_ captions: [Caption]) -> String {
-        captions.enumerated().map { i, c in
+        captions.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.enumerated().map { i, c in
             "\(i + 1)\n\(stamp(c.start)) --> \(stamp(c.end))\n\(c.text)\n"
         }.joined(separator: "\n")
     }
