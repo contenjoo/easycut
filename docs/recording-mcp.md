@@ -90,3 +90,20 @@ python3 scripts/recording_mcp_smoke.py \
 실제 길이·무음 스트림·전체 프레임 decode·움직임을 검사합니다.
 마지막으로 별도 플레이어에서 원본을 재생하여 화면이 맞는지 사람이 확인합니다.
 맥미니에는 승인 후 이 변경으로 빌드한 앱·MCP를 함께 적용하고 해당 Mac의 화면 권한과 실제 녹화를 다시 검증해야 합니다.
+
+## 맥미니 빌드 환경에서 확인한 차이
+
+2026-10-23 맥미니의 Swift 6.4 / macOS 27 SDK 조합은 `SwiftUIMacros.StateMacro`
+플러그인이 없어 빌드가 실패했습니다. 해당 기기에 설치된 macOS 26.5 SDK를 지정하면
+이 문제를 피할 수 있습니다. 오디오 tap 출력의 ARC 타입도 구형 SDK와 달라 Swift 6.4
+컴파일 분기를 추가했습니다. 로컬 Swift 6.0.3에서는 기존 `Unmanaged` 경로를 유지합니다.
+
+```sh
+swift build -c release --disable-sandbox \
+  --sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+  --cache-path /tmp/easycut-swift-cache \
+  -Xswiftc -module-cache-path -Xswiftc /tmp/easycut-module-cache
+```
+
+위 SDK 경로가 실제 존재하는 기기에서만 사용하세요. 모든 중간 Swift/SDK 조합을 검증한 것은 아닙니다.
+앱 번들을 구성할 때는 방금 빌드한 실행 파일을 사용하고 기존 앱의 서명·복구 사본을 보존하세요.

@@ -52,8 +52,15 @@ final class AudioMeter: @unchecked Sendable {
                 }
                 meter.feed(m)
             })
+        // Swift 6.4 / macOS 26 SDK imports the output as an ARC-managed value.
+        #if compiler(>=6.4)
+        var tap: MTAudioProcessingTap?
+        guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &cb, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr else { return nil }
+        return tap
+        #else
         var tap: Unmanaged<MTAudioProcessingTap>?
         guard MTAudioProcessingTapCreate(kCFAllocatorDefault, &cb, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr else { return nil }
         return tap?.takeRetainedValue()
+        #endif
     }
 }

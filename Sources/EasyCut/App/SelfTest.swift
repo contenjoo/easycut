@@ -763,10 +763,17 @@ enum AudioProbe {
                         for i in 0..<n { b.peak = max(b.peak, abs(d[i])) }
                     }
                 })
+            #if compiler(>=6.4)
+            var tap: MTAudioProcessingTap?
+            if MTAudioProcessingTapCreate(kCFAllocatorDefault, &cb, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr {
+                mp.audioTapProcessor = tap
+            }
+            #else
             var tap: Unmanaged<MTAudioProcessingTap>?
             if MTAudioProcessingTapCreate(kCFAllocatorDefault, &cb, kMTAudioProcessingTapCreationFlag_PostEffects, &tap) == noErr {
                 mp.audioTapProcessor = tap?.takeRetainedValue()
             }
+            #endif
             params.append(mp)
         }
         mix.inputParameters = params
