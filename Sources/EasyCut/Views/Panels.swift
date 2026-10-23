@@ -186,8 +186,9 @@ struct CaptionsPanel: View {
             } else {
                 ScrollViewReader { proxy in
                     List(selection: Binding(get: { store.selectedCaption }, set: { store.selectedCaption = $0 })) {
-                        ForEach(store.project.captions) { c in
-                            CaptionRow(store: store, caption: c).tag(c.id).id(c.id)
+                        // 글자를 바꿀 때 List의 데이터 항목 자체는 유지해 native 편집기를 보존한다.
+                        ForEach(store.project.captions.map(\.id), id: \.self) { id in
+                            CaptionRow(store: store, captionID: id).tag(id).id(id)
                         }
                         // 끌어서 순서 바꾸기 → 영상 구간도 함께 이동
                         .onMove { src, dst in store.moveCaptions(from: src, to: dst) }
@@ -206,32 +207,30 @@ struct CaptionsPanel: View {
 
 struct CaptionRow: View {
     @ObservedObject var store: EditorStore
-    let caption: Caption
-    @FocusState private var focused: Bool
+    let captionID: UUID
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Button { store.seek(caption.start); store.selectedCaption = caption.id } label: {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(TimeFormat.clock(caption.start))
-                    Text(TimeFormat.clock(caption.end)).foregroundStyle(.secondary)
+        if let caption = store.project.captions.first(where: { $0.id == captionID }) {
+            HStack(alignment: .top, spacing: 8) {
+                Button { store.seek(caption.start); store.selectedCaption = caption.id } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(TimeFormat.clock(caption.start))
+                        Text(TimeFormat.clock(caption.end)).foregroundStyle(.secondary)
+                    }
+                    .font(.system(size: 10, design: .monospaced))
                 }
-                .font(.system(size: 10, design: .monospaced))
+                .buttonStyle(.borderless)
+                CaptionTextEditor(text: store.captionTextBinding(caption.id), label: L("자막"))
+                    .frame(height: 54)
+                Button { store.deleteCaptions([caption.id]) } label: {
+                    Image(systemName: store.captionCutsVideo ? "scissors.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(store.captionCutsVideo ? Color.red.opacity(0.8) : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(L(store.captionCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제"))
             }
-            .buttonStyle(.borderless)
-            TextField("자막", text: store.captionTextBinding(caption.id), axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...3)
-                .focused($focused)
-                .simultaneousGesture(TapGesture().onEnded { focused = true })
-            Button { store.deleteCaptions([caption.id]) } label: {
-                Image(systemName: store.captionCutsVideo ? "scissors.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(store.captionCutsVideo ? Color.red.opacity(0.8) : .secondary)
-            }
-            .buttonStyle(.borderless)
-            .help(L(store.captionCutsVideo ? "자막과 그 구간 영상 삭제" : "자막만 삭제"))
+            .padding(.vertical, 2)
         }
-        .padding(.vertical, 2)
     }
 }
 
@@ -640,7 +639,7 @@ struct CaptionInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("자막", systemImage: "captions.bubble").font(.headline)
-            TextEditor(text: store.captionTextBinding(caption.id))
+            CaptionTextEditor(text: store.captionTextBinding(caption.id))
                 .frame(height: 70)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
             ValueSlider(title: "시작", value: Binding(get: { caption.start }, set: { v in store.updateCaption(caption.id, key: "s") { $0.start = v } }),

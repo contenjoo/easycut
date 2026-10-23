@@ -69,7 +69,7 @@ enum SelfTest {
         }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "caption-text" {
             testCaptionText()
-            await MainActor.run { testCaptionBindings() }
+            await MainActor.run { testCaptionBindings(); testCaptionIME() }
             return
         }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural" { testTimelineOps(); return }
@@ -81,7 +81,7 @@ enum SelfTest {
         print("1) 모델 연산")
         testTimelineOps()
         testCaptionText()
-        await MainActor.run { testCaptionBindings() }
+        await MainActor.run { testCaptionBindings(); testCaptionIME() }
         check(Updater.isNewer("1.3.0", than: "1.2.0") && Updater.isNewer("v1.10.0", than: "1.9.9")
               && !Updater.isNewer("1.2.0", than: "1.2.0") && !Updater.isNewer("1.2", than: "1.2.0") && Updater.isNewer("2.0", than: "1.99.1"),
               "업데이트 버전 비교")
@@ -607,6 +607,36 @@ enum SelfTest {
         store.apply { $0.captions = [] }
         inspector.wrappedValue = "삭제된 자막"
         check(store.project.captions.isEmpty, "자막 동기화: 삭제된 자막은 입력으로 되살리지 않음")
+    }
+
+    @MainActor
+    static func testCaptionIME() {
+        var value = "한"
+        let coordinator = CaptionTextEditor.Coordinator(text: Binding(get: { value }, set: { value = $0 }))
+        let editor = CaptionNSTextView(usingTextLayoutManager: false)
+        editor.onTextChange = { [weak editor] in if let editor { coordinator.publish(editor) } }
+        editor.string = "입력 중"
+        coordinator.synchronize(editor, value: "한")
+        check(editor.string == "입력 중", "자막 IME: 조합 전환 중 같은 모델 값의 echo 무시")
+        editor.string = "한"
+        editor.setMarkedText("ㄱ", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 1, length: 0))
+        let composing = editor.string
+        check(value == composing, "자막 IME: 실제 setMarkedText 호출이 자동으로 모델 반영")
+        check(editor.hasMarkedText(), "자막 IME: 조합 상태 준비")
+        coordinator.synchronize(editor, value: "한")
+        check(editor.string == composing && editor.hasMarkedText(), "자막 IME: 모델 갱신이 조합 문자열을 덮어쓰지 않음")
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: editor))
+        check(value == composing, "자막 IME: 조합 중 마지막 글자도 모델에 전달")
+        _ = editor.resignFirstResponder()
+        check(!editor.hasMarkedText() && value == editor.string, "자막 IME: 포커스 이동 때 조합을 확정해 외부 수정 허용")
+        editor.string = "한글"
+        coordinator.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: editor))
+        check(value == "한글", "자막 IME: 포커스 이동 때 마지막 글자 반영")
+        coordinator.synchronize(editor, value: "다른 입력칸 수정")
+        check(editor.string == "다른 입력칸 수정" && value == "한글", "자막 IME: 외부 수정 반영 중 이전 문자열 재발행 방지")
+        editor.string = ""
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: editor))
+        check(value.isEmpty, "자막 IME: 전체 삭제 반영")
     }
 
     static func testTimelineOps() {
