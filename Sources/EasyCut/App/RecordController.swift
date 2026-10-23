@@ -68,7 +68,8 @@ final class RecordController: ObservableObject {
         return d
     }
 
-    var isBusy: Bool { phase != .idle }
+    lazy var automation = AutomationRecording(owner: self)
+    var isBusy: Bool { phase != .idle || automation.isBusy }
 
     /// 녹화 설정 창을 열기 전에 장치 목록과 화면 녹화 권한을 확인한다
     func open() {
@@ -245,6 +246,7 @@ final class RecordController: ObservableObject {
     }
 
     func stop() async {
+        if automation.isBusy { await automation.stop(); return }
         guard phase == .recording || phase == .paused, let rec = recorder else { return }
         hotKeys.unregister()
         phase = .saving

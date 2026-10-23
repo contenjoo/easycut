@@ -25,6 +25,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         /// 컴퓨터 소리 (별도 파일)
         var systemAudio = false
         var fps: Int = 30
+        var preserveResolution = false
         var screenURL: URL
         var cameraURL: URL
         var audioURL: URL
@@ -73,17 +74,17 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     }
 
     /// 레티나 화면은 실제 픽셀로, 너무 크면 긴 변 3840으로 줄인다 (H.264 한계 4096)
-    static func captureSize(for display: SCDisplay, target: Target) -> (Int, Int) {
+    static func captureSize(for display: SCDisplay, target: Target, preserveResolution: Bool = false) -> (Int, Int) {
         let scale = screen(for: display)?.backingScaleFactor ?? 2
         let pts: CGSize
         switch target {
-        case .display: pts = CGSize(width: display.width, height: display.height)
+        case .display: pts = preserveResolution ? CGDisplayBounds(display.displayID).size : CGSize(width: display.width, height: display.height)
         case .window(let w): pts = w.frame.size
         case .area(let r): pts = r.size
         }
         var w = Double(pts.width) * scale, h = Double(pts.height) * scale
         let longSide = max(w, h)
-        if longSide > 3840 { w *= 3840 / longSide; h *= 3840 / longSide }
+        if !preserveResolution, longSide > 3840 { w *= 3840 / longSide; h *= 3840 / longSide }
         // 인코더가 짝수 크기를 원한다
         return (max(2, Int(w / 2) * 2), max(2, Int(h / 2) * 2))
     }
@@ -91,7 +92,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     // MARK: 시작 / 정지
 
     func start() async throws {
-        let (w, h) = Self.captureSize(for: options.display, target: options.target)
+        let (w, h) = Self.captureSize(for: options.display, target: options.target, preserveResolution: options.preserveResolution)
 
         // 화면 파일 (영상 + 마이크)
         try? FileManager.default.removeItem(at: options.screenURL)
@@ -293,6 +294,17 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         }
         guard sw.status == .completed else { throw MediaError.failed("녹화 파일을 저장하지 못했습니다: \(sw.error?.localizedDescription ?? "")") }
         return Result(screen: options.screenURL, camera: camURL, systemAudio: sysURL, duration: (t1 - t0).seconds)
+    }
+
+    /// 시작·저장 실패 시 스트림, 장치와 미완료 writer를 해제한다. 파일은 보존한다.
+    func cancel() async {
+        queue.sync { endTime = Self.hostNow }
+        try? await stream?.stopCapture()
+        stream = nil
+        if session.isRunning { session.stopRunning() }
+        queue.sync {
+            for writer in [screenWriter, camWriter, sysWriter].compactMap({ $0 }) where writer.status == .writing || writer.status == .unknown { writer.cancelWriting() }
+        }
     }
 
     // MARK: 화면 프레임

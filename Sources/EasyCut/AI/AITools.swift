@@ -17,7 +17,7 @@ enum AITools {
         "items": ["type": "object", "properties": ["start": num, "end": num], "required": ["start", "end"]] as [String: Any],
     ]
 
-    static let definitions: [[String: Any]] = baseDefinitions + reviewDefinitions
+    static let definitions: [[String: Any]] = baseDefinitions + reviewDefinitions + recordingDefinitions
 
     static let baseDefinitions: [[String: Any]] = [
         tool("get_project_state", "현재 프로젝트 상태: 전체 길이, 재생헤드, 캔버스, 트랙별 클립(id, 종류, 이름, 시작/끝, 속도, 볼륨), 자막 목록 일부, 대본 유무, 선택 항목. 편집 전에 먼저 호출해 구조를 파악한다."),
@@ -101,6 +101,7 @@ enum AITools {
 
     @MainActor
     static func execute(_ name: String, _ input: [String: Any], store: EditorStore) async -> (String, Bool) {
+        if let reply = await executeRecording(name, input, store: store) { return reply }
         func d(_ k: String) -> Double? { (input[k] as? NSNumber)?.doubleValue }
         func i(_ k: String) -> Int? { (input[k] as? NSNumber)?.intValue }
         func b(_ k: String) -> Bool? { (input[k] as? NSNumber)?.boolValue }
