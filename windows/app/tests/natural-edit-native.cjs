@@ -24,6 +24,14 @@ const assert = require('node:assert/strict');
   assert.equal(await page.locator('#ai-effort').isDisabled(),true);
   assert.match(await page.locator('#tab-ai').textContent(),/Google AI Studio/);
   assert.match(await page.locator('#tab-ai').textContent(),/한도/);
+  await page.click('#gemini-key-help > summary');
+  assert.equal(await page.locator('#gemini-key-help').evaluate(el=>el.open),true);
+  assert.match(await page.locator('#gemini-key-help').textContent(),/Create API key/);
+  assert.match(await page.locator('#gemini-key-help').textContent(),/Free Tier/);
+  await page.locator('#gemini-key-docs').scrollIntoViewIfNeeded();
+  assert.equal(await page.locator('#gemini-key-docs').isVisible(),true);
+  await page.screenshot({path:process.env.EASYCUT_NATIVE_OUTPUT+'/gemini-key-guide.png'});
+  await page.click('#gemini-key-help > summary');
   await page.click('#gemini-save'); // Empty key must not be stored or sent.
   const agents = await page.evaluate(()=>window.__TAURI__.core.invoke('ai_agents'));
   assert.equal(agents.hasGeminiKey,false);

@@ -75,7 +75,7 @@ struct AIPanel: View {
             Divider()
 
             if ai.backend == .gemini && !ai.hasGeminiKey {
-                GeminiSetup(ai: ai).padding(12)
+                ScrollView { GeminiSetup(ai: ai).padding(12) }
             } else if ai.backend != .api && ai.backend != .gemini && !ai.ready {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("AI로 편집하려면 계정을 연결하세요").font(.callout.weight(.semibold))
@@ -418,6 +418,24 @@ struct GeminiSetup: View {
             Text("1. Google AI Studio에서 API 키를 만드세요.\n2. 아래에 붙여 넣고 저장하세요.\n3. 연결 확인 후 편집을 부탁하세요.")
                 .font(.callout)
             Link("Google에서 무료 키 발급하기 ↗", destination: URL(string: "https://aistudio.google.com/apikey")!)
+            DisclosureGroup("처음이신가요? API 키 발급 방법") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("1. 위 버튼으로 Google AI Studio를 열고 Google 계정으로 로그인하세요.")
+                    Text("2. 처음이라면 약관을 확인하세요. 기본 프로젝트와 키가 이미 만들어져 있으면 그 키를 쓰면 됩니다.")
+                    Text("3. 키가 없으면 ‘API 키 만들기(Create API key)’를 누르고 프로젝트를 선택하거나 새로 만드세요. 키 이름은 ‘EasyCut’처럼 알아보기 쉽게 적으세요.")
+                    Text("4. 무료로 시작하려면 프로젝트의 요금제가 ‘Free Tier’인지 확인하세요. ‘결제 설정(Set up billing)’이나 카드 등록은 필요하지 않습니다.")
+                    Text("5. 키의 복사 버튼을 누르고 EasyCut으로 돌아와 아래 입력칸에 붙여 넣은 뒤 ‘키 저장 후 연결 확인’을 누르세요.")
+                    Text("프로젝트가 목록에 없으면 AI Studio의 Dashboard › Projects › Import projects에서 가져올 수 있습니다. 학교·기관 계정에서 발급이 막히면 관리자에게 접근 권한을 확인해 주세요.")
+                        .foregroundStyle(.secondary)
+                    Text("API 키는 비밀번호처럼 보관하세요. 채팅·사진·공개 게시물에 올리지 마세요. Gemini 유료 구독은 필요하지 않으며, 무료 한도는 계정과 모델에 따라 다릅니다.")
+                        .foregroundStyle(.secondary)
+                    Link("Google 공식 키 발급 도움말 ↗", destination: URL(string: "https://ai.google.dev/gemini-api/docs/api-key?hl=ko")!)
+                }
+                .font(.caption)
+                .padding(.top, 6)
+                .textSelection(.enabled)
+            }
+            .font(.callout)
             Text("무료 사용은 Google의 모델·계정별 한도 안에서 가능합니다. 결제를 연결한 프로젝트는 사용 요금이 발생할 수 있습니다. EasyCut은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다.")
                 .font(.caption).foregroundStyle(.secondary)
             Text("대본·파일 이름·화면에서 읽은 글자 등 편집에 필요한 정보가 Google에 전송될 수 있습니다. 무료 서비스의 입력은 제품 개선에 쓰일 수 있으니 개인정보가 있는 자료는 주의해 주세요. 원본 영상 전체를 이 연결로 업로드하지는 않습니다.")
@@ -449,8 +467,8 @@ struct GeminiKeySheet: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            GeminiSetup(ai: ai)
+            ScrollView { GeminiSetup(ai: ai) }
             HStack { Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction) }
-        }.padding(22).frame(width: 480)
+        }.padding(22).frame(width: 480, height: 580)
     }
 }

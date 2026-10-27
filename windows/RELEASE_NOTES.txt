@@ -1,3 +1,17 @@
+EasyCut for Windows 0.6.2
+
+[개선] Gemini API 키 발급 안내
+• Gemini 연결 화면에서 ‘처음이신가요? API 키 발급 방법’을 펼치면 Google 로그인부터 키 만들기·복사·연결 확인까지 볼 수 있습니다.
+• Free Tier 확인, 결제 연결 없이 시작하는 방법, 프로젝트가 보이지 않거나 기관 계정에서 막힐 때의 안내를 추가했습니다.
+• Google 공식 키 발급 도움말을 바로 열 수 있습니다.
+• 이 설명은 설치파일에 포함됩니다. 앱이 한국어일 때 안내도 한국어로 표시됩니다.
+
+[Improved] Gemini API key guide
+• An expandable setup guide (currently in Korean) covers sign-in, creating/copying a key, Free Tier, and returning to EasyCut.
+• Includes official Google documentation and project/account troubleshooting. The guide is bundled with the installer.
+
+[Previous releases]
+
 EasyCut for Windows 0.6.1
 
 [새 기능] 구독 없이 Gemini 무료 한도로 AI 편집

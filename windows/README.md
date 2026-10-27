@@ -6,6 +6,10 @@ The Windows edition of EasyCut: a Tauri 2 app (Rust backend + HTML/JS UI) that s
 - `app/src-tauri` — Tauri backend: commands, ffmpeg/ffprobe probing, Whisper (whisper-cli) transcription, ffmpeg filter-graph export, `--selftest`.
 - `app/ui` — the interface (no bundler): timeline canvas, preview player, transcript/captions panels.
 
+## Gemini API key setup
+
+In the AI tab, choose **Gemini (free tier)** and expand **처음이신가요? API 키 발급 방법** for the step-by-step guide. [Full Korean instructions](../README.md#구독-없이-gemini-무료-한도로-시작하기) · [English instructions](../README.en.md#get-a-gemini-api-key-and-start-on-the-free-tier).
+
 ## Develop (works on macOS too)
 
 ```bash

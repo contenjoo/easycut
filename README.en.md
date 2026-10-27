@@ -121,7 +121,18 @@ Files such as MKV, WebM and AVI are converted to MP4 automatically on import (ff
 
 ## AI editing / connecting AI accounts
 
-Gemini: choose **Gemini (free tier)** in the AI tab, create a key at [Google AI Studio](https://aistudio.google.com/apikey), paste it, and check the connection. Keys stay in macOS Keychain or Windows Credential Manager. Free quotas vary by Google account/model; billing-enabled keys can incur charges. Editing text and metadata may be sent to Google, and free-tier input may be used to improve its products. EasyCut does not automatically enable billing or switch to a paid model.
+### Get a Gemini API key and start on the free tier
+
+1. Choose **Gemini (free tier)** in EasyCut's AI tab and open [Google AI Studio's API keys page](https://aistudio.google.com/apikey).
+2. Sign in with Google and review the terms if prompted. New users may already have a default project and key.
+3. If no key is listed, click **Create API key**, name it `EasyCut`, and select or create a project.
+4. Check that the project uses **Free Tier**. You do not need to choose **Set up billing** or register a card to start on the free tier. Keys inherit their project's billing status; a key is not independently "free" or "paid".
+5. Copy the key, return to EasyCut, paste it, and choose **Save key and check connection**. Keys stay in macOS Keychain or Windows Credential Manager.
+6. Ask for an edit, such as "remove silence" or "make captions". Undo with ⌘Z on Mac or Ctrl+Z on Windows.
+
+If an existing project is missing, import it via **Dashboard › Projects › Import projects** in AI Studio. Ask your organization administrator if a school/work account cannot create keys. Keep keys private; never post them in chats, screenshots, or source code. The app's expandable **How to get an API key** guide includes these steps. See Google's [key documentation](https://ai.google.dev/gemini-api/docs/api-key) and [billing guide](https://ai.google.dev/gemini-api/docs/billing).
+
+Free quotas vary by Google account/model; billing-enabled keys can incur charges. Editing text and metadata may be sent to Google, and free-tier input may be used to improve its products. EasyCut does not automatically enable billing or switch to a paid model.
 
 
 - **One-click login** (AI tab or Tools › Connect AI Accounts…): click **Log in with Claude** (Pro/Max) or **Log in with ChatGPT** (Plus/Pro · Codex) and finish logging in in your browser. If Claude Code / Codex is missing, the official release is installed automatically. No Terminal or other setup needed.
