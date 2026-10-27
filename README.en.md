@@ -121,6 +121,9 @@ Files such as MKV, WebM and AVI are converted to MP4 automatically on import (ff
 
 ## AI editing / connecting AI accounts
 
+Gemini: choose **Gemini (free tier)** in the AI tab, create a key at [Google AI Studio](https://aistudio.google.com/apikey), paste it, and check the connection. Keys stay in macOS Keychain or Windows Credential Manager. Free quotas vary by Google account/model; billing-enabled keys can incur charges. Editing text and metadata may be sent to Google, and free-tier input may be used to improve its products. EasyCut does not automatically enable billing or switch to a paid model.
+
+
 - **One-click login** (AI tab or Tools › Connect AI Accounts…): click **Log in with Claude** (Pro/Max) or **Log in with ChatGPT** (Plus/Pro · Codex) and finish logging in in your browser. If Claude Code / Codex is missing, the official release is installed automatically. No Terminal or other setup needed.
 - Then type something like "cut all the parts with no talking" in the **AI** tab and it edits using your subscription. (The app runs your logged-in Claude Code / Codex internally and lets it use only EasyCut's editing tools; your personal settings and plugins are not mixed in.)
 - **API key**: AI tab ⚙︎ › Set Claude API Key… (stored in the Keychain). ChatGPT can also log in with an OpenAI API key in the Connect AI Accounts window.

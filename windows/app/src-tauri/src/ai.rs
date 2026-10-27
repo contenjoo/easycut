@@ -1,7 +1,7 @@
 //! 앱 안 AI 편집 도우미 (맥 AIAssistant.swift + AgentLink.swift).
 //! 연결 방식 3가지: Claude 플랜(Claude Code CLI), ChatGPT(Codex CLI), Claude API 키.
 //! CLI 방식은 `EasyCut.exe --mcp`(control.rs)로 편집 도구를 쓰고, API 방식은 ai_tools를 직접 호출한다.
-use crate::{ai_tools, control, tools, update};
+use crate::{ai_tools, control, gemini, tools, update};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -47,7 +47,7 @@ fn uses_fallback(model: &str) -> bool {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
-    /// "plan" | "codex" | "api"
+    /// "plan" | "codex" | "api" | "gemini"
     pub backend: String,
     pub model: String,
     /// "" | low | medium | high | xhigh | max
@@ -57,7 +57,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { backend: "plan".into(), model: String::new(), effort: String::new(), show_thinking: false }
+        Settings { backend: "gemini".into(), model: String::new(), effort: String::new(), show_thinking: false }
     }
 }
 
@@ -89,12 +89,32 @@ pub fn save_key(key: &str) -> Result<(), String> {
     e.set_password(k).map_err(|e| format!("API 키를 저장하지 못했습니다: {e}"))
 }
 
+pub fn load_gemini_key() -> Option<String> {
+    keyring::Entry::new(gemini::SERVICE, "api-key").ok()?.get_password().ok().filter(|k| !k.is_empty())
+}
+pub fn save_gemini_key(key: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(gemini::SERVICE, "api-key").map_err(|_| "자격 증명 저장소를 열 수 없습니다.")?;
+    if key.trim().is_empty() {
+        return match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err("Gemini 키를 삭제하지 못했습니다.".into()),
+        };
+    }
+    entry.set_password(key.trim()).map_err(|_| "Gemini 키를 저장하지 못했습니다. 자격 증명 관리자 접근을 확인해 주세요.".into())
+}
+pub fn check_gemini() -> Result<(), String> {
+    let key = load_gemini_key().ok_or("Gemini 키를 먼저 저장해 주세요.")?;
+    gemini::request(&key, &[json!({"role":"user","parts":[{"text":"Reply OK"}]})], "", &[])?;
+    Ok(())
+}
+
 // MARK: 상태
 
 #[derive(Default)]
 struct Chat {
     busy: bool,
     messages: Vec<Value>,
+    gemini_contents: Vec<Value>,
     plan_session: Option<String>,
     codex_thread: Option<String>,
     last_error: String,
@@ -176,6 +196,7 @@ pub fn agents_json(app: &AppHandle) -> Value {
         "codex": *a.codex.lock().unwrap(),
         "loginUrl": *a.login_url.lock().unwrap(),
         "hasKey": load_key().is_some(),
+        "hasGeminiKey": load_gemini_key().is_some(),
         "claudeInstalled": claude_binary().is_some(),
         "codexInstalled": codex_binary().is_some(),
         "needsLogin": a.chat.lock().unwrap().needs_login,
@@ -210,6 +231,7 @@ pub fn reset(app: &AppHandle) {
 pub fn cancel(app: &AppHandle) {
     let a = ai(app);
     a.cancel.store(true, Ordering::SeqCst);
+    a.chat.lock().unwrap().gemini_contents.clear();
     a.run_id.fetch_add(1, Ordering::SeqCst);
     if let Some(mut c) = a.child.lock().unwrap().take() {
         let _ = c.kill();
@@ -232,6 +254,7 @@ pub fn send(app: &AppHandle, text: &str) {
     std::thread::spawn(move || match backend.as_str() {
         "codex" => send_codex(&app, &t),
         "api" => send_api(&app, &t),
+        "gemini" => send_gemini(&app, &t),
         _ => send_plan(&app, &t),
     });
 }
@@ -685,6 +708,55 @@ fn api_request(app: &AppHandle, key: &str) -> Result<Value, String> {
             })
         }
         Err(e) => Err(format!("Claude에 연결하지 못했습니다: {e}")),
+    }
+}
+
+fn send_gemini(app: &AppHandle, text: &str) {
+    let Some(key) = load_gemini_key() else {
+        item(app, "error", "Gemini API 키를 먼저 설정하세요."); set_busy(app, false); return;
+    };
+    let run = ai(app).run_id.load(Ordering::SeqCst);
+    let stale = || ai(app).run_id.load(Ordering::SeqCst) != run;
+    item(app, "user", text);
+    ai(app).chat.lock().unwrap().gemini_contents.push(json!({"role":"user","parts":[{"text":text}]}));
+    set_busy(app, true);
+    let result: Result<(), String> = (|| {
+        for _ in 0..25 {
+            if stale() { return Ok(()); }
+            status(app, "Gemini가 편집을 준비하고 있어요…");
+            let contents = ai(app).chat.lock().unwrap().gemini_contents.clone();
+            let content = gemini::request(&key, &contents, SYSTEM, &ai_tools::definitions())?;
+            if stale() { return Ok(()); }
+            ai(app).chat.lock().unwrap().gemini_contents.push(content.clone());
+            let mut results = vec![];
+            for part in content["parts"].as_array().ok_or("Gemini 응답을 읽지 못했습니다.")? {
+                if stale() { return Ok(()); }
+                if let Some(text) = part["text"].as_str().filter(|t| !t.is_empty()) {
+                    if part["thought"] != true { item(app, "assistant", text); }
+                }
+                if let Some(name) = part["functionCall"]["name"].as_str() {
+                    status(app, &format!("실행: {}", ai_tools::label(name)));
+                    let call = &part["functionCall"];
+                    let args = if call["args"].is_object() { call["args"].clone() } else { json!({}) };
+                    let (out, failed) = ai_tools::execute(app, name, &args);
+                    if stale() { return Ok(()); }
+                    item(app, "tool", &format!("{} — {}", ai_tools::label(name), out.lines().next().unwrap_or("")));
+                    let mut response = json!({"name":name,"response": if failed {json!({"error":out})} else {json!({"result":out})}});
+                    if !call["id"].is_null() { response["id"] = call["id"].clone(); }
+                    results.push(json!({"functionResponse":response}));
+                }
+            }
+            if results.is_empty() { return Ok(()); }
+            ai(app).chat.lock().unwrap().gemini_contents.push(json!({"role":"user","parts":results}));
+        }
+        Err("작업 단계가 많아 멈췄습니다. 요청을 나눠 주세요.".into())
+    })();
+    if !stale() {
+        if let Err(error) = result {
+            ai(app).chat.lock().unwrap().gemini_contents.clear();
+            item(app, "error", &error);
+        }
+        set_busy(app, false);
     }
 }
 

@@ -15,6 +15,26 @@ const assert = require('node:assert/strict');
   page.setDefaultTimeout(30000);
   await page.waitForFunction(()=>window.__TAURI__?.core && document.querySelector('#natural-edit'));
   const events=[]; page.on('pageerror',e=>events.push(e.message));
+  // New users can set up Gemini without installing either CLI or owning a subscription.
+  await page.click('[data-tab="ai"]');
+  await page.selectOption('#ai-backend','gemini');
+  await page.waitForSelector('#gemini-key');
+  assert.equal(await page.locator('#gemini-key').getAttribute('type'),'password');
+  assert.equal(await page.locator('#ai-model').isDisabled(),true);
+  assert.equal(await page.locator('#ai-effort').isDisabled(),true);
+  assert.match(await page.locator('#tab-ai').textContent(),/Google AI Studio/);
+  assert.match(await page.locator('#tab-ai').textContent(),/한도/);
+  await page.click('#gemini-save'); // Empty key must not be stored or sent.
+  const agents = await page.evaluate(()=>window.__TAURI__.core.invoke('ai_agents'));
+  assert.equal(agents.hasGeminiKey,false);
+  const keyCheck = await page.evaluate(async()=>{
+    try { await window.__TAURI__.core.invoke('ai_check_gemini'); return 'unexpected success'; }
+    catch(e) { return String(e); }
+  });
+  assert.match(keyCheck,/키를 먼저/);
+  await page.screenshot({path:process.env.EASYCUT_NATIVE_OUTPUT+'/gemini-setup.png'});
+  await page.click('[data-tab="media"]');
+  console.log('NATIVE GEMINI FREE-TIER ONBOARDING PASSED (no key or network call)');
   const speech = fs.readFileSync(process.env.EASYCUT_NATIVE_SPEECH).toString('base64');
   const recorded = await page.evaluate(async b64 => {
     const invoke = window.__TAURI__.core.invoke;

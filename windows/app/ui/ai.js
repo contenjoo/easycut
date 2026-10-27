@@ -11,16 +11,19 @@ const EXAMPLES = [
   "5초에 '오늘의 주제' 제목 넣어줘",
 ];
 const EFFORTS = [["", "자동 (모델 기본)"], ["low", "낮음 · 빠름"], ["medium", "보통"], ["high", "높음"], ["xhigh", "매우 높음"], ["max", "최대 · 가장 깊게"]];
-const BACKENDS = [["plan", "Claude 플랜 (Pro/Max 로그인)"], ["codex", "ChatGPT · Codex"], ["api", "API 키"]];
+const BACKENDS = [["gemini", "Gemini (무료 한도)"], ["plan", "Claude 플랜 (Pro/Max 로그인)"], ["codex", "ChatGPT · Codex"], ["api", "API 키"]];
 
 const A = {
-  settings: { backend: "plan", model: "", effort: "", showThinking: false },
+  settings: { backend: "gemini", model: "", effort: "", showThinking: false },
   models: [],
   agents: { claude: { state: "unknown" }, codex: { state: "unknown" }, hasKey: false, needsLogin: false, loginUrl: null },
   items: [],
   busy: false,
   status: "",
   draft: "",
+  geminiSetup: false,
+  geminiChecking: false,
+  geminiMessage: "",
 };
 
 let root, toastFn, modalBox, showModal, hideModal;
@@ -30,6 +33,7 @@ const working = (st) => st?.state === "working";
 
 function ready() {
   const b = A.settings.backend;
+  if (b === "gemini") return A.agents.hasGeminiKey;
   if (b === "api") return A.agents.hasKey;
   const p = b === "codex" ? "codex" : "claude";
   const st = A.agents[p]?.state;
@@ -83,6 +87,7 @@ async function saveSettings(patch) {
 }
 
 function modelLabel() {
+  if (A.settings.backend === "gemini") return "Gemini 2.5 Flash-Lite";
   if (A.settings.backend === "codex") return L("ChatGPT 기본 모델");
   if (A.settings.backend === "plan" && !A.settings.model) return L("계정 기본 모델");
   return (A.models.find((m) => m.id === A.settings.model) || A.models.find((m) => m.id === "claude-opus-5"))?.name || "";
@@ -90,20 +95,21 @@ function modelLabel() {
 
 function header() {
   const b = A.settings.backend;
-  const models = b === "codex"
+  const models = b === "gemini" ? `<option>Gemini 2.5 Flash-Lite</option>` : b === "codex"
     ? `<option>${L("ChatGPT 기본 모델")}</option>`
     : (b === "plan" ? `<option value="">${L("계정 기본값")}</option>` : "") +
       A.models.map((m) => `<option value="${m.id}" ${A.settings.model === m.id || (b === "api" && !A.settings.model && m.id === "claude-opus-5") ? "selected" : ""}>${esc(m.name)} — ${esc(L(m.note))}</option>`).join("");
   return `<div class="ai-head">
       <b>✨ ${L("AI 편집")}</b><span class="spacer"></span>
+      ${b === "gemini" ? `<button id="gemini-manage">${L("Gemini 키 설정")}</button>` : ""}
       <button id="ai-connect" title="${L("계정 연결 관리…")}">${L("계정 연결")}</button>
       <button id="ai-clear" title="${L("대화 지우기")}">🗑</button>
     </div>
     <div class="ai-opts">
       <select id="ai-backend" title="${L("연결 방식")}">${BACKENDS.map(([v, t]) => `<option value="${v}" ${b === v ? "selected" : ""}>${L(t)}</option>`).join("")}</select>
-      <select id="ai-model" title="${L("모델과 추론 강도 선택")}" ${b === "codex" ? "disabled" : ""}>${models}</select>
-      <select id="ai-effort" title="${L("추론 강도")}">${EFFORTS.map(([v, t]) => `<option value="${v}" ${A.settings.effort === v ? "selected" : ""}>${L(t)}</option>`).join("")}</select>
-      <label class="hint"><input type="checkbox" id="ai-think" ${A.settings.showThinking ? "checked" : ""}/> ${L("생각 과정 보기")}</label>
+      <select id="ai-model" title="${L("모델과 추론 강도 선택")}" ${b === "codex" || b === "gemini" ? "disabled" : ""}>${models}</select>
+      <select id="ai-effort" ${b === "gemini" ? "disabled" : ""} title="${L("추론 강도")}">${EFFORTS.map(([v, t]) => `<option value="${v}" ${A.settings.effort === v ? "selected" : ""}>${L(t)}</option>`).join("")}</select>
+      <label class="hint"><input type="checkbox" id="ai-think" ${b === "gemini" ? "disabled" : ""} ${A.settings.showThinking ? "checked" : ""}/> ${L("생각 과정 보기")}</label>
     </div>`;
 }
 
@@ -138,18 +144,48 @@ function bubble(it) {
   return "";
 }
 
+function geminiSetup() {
+  return `<div class="ai-pad">
+    <p><b>${L("구독 없이 Gemini로 편집하기")}</b></p>
+    <p>${L("1. Google AI Studio에서 키를 만드세요.")}<br/>${L("2. 키를 붙여 넣고 연결을 확인하세요.")}</p>
+    <button id="gemini-key-page">${L("Google에서 무료 키 발급하기 ↗")}</button>
+    <p class="hint">${L("무료 이용은 Google의 계정·모델별 한도 내에서 가능합니다. 결제가 연결된 프로젝트는 요금이 발생할 수 있습니다. EasyCut은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다.")}</p>
+    <p class="hint">${L("대본·파일 이름·화면에서 읽은 글자 등 편집 정보가 Google에 전송될 수 있습니다. 무료 서비스 입력은 제품 개선에 쓰일 수 있으니 개인정보가 있는 자료는 주의해 주세요. 원본 영상 전체는 업로드하지 않습니다.")}</p>
+    <input type="password" id="gemini-key" placeholder="${L("Gemini API 키 붙여넣기")}" autocomplete="off" style="width:100%"/>
+    <div class="row"><button class="primary" id="gemini-save" ${A.geminiChecking ? "disabled" : ""}>${L("키 저장 후 연결 확인")}</button>
+      ${A.agents.hasGeminiKey ? `<button id="gemini-check" ${A.geminiChecking ? "disabled" : ""}>${L("연결 확인")}</button><button id="gemini-delete" ${A.geminiChecking ? "disabled" : ""}>${L("키 삭제")}</button><button id="gemini-close">${L("편집으로 돌아가기")}</button>` : ""}</div>
+    <p class="hint">${L("키는 이 PC의 자격 증명 관리자에만 저장합니다. 연결 확인도 API 한도를 사용합니다.")}</p>
+    <p role="status">${esc(A.geminiChecking ? L("Gemini 연결 확인 중…") : A.geminiMessage)}</p>
+  </div>`;
+}
+
+async function checkGemini() {
+  A.geminiChecking = true;
+  A.geminiMessage = "";
+  render();
+  try {
+    await invoke("ai_check_gemini");
+    A.geminiMessage = L("연결되었습니다. 편집 요청을 입력해 보세요.");
+  } catch (e) { A.geminiMessage = String(e); }
+  finally { A.geminiChecking = false; render(); }
+}
+
 function render() {
   if (!root) return;
+  const pendingGeminiKey = root.querySelector("#gemini-key")?.value || "";
   const prevInput = root.querySelector("#ai-input");
   if (prevInput) A.draft = prevInput.value;
   const hadFocus = document.activeElement === prevInput;
   const b = A.settings.backend;
   let body;
-  if (b !== "api" && !ready()) {
+  if (b === "gemini" && (!A.agents.hasGeminiKey || A.geminiSetup)) {
+    body = geminiSetup();
+  } else if (b !== "api" && !ready()) {
     body = `<div class="ai-pad">
       <p><b>${L("AI로 편집하려면 계정을 연결하세요")}</b></p>
       <p class="hint">${L("쓰고 있는 구독 계정으로 로그인하면 API 키 없이 바로 쓸 수 있습니다. 필요한 프로그램은 자동으로 설치됩니다.")}</p>
       ${loginButtons()}
+      <button class="primary" id="ai-use-gemini">${L("구독 없이 Gemini 무료 한도로 시작")}</button>
       <hr/><button id="ai-use-api">${L("Claude API 키로 쓰기")}</button></div>`;
   } else if (b === "api" && !A.agents.hasKey) {
     body = `<div class="ai-pad">
@@ -165,13 +201,14 @@ function render() {
     const provider = b === "codex" ? "codex" : "claude";
     const login = A.agents.needsLogin ? `<div class="ai-needs"><span>🔑 ${working(A.agents[provider]) ? esc(L(A.agents[provider].message)) : L(provider === "codex" ? "ChatGPT 로그인이 필요합니다" : "Claude 로그인이 필요합니다")}</span>
         <span class="spacer"></span><button class="mini" data-login="${provider}" ${working(A.agents[provider]) ? "disabled" : ""}>${L("로그인")}</button></div>` : "";
-    body = `<div class="ai-chat" id="ai-chat">${examples}${A.items.map(bubble).join("")}${busy}</div>${login}
+    body = `<div class="ai-chat" id="ai-chat">${b === "gemini" ? `<p class="hint">${L("Gemini 무료 한도 사용 · 대본과 편집 정보가 Google에 전송됩니다. 결제 연결 여부에 따라 비용이 발생할 수 있습니다.")}</p>` : ""}${examples}${A.items.map(bubble).join("")}${busy}</div>${login}
       <div class="ai-input"><textarea id="ai-input" rows="2" placeholder="${L("무엇을 편집할까요? (Enter로 보내기, Shift+Enter 줄바꿈)")}"></textarea>
       <button class="primary" id="ai-send" ${A.busy ? "disabled" : ""}>↑</button></div>
       <div class="hint center">${L("모든 AI 편집은 Ctrl+Z로 되돌릴 수 있습니다")}</div>`;
   }
   root.innerHTML = header() + body;
   wire();
+  if (root.querySelector("#gemini-key")) root.querySelector("#gemini-key").value = pendingGeminiKey;
   const input = root.querySelector("#ai-input");
   if (input) {
     input.value = A.draft;
@@ -183,7 +220,24 @@ function render() {
 
 function wire() {
   const q = (s) => root.querySelector(s);
-  q("#ai-backend").onchange = (e) => saveSettings({ backend: e.target.value });
+  q("#ai-backend").onchange = (e) => { A.geminiSetup = false; A.geminiMessage = ""; saveSettings({ backend: e.target.value }); };
+  if (q("#ai-use-gemini")) q("#ai-use-gemini").onclick = () => saveSettings({ backend: "gemini" });
+  if (q("#gemini-manage")) q("#gemini-manage").onclick = () => { A.geminiSetup = !A.geminiSetup; render(); };
+  if (q("#gemini-key-page")) q("#gemini-key-page").onclick = () => openUrl("https://aistudio.google.com/apikey");
+  if (q("#gemini-close")) q("#gemini-close").onclick = () => { A.geminiSetup = false; render(); };
+  if (q("#gemini-check")) q("#gemini-check").onclick = checkGemini;
+  if (q("#gemini-delete")) q("#gemini-delete").onclick = async () => {
+    try { A.agents = await invoke("ai_set_gemini_key", { key: "" }); A.geminiMessage = ""; render(); }
+    catch (e) { toastFn(String(e)); }
+  };
+  if (q("#gemini-save")) q("#gemini-save").onclick = async () => {
+    const key = q("#gemini-key").value.trim();
+    if (key.length < 20) return toastFn(L("키를 붙여 넣으세요."));
+    q("#gemini-key").value = "";
+    A.geminiSetup = true;
+    try { A.agents = await invoke("ai_set_gemini_key", { key }); await checkGemini(); }
+    catch (e) { toastFn(String(e)); }
+  };
   q("#ai-model").onchange = (e) => saveSettings({ model: e.target.value });
   q("#ai-effort").onchange = (e) => saveSettings({ effort: e.target.value });
   q("#ai-think").onchange = (e) => saveSettings({ showThinking: e.target.checked });

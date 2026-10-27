@@ -1,6 +1,7 @@
 //! EasyCut for Windows — Tauri 백엔드. 편집 규칙은 easycut-core, 화면은 ui/ (HTML·JS).
 mod ai;
 mod ai_tools;
+mod gemini;
 mod clicks;
 mod control;
 mod edits;
@@ -1198,6 +1199,18 @@ fn ai_set_key(app: AppHandle, key: String) -> Res<Value> {
 }
 
 #[tauri::command]
+fn ai_set_gemini_key(app: AppHandle, key: String) -> Res<Value> {
+    ai::save_gemini_key(&key)?;
+    ai::reset(&app);
+    Ok(ai::agents_json(&app))
+}
+
+#[tauri::command]
+async fn ai_check_gemini() -> Res<()> {
+    tauri::async_runtime::spawn_blocking(ai::check_gemini).await.map_err(|_| "Gemini 연결 확인에 실패했습니다.".to_string())?
+}
+
+#[tauri::command]
 fn ai_agents(app: AppHandle) -> Value {
     ai::agents_json(&app)
 }
@@ -1463,7 +1476,7 @@ pub fn run() {
             delete_words, update_word, remove_fillers, generate_captions, export_srt, import_srt, silence_ranges,
             whisper_status, download_model, transcribe, cancel_job, export_video, startup_files, check_update, install_update,
             recovery_check, recovery_restore, recovery_discard, quit_app, get_prefs, set_pref, ui_state,
-            ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_agents, ai_refresh_agents, ai_connect,
+            ai_settings, ai_set_settings, ai_send, ai_cancel, ai_reset, ai_set_key, ai_set_gemini_key, ai_check_gemini, ai_agents, ai_refresh_agents, ai_connect,
             ai_connect_codex_key, ai_cancel_login, ai_links, ai_link, import_link, ytdlp_status, ytdlp_update, open_url, reveal_file, open_file,
             snapshot_png, export_size, relink_asset, media_thumbs, media_peaks,
             stt_models, stt_select, stt_download, export_transcript,

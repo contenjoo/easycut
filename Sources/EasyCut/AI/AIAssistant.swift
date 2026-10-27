@@ -5,7 +5,7 @@ import Security
 enum Keychain {
     static let service = "com.contenjoo.easycut.anthropic"
 
-    static func load() -> String? {
+    static func load(service: String = Keychain.service) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var out: AnyObject?
@@ -14,12 +14,18 @@ enum Keychain {
     }
 
     @discardableResult
-    static func save(_ key: String) -> Bool {
+    static func save(_ key: String, service: String = Keychain.service) -> Bool {
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
-        SecItemDelete(base as CFDictionary)
-        guard !key.isEmpty else { return true }
+        if key.isEmpty {
+            let result = SecItemDelete(base as CFDictionary)
+            return result == errSecSuccess || result == errSecItemNotFound
+        }
+        let value = Data(key.utf8)
+        let updated = SecItemUpdate(base as CFDictionary, [kSecValueData as String: value] as CFDictionary)
+        if updated == errSecSuccess { return true }
+        guard updated == errSecItemNotFound else { return false }
         var add = base
-        add[kSecValueData as String] = Data(key.utf8)
+        add[kSecValueData as String] = value
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 }
@@ -69,6 +75,7 @@ enum AIBackend: String, CaseIterable, Identifiable {
     case plan = "Claude 플랜 (Pro/Max 로그인)"
     case codex = "ChatGPT · Codex"
     case api = "API 키"
+    case gemini = "Gemini (무료 한도)"
     var id: String { rawValue }
 }
 
@@ -78,9 +85,15 @@ final class AIAssistant: ObservableObject {
     @Published var items: [ChatItem] = []
     @Published var busy = false
     @Published var hasKey = Keychain.load() != nil
+    @Published var hasGeminiKey = Keychain.load(service: GeminiClient.keychainService) != nil
+    @Published var keyError = ""
+    @Published var geminiChecking = false
+    @Published var geminiConnection = ""
+    private var geminiRun = UUID()
+    private var geminiContents: [[String: Any]] = []
     @Published var status = ""
     @Published var needsLogin = false
-    @Published var backend: AIBackend = AIBackend(rawValue: UserDefaults.standard.string(forKey: "aiBackend") ?? "") ?? .plan {
+    @Published var backend: AIBackend = AIBackend(rawValue: UserDefaults.standard.string(forKey: "aiBackend") ?? "") ?? .gemini {
         didSet { UserDefaults.standard.set(backend.rawValue, forKey: "aiBackend"); reset() }
     }
 
@@ -99,6 +112,7 @@ final class AIAssistant: ObservableObject {
     /// API 방식에서 실제로 쓸 모델
     var apiModel: AIModel { AIModel.all.first { $0.id == modelID } ?? AIModel.all[2] }
     var currentModelName: String {
+        if backend == .gemini { return "Gemini 2.5 Flash-Lite" }
         if backend == .codex { return "ChatGPT 기본 모델" }
         if backend == .plan && modelID.isEmpty { return "계정 기본 모델" }
         return (AIModel.all.first { $0.id == modelID } ?? AIModel.all[2]).name
@@ -118,6 +132,7 @@ final class AIAssistant: ObservableObject {
     /// 로그인까지 되어 바로 쓸 수 있는지 (확인 전(.unknown)이면 설치 여부로 판단)
     var ready: Bool {
         switch backend {
+        case .gemini: return hasGeminiKey
         case .api: return hasKey
         case .plan: return Self.claudeBinary != nil && [.ready, .unknown].contains(AgentLink.shared.claude)
         case .codex: return AgentLink.codexBinary != nil && [.ready, .unknown].contains(AgentLink.shared.codex)
@@ -152,18 +167,23 @@ final class AIAssistant: ObservableObject {
     }
 
     func reset() {
+        geminiRun = UUID()
         task?.cancel()
         process?.terminate()
         process = nil
         planSession = nil
         codexThread = nil
         messages = []
+        geminiContents = []
+        geminiConnection = ""
         items = []
         busy = false
         status = ""
     }
 
     func cancel() {
+        geminiContents = []
+        geminiRun = UUID()
         task?.cancel()
         process?.terminate()
         busy = false
@@ -173,6 +193,7 @@ final class AIAssistant: ObservableObject {
     func send(_ text: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !busy else { return }
+        if backend == .gemini { sendGemini(t); return }
         if backend == .plan { sendPlan(t); return }
         if backend == .codex { sendCodex(t); return }
         guard let key = Keychain.load() else {
@@ -186,6 +207,85 @@ final class AIAssistant: ObservableObject {
             await self?.loop(key: key)
             self?.busy = false
             self?.status = ""
+        }
+    }
+
+    @discardableResult
+    func setGeminiKey(_ value: String) -> Bool {
+        let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Keychain.save(key, service: GeminiClient.keychainService) else {
+            keyError = "키를 저장하지 못했습니다. Mac 키체인 접근을 확인해 주세요."
+            return false
+        }
+        hasGeminiKey = !key.isEmpty
+        keyError = ""
+        reset()
+        return true
+    }
+
+    func checkGeminiConnection() async {
+        guard !geminiChecking, let key = Keychain.load(service: GeminiClient.keychainService) else { return }
+        geminiChecking = true
+        defer { geminiChecking = false }
+        do {
+            _ = try await GeminiClient.request(key: key, contents: [["role": "user", "parts": [["text": "Reply OK"]]]])
+            geminiConnection = "연결되었습니다. 편집 요청을 입력해 보세요."
+        } catch { geminiConnection = error.localizedDescription }
+    }
+
+    private func sendGemini(_ text: String) {
+        guard let key = Keychain.load(service: GeminiClient.keychainService) else {
+            items.append(ChatItem(role: .error, text: "Gemini API 키를 먼저 설정하세요.")); return
+        }
+        items.append(ChatItem(role: .user, text: text))
+        geminiContents.append(["role": "user", "parts": [["text": text]]])
+        let run = UUID()
+        geminiRun = run
+        busy = true
+        task = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.geminiRun == run { self.busy = false; self.status = "" } }
+            do {
+                for _ in 0..<25 {
+                    try Task.checkCancellation()
+                    guard self.geminiRun == run else { return }
+                    self.status = "Gemini가 편집을 준비하고 있어요…"
+                    let response = try await GeminiClient.request(key: key, contents: self.geminiContents,
+                        system: Self.system, tools: AITools.definitions)
+                    try Task.checkCancellation()
+                    guard self.geminiRun == run else { return }
+                    let content = try GeminiClient.content(response)
+                    let parts = content["parts"] as? [[String: Any]] ?? []
+                    self.geminiContents.append(content) // Preserve thought signatures and function-call IDs.
+                    var results: [[String: Any]] = []
+                    for part in parts {
+                        try Task.checkCancellation()
+                        guard self.geminiRun == run else { return }
+                        if let text = part["text"] as? String, part["thought"] as? Bool != true, !text.isEmpty {
+                            self.items.append(ChatItem(role: .assistant, text: text))
+                        }
+                        if let call = part["functionCall"] as? [String: Any], let name = call["name"] as? String {
+                            self.status = "실행: \(Self.label(name))"
+                            let (output, failed) = await AITools.execute(name, call["args"] as? [String: Any] ?? [:], store: self.store)
+                            try Task.checkCancellation()
+                            guard self.geminiRun == run else { return }
+                            self.items.append(ChatItem(role: .tool, text: "\(Self.label(name)) — \(output.components(separatedBy: "\n").first ?? output)"))
+                            var result: [String: Any] = ["name": name, "response": [failed ? "error" : "result": output]]
+                            if let id = call["id"] { result["id"] = id }
+                            results.append(["functionResponse": result])
+                        }
+                    }
+                    if results.isEmpty { return }
+                    self.geminiContents.append(["role": "user", "parts": results])
+                }
+                throw GeminiClient.Failure(message: "작업 단계가 많아 멈췄습니다. 요청을 나눠 주세요.")
+            } catch {
+                if !Task.isCancelled && self.geminiRun == run {
+                    self.items.append(ChatItem(role: .error, text: error.localizedDescription))
+                }
+                // Never replay partially executed edits after cancellation or network failure.
+                if self.geminiRun == run { self.geminiContents = [] }
+            }
         }
     }
 
