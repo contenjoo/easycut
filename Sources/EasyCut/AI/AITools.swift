@@ -222,7 +222,7 @@ enum AITools {
                 let targets = p.tracks.flatMap(\.clips)
                     .filter { $0.kind == .media && $0.start >= a - 0.01 && $0.end <= e + 0.01 && p.asset($0.assetID)?.kind != .image }
                     .sorted { $0.start > $1.start }
-                for c in targets { p.setSpeed(clip: c.id, speed) }
+                p.setSpeeds(clips: Set(targets.map(\.id)), speed)
             }
             return changed(String(format: "%.2f~%.2f초 구간 %g배속", a, e, speed))
 

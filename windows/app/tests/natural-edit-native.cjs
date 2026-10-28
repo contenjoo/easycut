@@ -103,6 +103,53 @@ const assert = require('node:assert/strict');
     const restored=await invoke('natural_edit_restore');
     if(JSON.stringify(restored.project)!==JSON.stringify(before.project))throw new Error('Native draft restore changed project');
   });
+  await page.click('#ne-cancel');
+  const speedEvidence = await page.evaluate(async () => {
+    const invoke=window.__TAURI__.core.invoke;
+    let state=await invoke('get_state');
+    const original=state.project.tracks.flatMap(t=>t.clips)[0];
+    const length=(original.sourceOut-original.sourceIn)/original.speed;
+    const a=length/3, b=length*2/3;
+    await invoke('split',{time:a,ids:[]});
+    await invoke('split',{time:b,ids:[]});
+    await invoke('clear_captions');
+    for(const [time,text] of [[a/2,'before'],[a+(b-a)/4,'inside'],[b+a/4,'after']]) {
+      await invoke('add_caption',{time,end:time+0.3,text});
+    }
+    state=await invoke('get_state');
+    const caps=state.project.captions;
+    const middle=state.project.tracks.flatMap(t=>t.clips).find(c=>Math.abs(c.start-a)<0.01);
+    await invoke('set_speed',{ids:[middle.id],speed:2});
+    const result=await invoke('get_state');
+    const expected=[caps[0].start,a+(caps[1].start-a)/2,caps[2].start-(b-a)/2];
+    result.project.captions.forEach((c,i)=>{
+      if(Math.abs(c.start-expected[i])>0.001) throw new Error('Native partial-speed caption mismatch');
+      if(c.id!==caps[i].id || c.text!==caps[i].text) throw new Error('Caption identity/content changed');
+    });
+    await invoke('undo');
+    const restored=await invoke('get_state');
+    restored.project.captions.forEach((c,i)=>{if(Math.abs(c.start-caps[i].start)>0.001)throw new Error('Caption undo mismatch');});
+    await invoke('redo');
+    const {S}=await import('./app.js');
+    const {Timeline}=await import('./timeline.js');
+    // Exercise the actual renderer with a full-scale peak: its video wave must exceed the old 45% area.
+    const canvas=document.createElement('canvas'); canvas.width=300;canvas.height=100;
+    const ctx=canvas.getContext('2d'); const rectangles=[];
+    const fill=ctx.fillRect.bind(ctx); ctx.fillRect=(...args)=>{rectangles.push(args);fill(...args);};
+    const asset=result.project.assets[0];
+    const oldMedia=S.media, oldZoom=S.zoom;
+    try {
+      S.zoom=40; S.media={[asset.id]:{thumbs:[],peaks:Array(1000).fill(1)}};
+      const renderer={ctx,round:Timeline.prototype.round};
+      Timeline.prototype.media.call(renderer,{sourceIn:0,speed:1},asset,'video',0,0,200,52,0,200);
+    } finally {S.media=oldMedia;S.zoom=oldZoom;}
+    const maxWave=Math.max(...rectangles.filter(r=>r[2]===1.5).map(r=>r[3]));
+    if(maxWave<28) throw new Error('Native video waveform remains too short: '+maxWave);
+    return {captions:result.project.captions,expected,waveHeight:maxWave};
+  });
+  fs.writeFileSync(process.env.EASYCUT_NATIVE_OUTPUT+'/speed-caption-waveform.json',JSON.stringify(speedEvidence,null,2));
+  await page.screenshot({path:process.env.EASYCUT_NATIVE_OUTPUT+'/speed-caption-waveform.png'});
+  console.log('NATIVE PARTIAL SPEED + CAPTION UNDO/REDO + WAVEFORM PASSED',JSON.stringify(speedEvidence));
   assert.deepEqual(events,[]);
   console.log('NATIVE NATURAL EDIT DIALOG + BACKUP/RESTORE PASSED (live AI provider not exercised)');
   await browser.close();

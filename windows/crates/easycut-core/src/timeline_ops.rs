@@ -470,6 +470,64 @@ impl Project {
 
     /// 속도 변경. 같은 트랙의 뒤 클립은 길이 변화만큼 당기거나 민다.
     pub fn set_speed(&mut self, id: Id, speed: f64) {
+        self.set_speeds(&HashSet::from([id]), speed);
+    }
+
+    /// 원래 시간축으로 자막을 한 번만 변환한다. 겹친 트랙의 동시 변경도 중복 적용하지 않는다.
+    pub fn set_speeds(&mut self, ids: &HashSet<Id>, speed: f64) {
+        if !speed.is_finite() { return; }
+        let rate = speed.clamp(0.1, 20.0);
+        let before = self.clone();
+        let eligible = |c: &Clip| c.kind == ClipKind::Media
+            && !before.asset(c.asset_id).is_some_and(|a| a.kind == MediaKind::Image);
+        let changes: Vec<Vec<Clip>> = before.tracks.iter().map(|t| {
+            let mut clips: Vec<Clip> = t.clips.iter().filter(|c| ids.contains(&c.id)
+                && eligible(c) && (c.speed - rate).abs() > 1e-9).cloned().collect();
+            clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+            clips
+        }).collect();
+        if changes.iter().all(Vec::is_empty) { return; }
+        let owner = |caption: Option<&Caption>| -> Option<usize> {
+            let mut best: Option<(usize, i32, f64)> = None;
+            for (i, track) in before.tracks.iter().enumerate().filter(|(_, t)| !t.muted) {
+                let (mut priority, mut overlap) = (0, 0.0);
+                for clip in track.clips.iter().filter(|c| eligible(c)) {
+                    let amount = caption.map(|c| (c.end.min(clip.end()) - c.start.max(clip.start)).max(0.0)).unwrap_or(clip.duration());
+                    if amount <= EPS { continue; }
+                    let a = before.asset(clip.asset_id);
+                    let p = if a.and_then(|x| x.words.as_ref()).is_some_and(|w| !w.is_empty()) { 3 }
+                        else if a.is_some_and(|x| x.has_audio) { 2 } else { 1 };
+                    if p > priority { priority = p; overlap = amount; }
+                    else if p == priority { overlap += amount; }
+                }
+                if priority > 0 && best.is_none_or(|(_, p, o)| priority > p || (priority == p && overlap > o + EPS)) {
+                    best = Some((i, priority, overlap));
+                }
+            }
+            best.map(|b| b.0)
+        };
+        let fallback = owner(None);
+        for caption in &mut self.captions {
+            let Some(ti) = owner(Some(caption)).or(fallback) else { continue; };
+            let mapped = |time: f64| {
+                let mut shift = 0.0;
+                for clip in &changes[ti] {
+                    if time <= clip.start { return time + shift; }
+                    let ratio = clip.speed / rate;
+                    if time < clip.end() { return clip.start + shift + (time - clip.start) * ratio; }
+                    shift += clip.duration() * (ratio - 1.0);
+                }
+                time + shift
+            };
+            caption.start = mapped(caption.start);
+            caption.end = mapped(caption.end);
+        }
+        for clips in changes {
+            for clip in clips.iter().rev() { self.change_clip_speed(clip.id, rate); }
+        }
+    }
+
+    fn change_clip_speed(&mut self, id: Id, speed: f64) {
         let Some((ti, ci)) = self.locate(id) else {
             return;
         };

@@ -375,7 +375,7 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
                 if set.is_empty() {
                     return err("클립을 찾지 못했습니다");
                 }
-                edit(app, |p| set.iter().for_each(|id| p.set_speed(*id, speed)));
+                edit(app, |p| p.set_speeds(&set.iter().copied().collect(), speed));
                 return changed(format!("{}개 클립 {speed}배속", set.len()));
             }
             let a = d(input, "start").unwrap_or(0.0);
@@ -393,9 +393,7 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
                     .map(|c| (c.start, c.id))
                     .collect();
                 targets.sort_by(|x, y| y.0.total_cmp(&x.0));
-                for (_, id) in targets {
-                    p.set_speed(id, speed);
-                }
+                p.set_speeds(&targets.into_iter().map(|(_, id)| id).collect(), speed);
             });
             changed(format!("{a:.2}~{e:.2}초 구간 {speed}배속"))
         }

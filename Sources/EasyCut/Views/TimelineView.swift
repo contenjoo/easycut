@@ -360,6 +360,12 @@ final class TimelineNSView: NSView {
         }
     }
 
+    /// 제목 띠를 제외한 공간을 사용하며 영상의 파형도 트랙 높이에 따라 커진다.
+    static func waveformHeight(clipHeight: CGFloat, audioOnly: Bool) -> CGFloat {
+        let available = max(1, clipHeight - 20)
+        return audioOnly ? available : min(available, max(28, available * 0.85))
+    }
+
     private func drawClips(_ p: Project, _ dirty: NSRect, _ ctx: CGContext) {
         let nameAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white]
         for (ti0, tr) in p.tracks.enumerated() {
@@ -404,7 +410,7 @@ final class TimelineNSView: NSView {
                 }
                 // 파형
                 if let asset, kind == .audio || kind == .video, let wave = store.media.waveforms[asset.id], !wave.isEmpty {
-                    let h: CGFloat = kind == .audio ? r.height - 18 : 16
+                    let h = Self.waveformHeight(clipHeight: r.height, audioOnly: kind == .audio)
                     let baseY = r.maxY - 2
                     let mid = kind == .audio ? r.minY + 16 + h / 2 : baseY - h / 2
                     (kind == .audio ? NSColor.white.withAlphaComponent(0.75) : NSColor(calibratedRed: 0.6, green: 1, blue: 0.7, alpha: 0.85)).setFill()

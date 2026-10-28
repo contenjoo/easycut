@@ -67,6 +67,10 @@ enum SelfTest {
             check(abs(duration - p.duration) < 0.2, "실제 AI 편집 프로젝트 내보내기 길이 일치")
             return
         }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "speed-caption" {
+            try await testSpeedCaptionRender(dir)
+            return
+        }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "caption-text" {
             testCaptionText()
             await MainActor.run { testCaptionBindings(); testCaptionIME() }

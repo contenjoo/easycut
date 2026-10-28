@@ -572,9 +572,7 @@ final class EditorStore: ObservableObject {
             return
         }
         apply("speed-\(targets.hashValue)") { p in
-            for id in targets {
-                if let c = p.clip(id), c.kind == .media, p.asset(c.assetID)?.kind != .image { p.setSpeed(clip: id, s) }
-            }
+            p.setSpeeds(clips: targets, s)
         }
     }
 

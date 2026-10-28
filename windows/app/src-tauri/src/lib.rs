@@ -520,9 +520,7 @@ fn trim_clip(app: AppHandle, st: State<AppState>, id: Id, left: bool, time: f64)
 fn set_speed(app: AppHandle, st: State<AppState>, ids: Vec<Id>, speed: f64) -> Value {
     with(&st, |e| {
         e.apply(|p| {
-            for id in &ids {
-                p.set_speed(*id, speed);
-            }
+            p.set_speeds(&ids.iter().copied().collect(), speed);
         })
     });
     changed(&app, &st)

@@ -465,6 +465,69 @@ extension Project {
 
 
     mutating func setSpeed(clip id: UUID, _ speed: Double) {
+        setSpeeds(clips: [id], speed)
+    }
+
+    /// 한 번의 속도 변경에서 원래 시간축을 기준으로 자막을 한 번만 변환한다.
+    mutating func setSpeeds(clips ids: Set<UUID>, _ speed: Double) {
+        guard speed.isFinite else { return }
+        let rate = min(max(speed, 0.1), 20)
+        let before = tracks
+        let kinds = Dictionary(uniqueKeysWithValues: assets.map { ($0.id, $0.kind) })
+        let eligible: (Clip) -> Bool = { c in
+            c.kind == .media && c.assetID.flatMap { kinds[$0] } != .image
+        }
+        let changes = before.map { track in
+            track.clips.filter { ids.contains($0.id) && eligible($0) && abs($0.speed - rate) > 1e-9 }
+                .sorted { $0.start < $1.start }
+        }
+        guard changes.contains(where: { !$0.isEmpty }) else { return }
+        // 자막 출처가 여러 트랙에 있을 수 있다. 말 대본, 소리, 영상 순으로 겹치는 트랙을 고른다.
+        func rank(_ track: Track, _ caption: Caption?) -> (Int, Double) {
+            guard !track.muted else { return (0, 0) }
+            var priority = 0, overlap = 0.0
+            for clip in track.clips where eligible(clip) {
+                let amount = caption.map { max(0, min($0.end, clip.end) - max($0.start, clip.start)) } ?? clip.duration
+                guard amount > Project.eps else { continue }
+                let a = asset(clip.assetID)
+                let p = !(a?.words?.isEmpty ?? true) ? 3 : (a?.hasAudio == true ? 2 : 1)
+                if p > priority { priority = p; overlap = amount }
+                else if p == priority { overlap += amount }
+            }
+            return (priority, overlap)
+        }
+        func owner(_ caption: Caption?) -> Int? {
+            var best: (Int, Int, Double)?
+            for (i, track) in before.enumerated() {
+                let (p, overlap) = rank(track, caption)
+                if p > 0 && (best == nil || p > best!.1 || (p == best!.1 && overlap > best!.2 + Project.eps)) {
+                    best = (i, p, overlap)
+                }
+            }
+            return best?.0
+        }
+        let fallback = owner(nil)
+        for i in captions.indices {
+            guard let track = owner(captions[i]) ?? fallback, !changes[track].isEmpty else { continue }
+            func mapped(_ time: Double) -> Double {
+                var shift = 0.0
+                for clip in changes[track] {
+                    if time <= clip.start { return time + shift }
+                    let ratio = clip.speed / rate
+                    if time < clip.end { return clip.start + shift + (time - clip.start) * ratio }
+                    shift += clip.duration * (ratio - 1)
+                }
+                return time + shift
+            }
+            captions[i].start = mapped(captions[i].start)
+            captions[i].end = mapped(captions[i].end)
+        }
+        for clips in changes {
+            for clip in clips.reversed() { changeClipSpeed(clip: clip.id, rate) }
+        }
+    }
+
+    private mutating func changeClipSpeed(clip id: UUID, _ speed: Double) {
         guard let loc = locate(clip: id) else { return }
         let old = tracks[loc.track].clips[loc.index]
         let s = min(max(speed, 0.1), 20)

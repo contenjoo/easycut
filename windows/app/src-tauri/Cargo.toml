@@ -1,6 +1,6 @@
 [package]
 name = "easycut-windows"
-version = "0.6.2"
+version = "0.6.3"
 description = "EasyCut for Windows"
 edition = "2021"
 license = "MIT"

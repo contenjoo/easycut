@@ -255,8 +255,8 @@ export class Timeline {
       ctx.globalAlpha = 1;
     }
     if (m.peaks?.length && a.hasAudio) {
-      // 아래쪽 절반에 파형 (50ms 단위)
-      const base = y + h - 2, amp = kind === "audio" ? bh - 4 : bh * 0.45;
+      // 영상 파형도 제목 아래 공간을 넓게 사용한다 (50ms 단위)
+      const base = y + h - 2, amp = kind === "audio" ? Math.max(1, bh - 4) : Math.min(Math.max(1, bh - 4), Math.max(28, (bh - 4) * 0.85));
       const px0 = Math.max(cx, x0), px1 = Math.min(cx + cw, x1);
       if (kind !== "audio") {
         // 장면 그림 위에서도 보이게 아래쪽을 어둡게
