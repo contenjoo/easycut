@@ -34,3 +34,14 @@ Windows Rust 코어 검사 31개(새 배속 검사 5개 포함) 통과.
 
 `EasyCut-1.12.6.dmg`
 SHA256: `e96a1be639939c987a9386ba286f7b9c5dd9a6814cc1d63bd653ff37029a8554`
+
+## Windows 실제 앱 완료 결과
+
+- GitHub Actions: https://github.com/contenjoo/easycut/actions/runs/40789982101 — 전체 성공.
+- Windows 자체 검사와 자동 업데이트와 같은 무인 설치 후 재검사 통과.
+- 실제 WebView2에서 부분 배속 후 자막 시작값이 예상값과 일치하고, 실행 취소·다시 실행 후에도 일치함을 확인.
+- 실제 파형 렌더러의 영상 파형 높이: 28px. 로그: `NATIVE PARTIAL SPEED + CAPTION UNDO/REDO + WAVEFORM PASSED`.
+- 정식 Windows 0.6.3 릴리스: https://github.com/contenjoo/easycut/releases/tag/win-v0.6.3
+- 설치파일: `EasyCut_0.6.3_x64-setup.exe`, 63,560,210바이트.
+- GitHub 공개 자산 SHA256: `9751aab95c112e4d978d9a95a3442a68cde9f4634dd5bf6edd2197f5ee002c20`.
+- macOS 자동 업데이트용 최신 릴리스는 `v1.12.6`으로 유지됨을 확인.
