@@ -11,6 +11,10 @@ on:
         description: Publish the tested Windows installer as a stable release
         type: boolean
         default: false
+      generationOnly:
+        description: Run focused video creation checks with a debug Windows app
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,7 +25,11 @@ env:
   SELFTEST_SPEECH_TEXT: "Hello everyone. Today we are testing the video editor on Windows. When you delete words from the transcript, the video is cut as well. The captions are made from the same words."
 
 jobs:
+  generation:
+    if: github.event_name == 'workflow_dispatch' && inputs.generationOnly
+    uses: ./.github/workflows/windows-generation.yml
   build:
+    if: github.event_name != 'workflow_dispatch' || !inputs.generationOnly
     runs-on: windows-latest
     defaults:
       run:
