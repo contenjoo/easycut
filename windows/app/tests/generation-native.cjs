@@ -10,6 +10,16 @@ const path=require('node:path');
   page.setDefaultTimeout(30000);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const out=process.env.EASYCUT_NATIVE_OUTPUT;
+  const normalizedPath=value=>String(value||'').replaceAll(String.fromCharCode(92),'/').replace('//?/','').toLowerCase();
+  async function failureEvidence(label,error){
+    const snapshot=await page.evaluate(async()=>{
+      const qa=window.__generationQA;
+      const invoke=qa?.original||window.__TAURI__.core.invoke;
+      return {calls:qa?.calls,importTask:qa?.importTask,phase:qa?.phase,mockState:qa?.state,nativeState:await invoke('get_state').catch(e=>({error:String(e)})),generationState:await invoke('generation_state').catch(e=>({error:String(e)})),visibleError:document.querySelector('#video-error')?.textContent};
+    }).catch(e=>({captureError:String(e)}));
+    fs.writeFileSync(path.join(out,`video-failure-${label}.json`),JSON.stringify({error:String(error?.stack||error),...snapshot},null,2));
+    await page.screenshot({path:path.join(out,`video-failure-${label}.png`)}).catch(()=>{});
+  }
   const fixture=JSON.parse(fs.readFileSync(process.env.EASYCUT_GENERATION_MANIFEST,'utf8')).fixtures[0];
   await page.waitForSelector('#video-create');
   const actual=await page.evaluate(async()=>{
@@ -76,8 +86,15 @@ const path=require('node:path');
       if(command==='generation_cancel'){qa.state={...qa.state,busy:false,status:'중지됨'};return;}
       if(command==='generation_render'){qa.state={...qa.state,outputPath:fixture.outputPath,status:'영상이 준비됐습니다'};return qa.state;}
       if(command==='generation_import'){
-        await original('new_project');
-        return original('import_files',{paths:[fixture.outputPath],place:[0,0]});
+        const task=qa.importTask={status:'pending',path:fixture.outputPath};
+        try{
+          task.before=await original('get_state');
+          task.cleared=await original('new_project');
+          task.nativeResult=await original('import_files',{paths:[fixture.outputPath],place:[0,0]});
+          task.state=await original('get_state');
+          task.status='complete';
+          return task.nativeResult;
+        }catch(error){task.error=String(error);task.status='error';throw error;}
       }
       return original(command,args);
     };
@@ -108,18 +125,27 @@ const path=require('node:path');
   await page.click('#video-render');
   await page.waitForSelector('#video-import');
   await page.click('#video-import');
-  await page.waitForFunction(async()=>{
-    const state=await window.__generationQA.original('get_state');
-    return state.project.tracks.flatMap(t=>t.clips).length===1;
-  });
-  const imported=await page.evaluate(async()=>{
-    const invoke=window.__generationQA.original;
-    const state=await invoke('get_state');
-    await invoke('undo');const undone=await invoke('get_state');
-    await invoke('redo');return{state,undone};
-  });
-  assert.equal(imported.state.project.assets[0].width,640);
-  assert.equal(imported.undone.project.tracks.flatMap(t=>t.clips).length,0);
+  let imported;
+  try{
+    await page.waitForFunction(()=>['complete','error'].includes(window.__generationQA.importTask?.status));
+    const task=await page.evaluate(()=>window.__generationQA.importTask);
+    assert.equal(task.status,'complete',task.error||'Native fixture import did not finish');
+    const state=await page.evaluate(()=>window.__generationQA.original('get_state'));
+    assert.deepEqual(state.project,task.nativeResult.project,'Fresh editor state differs from the completed import result');
+    assert.deepEqual(state.project,task.state.project,'Editor changed after the import completion marker');
+    assert.equal(state.project.assets.length,1,'Completed native fixture import must add exactly one asset');
+    const asset=state.project.assets[0],clips=state.project.tracks.flatMap(t=>t.clips);
+    assert.equal(normalizedPath(asset.path),normalizedPath(fixture.outputPath));
+    assert.equal(asset.width,640);assert.equal(clips.length,1);assert.equal(clips[0].assetID,asset.id);
+    const undoState=await page.evaluate(async()=>{
+      const invoke=window.__generationQA.original;
+      await invoke('undo');const undone=await invoke('get_state');
+      await invoke('redo');return undone;
+    });
+    imported={state,undone:undoState,nativeResult:task.nativeResult};
+    assert.equal(imported.undone.project.tracks.flatMap(t=>t.clips).length,0);
+    assert.equal(imported.undone.project.assets.length,0);
+  }catch(error){await failureEvidence('mock-import',error);throw error;}
   await page.screenshot({path:path.join(out,'video-render-and-import.png')});
   await page.evaluate(()=>window.__generationQA.phase='busy');
   await page.click('#video-generate');
@@ -242,11 +268,16 @@ const path=require('node:path');
     assert.equal(rendered.jobId,preview.jobId);
     await page.waitForSelector('#video-import');
     await page.click('#video-import');
-    await page.waitForFunction(async()=>{
-      const s=await window.__TAURI__.core.invoke('get_state');return s.project.tracks.flatMap(t=>t.clips).length===1;
-    });
+    await page.waitForFunction(async expected=>{
+      const s=await window.__TAURI__.core.invoke('get_state');
+      const normalize=value=>String(value||'').replaceAll(String.fromCharCode(92),'/').replace('//?/','').toLowerCase();
+      const assets=s.project.assets,clips=s.project.tracks.flatMap(t=>t.clips);
+      return assets.length===1&&clips.length===1&&normalize(assets[0].path)===expected&&clips[0].assetID===assets[0].id;
+    },normalizedPath(rendered.outputPath));
     const state=await page.evaluate(()=>window.__TAURI__.core.invoke('get_state'));
     assert.equal(state.project.assets.length,1);
+    assert.equal(normalizedPath(state.project.assets[0].path),normalizedPath(rendered.outputPath));
+    assert.equal(state.project.tracks.flatMap(t=>t.clips)[0].assetID,state.project.assets[0].id);
     assert.equal(state.project.assets[0].width,1280);assert.equal(state.project.assets[0].height,720);
     assert(Math.abs(state.project.assets[0].duration-2)<0.2);
     await page.screenshot({path:path.join(out,'video-native-rust-worker-render-import.png')});
@@ -260,7 +291,7 @@ const path=require('node:path');
     assert.equal(calls.filter(c=>c.phase==='source').length,1);
     nativeFlow={provider:'disposable Codex CLI response fixture',commands:'real Rust generation_start/render/import/undo',preview,rendered,asset:state.project.assets[0],undoClips:0,cliCalls:calls};
     await page.click('#video-close');
-  }finally{
+  }catch(error){await failureEvidence('native-flow',error);throw error;}finally{
     if(fs.existsSync(runtimeLink)){try{fs.unlinkSync(runtimeLink);}catch(error){if(error.code==='EPERM'||error.code==='EISDIR')fs.rmdirSync(runtimeLink);else throw error;}}
     fs.rmSync(shim,{force:true});fs.rmSync(script,{force:true});
   }
