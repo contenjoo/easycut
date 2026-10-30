@@ -12,12 +12,17 @@ on:
         type: boolean
         default: false
       generationOnly:
-        description: Run focused video creation checks with a debug Windows app
+        description: Run focused video creation checks with a debug app or supplied installer
         type: boolean
         default: false
+      installerRunId:
+        description: Validate a previous run's exact Windows installer (forces generation-only mode)
+        type: string
+        default: ""
 
 permissions:
   contents: write
+  actions: read
 
 env:
   # 자체 검사에서 합성 음성으로 읽고 Whisper가 알아듣는지 확인하는 문장
@@ -26,10 +31,12 @@ env:
 
 jobs:
   generation:
-    if: github.event_name == 'workflow_dispatch' && inputs.generationOnly
+    if: github.event_name == 'workflow_dispatch' && (inputs.generationOnly || inputs.installerRunId != '')
     uses: ./.github/workflows/windows-generation.yml
+    with:
+      installerRunId: ${{ inputs.installerRunId }}
   build:
-    if: github.event_name != 'workflow_dispatch' || !inputs.generationOnly
+    if: github.event_name != 'workflow_dispatch' || (!inputs.generationOnly && inputs.installerRunId == '')
     runs-on: windows-latest
     defaults:
       run:

@@ -24,6 +24,8 @@ async function pollNativeState(label,read,accept,timeout=180000){
   throw new Error(label+' timed out; last state: '+JSON.stringify(latest).slice(0,2000));
 }
 (async()=>{
+  assert.equal(process.platform,'win32','Native generation QA requires Windows');
+  assert.equal(process.env.GITHUB_ACTIONS,'true','Credential and CLI fixtures require a disposable CI runner');
   const browser=await chromium.connectOverCDP('http://127.0.0.1:9222');
   const page=browser.contexts()[0].pages().find(p=>p.url().includes('tauri'))||browser.contexts()[0].pages()[0];
   page.setDefaultTimeout(30000);
@@ -41,6 +43,11 @@ async function pollNativeState(label,read,accept,timeout=180000){
   }
   const fixture=JSON.parse(fs.readFileSync(process.env.EASYCUT_GENERATION_MANIFEST,'utf8')).fixtures[0];
   await page.waitForSelector('#video-create');
+  if(await page.evaluate(()=>window.LANG!=='ko')){
+    await page.evaluate(()=>localStorage.setItem('uiLang','ko'));
+    await page.reload();
+    await page.waitForFunction(()=>window.LANG==='ko'&&window.__TAURI__?.core&&document.querySelector('#video-create'));
+  }
   const actual=await page.evaluate(async()=>{
     const invoke=window.__TAURI__.core.invoke;
     const caps=await invoke('generation_capabilities');
@@ -205,8 +212,6 @@ async function pollNativeState(label,read,accept,timeout=180000){
   });
   // End-to-end native flow: only the disposable provider CLI is substituted.
   // No production fixture action, API transport or paid model is used here.
-  assert.equal(process.platform,'win32','Native end-to-end fixture requires Windows');
-  assert.equal(process.env.GITHUB_ACTIONS,'true','CLI fixtures are limited to disposable CI runners');
   const appData=path.join(process.env.APPDATA,'com.contenjoo.easycut.windows');
   const npmDir=path.join(process.env.APPDATA,'npm');
   const shim=path.join(npmDir,'codex.cmd');

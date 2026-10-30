@@ -2,10 +2,21 @@ name: Windows generation debug
 
 on:
   workflow_dispatch:
+    inputs:
+      installerRunId:
+        description: Validate the exact installer artifact from a previous Windows build run
+        type: string
+        default: ""
   workflow_call:
+    inputs:
+      installerRunId:
+        description: Validate the exact installer artifact from a previous Windows build run
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -20,6 +31,81 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Verify installer source matches production code
+        if: inputs.installerRunId != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER_RUN_ID: ${{ inputs.installerRunId }}
+        run: |
+          $runId = $env:INSTALLER_RUN_ID
+          if ($runId -notmatch '^[0-9]+$') { throw "installerRunId must contain only digits" }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$runId" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not read the source workflow run" }
+          if ($run.path -ne ".github/workflows/windows.yml") { throw "Installer must come from the Windows build workflow" }
+          $baseline = $run.head_sha
+          if ($baseline -notmatch '^[0-9a-f]{40}$') { throw "Invalid source commit" }
+          git fetch --no-tags --depth=1 origin $baseline
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch installer source commit" }
+          $productionPaths = @("windows/app/ui","windows/app/src-tauri","windows/crates","windows/Cargo*","windows/app/package*",":(exclude)windows/**/tests/**",":(exclude)windows/**/docs/**",":(exclude)windows/**/README*")
+          git diff --quiet $baseline HEAD -- $productionPaths
+          if ($LASTEXITCODE -ne 0) {
+            git diff --name-only $baseline HEAD -- $productionPaths
+            throw "Production code differs from the installer source; build a new installer"
+          }
+          $artifacts = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$runId/artifacts?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not read source installer artifacts" }
+          $installerArtifacts = @($artifacts.artifacts | Where-Object { $_.name -eq "EasyCut-Windows-setup" -and -not $_.expired })
+          if ($installerArtifacts.Count -ne 1) { throw "Expected one unexpired EasyCut-Windows-setup artifact" }
+          $artifact = $installerArtifacts[0]
+          $zip = "$env:RUNNER_TEMP/source-installer-artifact.zip"
+          Invoke-WebRequest $artifact.archive_download_url -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept="application/vnd.github+json"} -OutFile $zip
+          $archiveSha256 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $recordedDigest = [string]$artifact.digest
+          if ($recordedDigest -and $recordedDigest -ne "sha256:$archiveSha256") { throw "Artifact ZIP digest differs from GitHub metadata" }
+          $evidence = @{
+            mode="exact-installed-artifact"; sourceRunId=$runId; sourceRunUrl=$run.html_url
+            sourceHeadSha=$baseline; verificationHeadSha=(git rev-parse HEAD)
+            productionPathsUnchanged=$true; artifactId=$artifact.id
+            archiveSha256=$archiveSha256; githubArtifactDigest=$recordedDigest
+          }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/native-evidence" | Out-Null
+          $evidence | ConvertTo-Json -Depth 20 | Set-Content "$env:RUNNER_TEMP/native-evidence/installer-verification.json"
+          Write-Host "Source artifact ZIP SHA256: $archiveSha256"
+
+      - uses: actions/download-artifact@v4
+        if: inputs.installerRunId != ''
+        with:
+          name: EasyCut-Windows-setup
+          run-id: ${{ inputs.installerRunId }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/installer-under-test
+
+      - name: Install the exact artifact under test
+        if: inputs.installerRunId != ''
+        run: |
+          $setups = @(Get-ChildItem "$env:RUNNER_TEMP/installer-under-test" -Filter "*setup.exe" -File -Recurse)
+          if ($setups.Count -ne 1) { throw "Expected one NSIS setup executable" }
+          $setup = $setups[0]
+          $setupSha256 = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $installation = Start-Process $setup.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($installation.ExitCode -ne 0) { throw "NSIS installer failed: $($installation.ExitCode)" }
+          $installDir = Join-Path $env:LOCALAPPDATA "EasyCut"
+          $installed = Get-ChildItem $installDir -Filter "*.exe" -File | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
+          if (-not $installed) { throw "Installed application executable not found" }
+          foreach ($resource in @("bin/ffmpeg.exe","bin/ffprobe.exe","generation/worker.cjs","generation/canvas-render.cjs","generation/package.json","generation/skills.json","generation/VideoSkillNotices.txt")) {
+            if (-not (Test-Path (Join-Path $installDir "resources/$resource"))) { throw "Missing installed resource: $resource" }
+          }
+          $evidencePath = "$env:RUNNER_TEMP/native-evidence/installer-verification.json"
+          $evidence = Get-Content $evidencePath -Raw | ConvertFrom-Json -AsHashtable
+          $evidence.installerName = $setup.Name
+          $evidence.installerSha256 = $setupSha256
+          $evidence.installerBytes = $setup.Length
+          $evidence.installedExecutable = $installed.FullName
+          $evidence.installedExecutableSha256 = (Get-FileHash $installed.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $evidence | ConvertTo-Json -Depth 20 | Set-Content $evidencePath
+          "EASYCUT_INSTALLED_EXE=$($installed.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Exact NSIS installer SHA256: $setupSha256"
 
       - name: Node Windows script path preflight
         run: |
@@ -41,8 +127,10 @@ jobs:
           exit 0
 
       - uses: dtolnay/rust-toolchain@stable
+        if: inputs.installerRunId == ''
 
       - uses: Swatinem/rust-cache@v2
+        if: inputs.installerRunId == ''
         with:
           workspaces: windows
           cache-on-failure: true
@@ -59,11 +147,16 @@ jobs:
           # Existing README resources satisfy the globs; video creation needs no Whisper download.
           Get-ChildItem $bin | Format-Table Name, Length
 
-      - name: Rust and generation worker tests
+      - name: Rust tests
+        if: inputs.installerRunId == ''
         working-directory: windows
         run: |
           cargo test --workspace
           if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Generation worker tests
+        working-directory: windows
+        run: |
           node --test app/tests/generation-worker.test.cjs
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
@@ -75,6 +168,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build debug app for native video creation checks
+        if: inputs.installerRunId == ''
         run: |
           $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           $testConfig.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
@@ -120,7 +214,13 @@ jobs:
           '@
           $bootstrapPath = "$env:RUNNER_TEMP/generation-native-bootstrap.cjs"
           [IO.File]::WriteAllText($bootstrapPath, $bootstrap, [Text.UTF8Encoding]::new($false))
-          $exe = Resolve-Path windows/target/debug/easycut-windows.exe
+          # WebView2's process environment enables CDP for the exact installed
+          # production binary too; no alternate devtools build is made in that mode.
+          if ($env:EASYCUT_INSTALLED_EXE) {
+            $exe = Resolve-Path $env:EASYCUT_INSTALLED_EXE
+          } else {
+            $exe = Resolve-Path windows/target/debug/easycut-windows.exe
+          }
           $app = Start-Process $exe -PassThru -RedirectStandardOutput "$env:EASYCUT_NATIVE_OUTPUT/app-stdout.txt" -RedirectStandardError "$env:EASYCUT_NATIVE_OUTPUT/app-stderr.txt"
           try {
             node $bootstrapPath
