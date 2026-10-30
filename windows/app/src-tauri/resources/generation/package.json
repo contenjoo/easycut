@@ -1,0 +1,1 @@
+{"name":"easycut-video-runtime","private":true,"version":"1.0.0","dependencies":{"@remotion/cli":"4.0.537","remotion":"4.0.537","react":"19.2.9","react-dom":"19.2.9","puppeteer-core":"24.26.1"}}

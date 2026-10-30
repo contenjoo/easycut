@@ -10,10 +10,15 @@ export function modalBox() {
   return $("#modal-box");
 }
 export function showModal() {
+  if (!modalBox().querySelector("#video-generation")) {
+    modalBox().classList.remove("generation-box");
+    for (const attribute of ["role", "aria-modal", "aria-labelledby"]) modalBox().removeAttribute(attribute);
+  }
   $("#modal").classList.remove("hidden");
 }
 export function hideModal() {
   $("#modal").classList.add("hidden");
+  window.dispatchEvent(new Event("easycut-modal-hidden"));
 }
 
 /// 버튼 여러 개인 확인 창. 누른 버튼의 값(없으면 null)
@@ -62,6 +67,7 @@ export async function buildMenu() {
     text: L("파일"),
     items: await Promise.all([
       item("새 프로젝트", c.newProject, "Ctrl+N"),
+      ...(c.generation ? [item("영상 만들기…", c.generation)] : []),
       item("프로젝트 열기…", c.open, "Ctrl+O"),
       M.Submenu.new({ text: L("최근 프로젝트"), items: await Promise.all((prefs.recent || []).length
         ? [...prefs.recent.map((p) => item(p.split(/[\\/]/).pop().replace(/\.easycut$/, "") + "   —   " + p, () => c.openPath(p))), sep(), item("목록 지우기", async () => { await invoke("set_pref", { key: "recent", value: [] }); buildMenu(); })]

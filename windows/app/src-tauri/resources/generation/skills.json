@@ -1,0 +1,65 @@
+{
+  "version": "2026.10.30.1",
+  "catalog": [
+    {
+      "id": "motion-design",
+      "title": "제품·브랜드 모션",
+      "englishTitle": "Product & Brand Motion",
+      "summary": "제품의 특징을 움직임과 장면 변화로 보여 줍니다.",
+      "englishSummary": "Reveal product features through purposeful motion and visual beats.",
+      "upstreamName": "cskwork/motion-graphics-skill",
+      "revision": "6670b8cc41648fc6b70ecdd8fbb8b04a22fb82ea",
+      "licenseName": "MIT",
+      "sourceURL": "https://github.com/cskwork/motion-graphics-skill/blob/6670b8cc41648fc6b70ecdd8fbb8b04a22fb82ea/skills/motion-graphics/SKILL.md",
+      "instructions": "Make the requested subject recognizable early. Build visual beats around one idea at a time; use changes in composition, scale or action to carry meaning, instead of displaying a stack of cards. Give essential phrases enough stationary reading time. Choose pacing and typography for the user's mood: calm requests need calm motion, not compulsory fast hooks. Derive palette and visual language from the brief, with generous margins and a clear focal point. Use a closing action only if requested or suitable. Do not invent testimonials, metrics, prices, logos or benefits."
+    },
+    {
+      "id": "visual-explainer",
+      "title": "이해를 돕는 설명",
+      "englishTitle": "Visual Explainer",
+      "summary": "원인과 결과를 이어 보여 주며 개념을 설명합니다.",
+      "englishSummary": "Teach a concept by connecting visible causes, actions and results.",
+      "upstreamName": "bangtutorial/bang-motion",
+      "revision": "c1aa65e921c970d858705fcb4a53a8294d1a4131",
+      "licenseName": "MIT",
+      "sourceURL": "https://github.com/bangtutorial/bang-motion/blob/c1aa65e921c970d858705fcb4a53a8294d1a4131/references/explainer.md",
+      "instructions": "Teach with objects doing things: show the cause, transformation and visible result. Keep a shared object or spatial relationship across successive stages so the viewer can follow what changed. Introduce a few meaningful elements sequentially rather than showing a full diagram at once. Labels support the action; avoid a repeated title-plus-paragraph slide layout. Adapt vocabulary, detail and reading time to the specified audience. A continuous shot remains continuous when requested. Explain only the supplied concept; do not add unsupported scientific or product claims."
+    },
+    {
+      "id": "kinetic-type",
+      "title": "움직이는 타이포",
+      "englishTitle": "Kinetic Typography",
+      "summary": "핵심 문구를 읽기 쉬운 움직임과 배치로 전달합니다.",
+      "englishSummary": "Communicate key phrases with readable, expressive type and movement.",
+      "upstreamName": "bangtutorial/bang-motion",
+      "revision": "c1aa65e921c970d858705fcb4a53a8294d1a4131",
+      "licenseName": "MIT",
+      "sourceURL": "https://github.com/bangtutorial/bang-motion/blob/c1aa65e921c970d858705fcb4a53a8294d1a4131/SKILL.md",
+      "instructions": "Make the requested words part of the composition, with a strong size hierarchy and at most two simultaneous text levels. Animate phrases in a way that expresses their meaning, using deliberate entrances, holds and exits. Keep exact spelling, Korean syllables and punctuation intact. Measure or fit text to the available space and hold it long enough to read. Derive colors and movement from the brief rather than imposing a black-and-neon template. If the user requests no text, omit this treatment entirely."
+    },
+    {
+      "id": "data-story",
+      "title": "숫자·데이터 이야기",
+      "englishTitle": "Data Story",
+      "summary": "제공한 수치와 관계를 그래프의 변화로 보여 줍니다.",
+      "englishSummary": "Reveal the supplied quantities and relationships through animated charts.",
+      "upstreamName": "EasyCut adaptation referencing Remotion documentation",
+      "revision": "reviewed-2026-10-30",
+      "licenseName": "EasyCut original guidance; reference only",
+      "sourceURL": "https://www.remotion.dev/docs/interpolate",
+      "instructions": "Use only the user's supplied values, categories, units and comparisons. Encode magnitude with a consistent scale and baseline; animate from the baseline to the correct endpoint with clamped time interpolation. Keep final values and direct labels readable. Show one comparison or change at a time; use color to distinguish or emphasize meaning, not to decorate every value. Label invented illustrative values as examples only when the user permits examples. Length, fps, pixel dimensions and dates in the brief are not automatically chart data. Do not call a chart API or install a package: draw the chart with the allowed primitives."
+    },
+    {
+      "id": "generative-art",
+      "title": "입자·패턴 아트",
+      "englishTitle": "Generative Art",
+      "summary": "고정 시드로 입자·흐름·패턴이 변화하는 장면을 만듭니다.",
+      "englishSummary": "Create evolving particles, flows and patterns with reproducible variation.",
+      "upstreamName": "anthropics/skills · algorithmic-art",
+      "revision": "ca45fc496a3436251f191354091d557da31c15b5",
+      "licenseName": "Apache-2.0",
+      "sourceURL": "https://github.com/anthropics/skills/blob/ca45fc496a3436251f191354091d557da31c15b5/skills/algorithmic-art/SKILL.md",
+      "instructions": "Design a coherent generative system, such as a flow field, interacting particles, repeated geometry or organic growth, chosen for the brief. Build visual richness from a small set of consistent rules and a deliberate palette. Every object's seed and position must be a pure function of its stable index and frame time, so out-of-order frames remain identical. Vary density, rhythm, scale and flow intentionally over the requested duration. Keep the user's subject recognizable when one is supplied. Use only Canvas 2D or inline SVG/HTML primitives supported by the chosen renderer; do not import p5.js or create an interactive viewer."
+    }
+  ]
+}

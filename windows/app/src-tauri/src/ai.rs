@@ -872,6 +872,23 @@ fn codex_logged_in() -> bool {
     code == 0 && out.to_lowercase().contains("logged in")
 }
 
+/// Distinguishes consumer subscription login from API-key login.
+pub fn subscription_status(codex: bool, output: &str) -> bool {
+    if codex {
+        let text = output.to_lowercase();
+        return text.contains("logged in") && text.contains("chatgpt") && !text.contains("api key");
+    }
+    output.find('{').and_then(|i| serde_json::from_str::<Value>(&output[i..]).ok())
+        .is_some_and(|v| v["loggedIn"].as_bool() == Some(true) && v["authMethod"].as_str() == Some("claude.ai"))
+}
+
+pub fn subscription_logged_in(codex: bool) -> bool {
+    let Some(bin) = (if codex { codex_binary() } else { claude_binary() }) else { return false };
+    let args: &[&str] = if codex { &["login", "status"] } else { &["auth", "status", "--json"] };
+    let (code, output) = run(&bin, args, None, Duration::from_secs(30));
+    code == 0 && subscription_status(codex, &output)
+}
+
 // MARK: 원클릭 연결 (설치 → 브라우저 로그인 → 확인)
 
 fn agent_state(app: &AppHandle, codex: bool) -> &Mutex<AgentState> {
@@ -898,6 +915,14 @@ pub fn refresh_agents(app: &AppHandle) {
 
 /// 설치 → 로그인 → 확인. 성공하면 연결 방식을 그 계정으로 바꾼다
 pub fn connect(app: &AppHandle, codex: bool) -> Result<(), String> {
+    connect_inner(app, codex, false)
+}
+
+pub fn connect_subscription(app: &AppHandle, codex: bool) -> Result<(), String> {
+    connect_inner(app, codex, true)
+}
+
+fn connect_inner(app: &AppHandle, codex: bool, subscription: bool) -> Result<(), String> {
     if matches!(*agent_state(app, codex).lock().unwrap(), AgentState::Working(_)) {
         return Err("이미 진행 중입니다".into());
     }
@@ -907,11 +932,11 @@ pub fn connect(app: &AppHandle, codex: bool) -> Result<(), String> {
             set_state(app, codex, AgentState::Working(if codex { "Codex 설치 중…" } else { "Claude Code 설치 중…" }.into()));
             if codex { install_codex()? } else { install_claude()? }
         }
-        if if codex { codex_logged_in() } else { claude_logged_in() } {
+        if if subscription { subscription_logged_in(codex) } else if codex { codex_logged_in() } else { claude_logged_in() } {
             return Ok(());
         }
         set_state(app, codex, AgentState::Working("브라우저에서 로그인을 마쳐 주세요…".into()));
-        login(app, codex)
+        login(app, codex, subscription)
     })();
     match r {
         Ok(()) => {
@@ -919,7 +944,7 @@ pub fn connect(app: &AppHandle, codex: bool) -> Result<(), String> {
             ai(app).chat.lock().unwrap().needs_login = false;
             let mut s = ai(app).settings.lock().unwrap().clone();
             let want = if codex { "codex" } else { "plan" };
-            if s.backend != want {
+            if !subscription && s.backend != want {
                 s.backend = want.into();
                 set_settings(app, s);
                 let _ = app.emit("ai", json!({ "type": "settings", "value": settings_json(app) }));
@@ -940,7 +965,7 @@ pub fn cancel_login(app: &AppHandle) {
     }
 }
 
-fn login(app: &AppHandle, codex: bool) -> Result<(), String> {
+fn login(app: &AppHandle, codex: bool, subscription: bool) -> Result<(), String> {
     let bin = if codex { codex_binary() } else { claude_binary() }.ok_or("설치를 확인할 수 없습니다.")?;
     let args: &[&str] = if codex { &["login"] } else { &["auth", "login", "--claudeai"] };
     let mut child = agent_command(&bin)
@@ -974,7 +999,7 @@ fn login(app: &AppHandle, codex: bool) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(300);
     let result = loop {
         std::thread::sleep(Duration::from_secs(2));
-        if if codex { codex_logged_in() } else { claude_logged_in() } {
+        if if subscription { subscription_logged_in(codex) } else if codex { codex_logged_in() } else { claude_logged_in() } {
             break Ok(());
         }
         let mut guard = ai(app).login_child.lock().unwrap();

@@ -1,13 +1,26 @@
-EasyCut for Windows 0.6.3
+EasyCut for Windows 0.7.0
 
-[수정] 일부 구간 배속 후 자막 싱크
-• 배속 구간 안의 자막 시작·끝을 새 속도에 맞추고, 뒤쪽 자막도 영상 길이 변화만큼 이동합니다.
-• 구간 경계를 걸치는 자막, 여러 클립 동시 변경, 겹친 영상·오디오 트랙의 중복 시간 변환을 처리합니다.
-• 기존 자막 내용과 ID를 유지하며 실행 취소·다시 실행에 자막 시간도 함께 반영합니다.
+[새 기능] 설명으로 영상 만들기
+• 상단 [영상 만들기], 파일 메뉴 또는 AI 탭에서 시작합니다. 주제·줄거리·스타일·움직임·글자·소리를 자유롭게 설명하세요.
+• Claude와 GPT는 본인 구독 계정 로그인 또는 API 키로, Gemini는 API 키로 연결합니다. GPT 구독은 ChatGPT 계정을 사용합니다.
+• 구독 계정에는 해당 계정의 사용 한도가 적용됩니다. API 사용료는 구독 요금과 별도이며, API 키는 Windows 자격 증명 관리자에 저장합니다.
+• EasyCut의 영상 제작 권장 모델은 Claude Opus 5.5입니다. API 모델명은 직접 바꿀 수 있습니다.
 
-[개선] 더 높고 잘 보이는 오디오 파형
-• 영상 클립의 파형을 제목 아래 공간에 더 크게 표시합니다.
-• 트랙 높이를 키우면 파형도 함께 확대됩니다. 실제 오디오 음량은 바뀌지 않습니다.
+[새 기능] 제작 스킬 자동 적용
+• 제품·브랜드 모션, 개념 설명, 움직이는 타이포, 데이터 이야기, 입자·패턴 아트 등 검토된 5개 스킬에서 설명에 맞는 지침을 최대 3개 선택합니다.
+• 요청한 스타일과 내용이 우선하며 자동 적용을 끌 수 있습니다. 적용한 스킬·선택 이유·원본 링크를 미리보기와 함께 확인합니다.
 
-[Fixed] Captions now follow partial clip speed changes, including subsequent captions, boundary-spanning cues and multi-clip edits.
-[Improved] Taller video audio waveforms that scale with track height, without changing audio volume.
+[제작 순서] 미리보기 확인 후 렌더링
+• 미리보기 4장을 확인한 뒤 [확인하고 전체 렌더링]으로 MP4를 만듭니다. 코드나 설정이 바뀌면 미리보기를 다시 생성해야 합니다.
+• 완성 영상을 재생하거나 폴더에서 보고 타임라인에 추가합니다. 창을 닫아도 작업은 계속되며 [중지]로 취소합니다.
+• 2~60초, 24·30·60fps와 가로·세로·정사각형 화면을 지원합니다. Canvas는 음악·효과음을 코드로 합성할 수 있고 Remotion 기본 출력은 무음입니다. 내레이션 음성은 생성하지 않습니다.
+• 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge가 필요합니다. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 준비합니다.
+
+[New] Create videos from a prompt
+• Start from the toolbar, File menu or AI tab. Describe your own animation, explainer or promotional video.
+• Use your own Claude/ChatGPT subscription sign-in or Claude/OpenAI API key. Gemini connects with an API key.
+• Subscription limits apply to the signed-in account. API usage is billed separately; keys are stored in Windows Credential Manager. EasyCut currently recommends Claude Opus 5.5 for video creation quality.
+• Automatic guidance selects up to three relevant skills from five reviewed production skills, respecting your brief. Review the selected skills, reasons and source links, or turn the feature off.
+• Review four sample frames before approving the full MP4 render. Code/settings changes require new previews. Play the result, open its folder or add it to the timeline. Closing the window keeps work running; Stop cancels it.
+• Supports 2–60 seconds, 24/30/60 fps, and landscape/portrait/square presets. Canvas supports synthesized music/effects; Remotion output is silent by default. Narration is not generated.
+• Prepare Node.js LTS, npm and Chrome or Edge. Rendering packages are installed in the app's support folder on first use.

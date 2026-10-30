@@ -1,6 +1,22 @@
 // 영어 문구표: 한국어 원문 → 영어. 맥 앱 LocTable.swift를 바탕으로, 윈도우에만 있는 문구를 더했다.
 // 새 한국어 문구를 L("…")로 쓰면 여기에 영어를 추가한다.
 window.EN = {
+  "영상 만들기": "Create a Video",
+  "영상 만들기…": "Create a Video…",
+  "영상 미리보기를 준비하는 중…": "Preparing video previews…",
+  "처음 사용할 렌더링 도구를 준비하는 중…": "Preparing rendering tools for first use…",
+  "샘플 프레임 4장을 그리는 중…": "Drawing four sample frames…",
+  "설명에 맞는 제작 스킬을 고르는 중…": "Choosing production skills for your description…",
+  "Claude Opus 5.5가 장면과 소리 코드를 작성하는 중…": "Claude Opus 5.5 is writing scene and sound code…",
+  "GPT가 장면과 소리 코드를 작성하는 중…": "GPT is writing scene and sound code…",
+  "Gemini가 장면과 소리 코드를 작성하는 중…": "Gemini is writing scene and sound code…",
+  "확인한 샘플의 코드로 영상과 소리를 렌더링하는 중…": "Rendering video and sound from the approved sample code…",
+  "확인한 코드로 영상을 렌더링하는 중…": "Rendering video from the approved code…",
+  "영상이 완성됐습니다. 재생해 보고 타임라인에 추가하세요.": "Your video is ready. Play it and add it to the timeline.",
+  "샘플 4장을 확인한 뒤 전체 렌더링을 누르세요.": "Review the four sample frames, then approve the full render.",
+  "영상 생성 실패": "Video creation failed",
+  "API 키를 확인하세요. 키 안에 공백이나 줄바꿈이 있으면 안 됩니다.": "Check your API key. It cannot contain spaces or line breaks.",
+  "미리보기 이후 코드나 설정이 바뀌었습니다. 샘플 4장을 다시 생성하세요.": "Code or settings changed after previewing. Generate four new sample frames.",
   "계정 기본값": "Account default",
   "Claude Code에 설정된 모델": "Model set in Claude Code",
   "가장 뛰어남 · 느리고 사용량 많음": "Most capable · slower, uses more",

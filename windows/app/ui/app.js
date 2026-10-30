@@ -3,6 +3,7 @@ import { naturalEditDialog } from "./natural-edit.js";
 import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
 import { initAI, focusAI, connectDialog, sendAI } from "./ai.js";
+import { initGeneration, openGeneration } from "./generation.js";
 import { initShell, linkDialog, shortcutsDialog, confirmDiscard, modalBox, showModal, hideModal, ask, buildMenu } from "./shell.js";
 import { initRecord, openRecordDialog, isRecording } from "./record.js";
 import { initCaptions, renderCaptions as renderCaptionsTab, captionInspector, addCaption, deleteCaptions, generateCaptions, styleControls } from "./captions.js";
@@ -759,6 +760,7 @@ function setMark(which) {
 
 const commands = {
   import: importPanel,
+  generation: openGeneration,
   newProject: () => newProject(),
   open: () => openProject(),
   openPath: (p) => openProject(p),
@@ -989,6 +991,7 @@ async function init() {
   setState(await invoke("get_state"));
   syncToggles();
   reportUi();
+  await initGeneration({ toast });
   await initAI($("#tab-ai"), { toast, modal });
   initRecord({ toast, modal, autoTranscribe });
   await initShell({ S, U, run, toast, commands, switchTab, isBusyRecording: isRecording });

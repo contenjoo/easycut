@@ -1,4 +1,5 @@
 // AI 편집 탭 (맥 AIPanel.swift): 대화, 연결 방식·모델·추론 강도, 원클릭 로그인, 다른 AI 앱 연결
+import { openGeneration } from "./generation.js";
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 const listen = (ev, f) => window.__TAURI__.event.listen(ev, f);
 
@@ -99,7 +100,7 @@ function header() {
     ? `<option>${L("ChatGPT 기본 모델")}</option>`
     : (b === "plan" ? `<option value="">${L("계정 기본값")}</option>` : "") +
       A.models.map((m) => `<option value="${m.id}" ${A.settings.model === m.id || (b === "api" && !A.settings.model && m.id === "claude-opus-5") ? "selected" : ""}>${esc(m.name)} — ${esc(L(m.note))}</option>`).join("");
-  return `<div class="ai-head">
+  return `<div class="ai-video-entry"><button id="ai-video-create">🎬 ${L("영상 만들기")}</button></div><div class="ai-head">
       <b>✨ ${L("AI 편집")}</b><span class="spacer"></span>
       ${b === "gemini" ? `<button id="gemini-manage">${L("Gemini 키 설정")}</button>` : ""}
       <button id="ai-connect" title="${L("계정 연결 관리…")}">${L("계정 연결")}</button>
@@ -235,6 +236,7 @@ function render() {
 
 function wire() {
   const q = (s) => root.querySelector(s);
+  q("#ai-video-create").onclick = openGeneration;
   q("#ai-backend").onchange = (e) => { A.geminiSetup = false; A.geminiMessage = ""; saveSettings({ backend: e.target.value }); };
   if (q("#ai-use-gemini")) q("#ai-use-gemini").onclick = () => saveSettings({ backend: "gemini" });
   if (q("#gemini-manage")) q("#gemini-manage").onclick = () => { A.geminiSetup = !A.geminiSetup; render(); };

@@ -2,6 +2,7 @@
 mod ai;
 mod ai_tools;
 mod gemini;
+mod generation;
 mod clicks;
 mod control;
 mod edits;
@@ -1463,10 +1464,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)), ui: Mutex::default() })
         .manage(ai::Ai::default())
+        .manage(generation::Generation::default())
         .manage(record::Recorder::default())
         .manage(clicks::Clicks::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            generation::generation_state, generation::generation_capabilities, generation::generation_catalog,
+            generation::generation_save_key, generation::generation_connect, generation::generation_start,
+            generation::generation_render, generation::generation_cancel, generation::generation_import, generation::generation_open,
             natural_edit_backup, natural_edit_restore,
             get_state, new_project, open_project, save_project, undo, redo,
             import_files, add_to_timeline, remove_asset,
@@ -1489,8 +1494,14 @@ pub fn run() {
             recovery::start(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("EasyCut 실행 실패");
+        .build(tauri::generate_context!())
+        .expect("EasyCut 실행 실패")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                generation::cancel(app);
+                ai::cancel_login(app);
+            }
+        });
 }
 
 #[cfg(test)]
