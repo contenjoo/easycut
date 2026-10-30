@@ -4,6 +4,25 @@ const {chromium}=require('playwright-core');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+// Native IPC reads are asynchronous. Poll from Node so a returned Promise can
+// never be mistaken for a truthy completion condition in the browser poller.
+async function pollNativeState(label,read,accept,timeout=180000){
+  const deadline=Date.now()+timeout;
+  let latest;
+  while(Date.now()<deadline){
+    const remaining=deadline-Date.now();
+    let timer;
+    latest=await Promise.race([
+      Promise.resolve().then(read),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(label+' native read timed out')),remaining);}),
+    ]).finally(()=>clearTimeout(timer));
+    const complete=accept(latest);
+    assert.equal(typeof complete,'boolean',label+' completion predicate must return a synchronous boolean');
+    if(complete)return latest;
+    await new Promise(resolve=>setTimeout(resolve,Math.min(100,Math.max(0,deadline-Date.now()))));
+  }
+  throw new Error(label+' timed out; last state: '+JSON.stringify(latest).slice(0,2000));
+}
 (async()=>{
   const browser=await chromium.connectOverCDP('http://127.0.0.1:9222');
   const page=browser.contexts()[0].pages().find(p=>p.url().includes('tauri'))||browser.contexts()[0].pages()[0];
@@ -237,13 +256,18 @@ const path=require('node:path');
     await page.selectOption('#video-renderer','canvas');
     await page.check('#video-skills');
     await page.waitForFunction(()=>!document.querySelector('#video-generate')?.disabled);
+    const beforeGeneration=await page.evaluate(()=>window.__TAURI__.core.invoke('generation_state'));
     await page.click('#video-generate');
-    await page.waitForFunction(async()=>{
-      const s=await window.__TAURI__.core.invoke('generation_state');
-      return !s.busy&&(s.error||s.previews.length===4);
-    },null,{timeout:180000});
-    const preview=await page.evaluate(()=>window.__TAURI__.core.invoke('generation_state'));
+    const readGeneration=()=>page.evaluate(async()=>{
+      const state=await window.__TAURI__.core.invoke('generation_state'),error=document.querySelector('#video-error');
+      return {state,uiError:error&&!error.hidden?error.textContent:null};
+    });
+    const previewReady=await pollNativeState('Native previews',readGeneration,({state,uiError})=>
+      !!uiError||!!(state.jobId&&state.jobId!==beforeGeneration.jobId&&!state.busy&&(state.error||state.previews.length===4)));
+    assert.equal(previewReady.uiError,null,previewReady.uiError||'Native preview UI failed');
+    const preview=previewReady.state;
     assert.equal(preview.error,null,preview.error||'Native preview failed');
+    assert(preview.jobId&&preview.jobId!==beforeGeneration.jobId,'Preview must belong to the newly started native job');
     assert.equal(preview.previews.length,4);
     assert.equal(preview.appliedSkills.length,1);
     assert.equal(preview.appliedSkills[0].id,'visual-explainer');
@@ -259,22 +283,28 @@ const path=require('node:path');
     await page.locator('#video-render').scrollIntoViewIfNeeded();
     await page.screenshot({path:path.join(out,'video-native-rust-worker-four-previews.png')});
     await page.click('#video-render');
-    await page.waitForFunction(async()=>{
-      const s=await window.__TAURI__.core.invoke('generation_state');return !s.busy&&(s.error||s.outputPath);
-    },null,{timeout:180000});
-    const rendered=await page.evaluate(()=>window.__TAURI__.core.invoke('generation_state'));
+    const renderReady=await pollNativeState('Native render',readGeneration,({state,uiError})=>
+      !!uiError||!!(state.jobId===preview.jobId&&!state.busy&&(state.error||state.outputPath)));
+    assert.equal(renderReady.uiError,null,renderReady.uiError||'Native render UI failed');
+    const rendered=renderReady.state;
     assert.equal(rendered.error,null,rendered.error||'Native render failed');
     assert(rendered.outputPath&&fs.statSync(rendered.outputPath).size>1000);
     assert.equal(rendered.jobId,preview.jobId);
     await page.waitForSelector('#video-import');
     await page.click('#video-import');
-    await page.waitForFunction(async expected=>{
-      const s=await window.__TAURI__.core.invoke('get_state');
-      const normalize=value=>String(value||'').replaceAll(String.fromCharCode(92),'/').replace('//?/','').toLowerCase();
-      const assets=s.project.assets,clips=s.project.tracks.flatMap(t=>t.clips);
-      return assets.length===1&&clips.length===1&&normalize(assets[0].path)===expected&&clips[0].assetID===assets[0].id;
-    },normalizedPath(rendered.outputPath));
+    const importReady=await pollNativeState('Native import',()=>page.evaluate(async()=>{
+      const state=await window.__TAURI__.core.invoke('get_state'),generation=await window.__TAURI__.core.invoke('generation_state'),error=document.querySelector('#video-error');
+      return {state,generation,uiError:error&&!error.hidden?error.textContent:null};
+    }),({state,generation,uiError})=>{
+      if(uiError||generation.error)return true;
+      const assets=state.project.assets,clips=state.project.tracks.flatMap(t=>t.clips);
+      return generation.jobId===rendered.jobId&&!generation.busy&&assets.length===1&&clips.length===1&&normalizedPath(assets[0].path)===normalizedPath(rendered.outputPath)&&clips[0].assetID===assets[0].id;
+    },30000);
+    assert.equal(importReady.uiError,null,importReady.uiError||'Native import UI failed');
+    assert.equal(importReady.generation.error,null,importReady.generation.error||'Native import job failed');
+    assert.equal(importReady.generation.jobId,rendered.jobId);
     const state=await page.evaluate(()=>window.__TAURI__.core.invoke('get_state'));
+    assert.deepEqual(state.project,importReady.state.project,'Fresh editor state differs from the completed native import');
     assert.equal(state.project.assets.length,1);
     assert.equal(normalizedPath(state.project.assets[0].path),normalizedPath(rendered.outputPath));
     assert.equal(state.project.tracks.flatMap(t=>t.clips)[0].assetID,state.project.assets[0].id);
