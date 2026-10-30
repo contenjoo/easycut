@@ -60,10 +60,11 @@ const path=require('node:path');
   await page.click('#video-skill-list > summary');
   assert.equal(await page.locator('#video-catalog .video-skill').count(),5);
   // Replace only generation job commands. Never call a paid provider during CI.
-  await page.evaluate(fixture=>{
-    const original=window.__TAURI__.core.invoke;
-    const qa=window.__generationQA={original,fixture,phase:'ok',calls:[],state:{busy:false,status:'',error:null,previews:[],appliedSkills:[]}};
-    window.__TAURI__.core.invoke=async(command,args)=>{
+  const interceptCheck=await page.evaluate(async fixture=>{
+    const originalCore=window.__TAURI__.core;
+    const original=originalCore.invoke;
+    const qa=window.__generationQA={originalCore,original,fixture,phase:'ok',calls:[],state:{busy:false,status:'',error:null,previews:[],appliedSkills:[]}};
+    const wrapper=async(command,args)=>{
       if(!command.startsWith('generation_'))return original(command,args);
       qa.calls.push(command);
       if(command==='generation_state')return qa.state;
@@ -80,6 +81,15 @@ const path=require('node:path');
       }
       return original(command,args);
     };
+    // Tauri freezes each API namespace, but the root's namespace property is
+    // writable. Replace that property, preserving the other core exports.
+    window.__TAURI__.core={...originalCore,invoke:wrapper};
+    if(window.__TAURI__.core.invoke!==wrapper||window.__TAURI__.core===originalCore)throw new Error('Generation interception was not installed');
+    // A passive state read must return the exact in-memory fixture reference.
+    // This proves interception before any UI action could reach a provider.
+    const dryState=await window.__TAURI__.core.invoke('generation_state');
+    if(dryState!==qa.state||!qa.calls.includes('generation_state'))throw new Error('Generation interception dry run failed');
+    return {installed:true,passiveStateFixture:true,originalCoreFrozen:Object.isFrozen(originalCore),coreNamespaceWritable:Object.getOwnPropertyDescriptor(window.__TAURI__,'core')?.writable===true};
   },fixture);
   await page.click('#video-generate');
   await page.waitForSelector('#video-previews img');
@@ -144,7 +154,10 @@ const path=require('node:path');
     await viewportCDP.send('Emulation.clearDeviceMetricsOverride');
     await viewportCDP.detach();
   }
-  await page.evaluate(()=>{window.__TAURI__.core.invoke=window.__generationQA.original;});
+  await page.evaluate(()=>{
+    const qa=window.__generationQA;window.__TAURI__.core=qa.originalCore;
+    if(window.__TAURI__.core!==qa.originalCore||window.__TAURI__.core.invoke!==qa.original)throw new Error('Original Tauri core namespace was not restored');
+  });
   // End-to-end native flow: only the disposable provider CLI is substituted.
   // No production fixture action, API transport or paid model is used here.
   assert.equal(process.platform,'win32','Native end-to-end fixture requires Windows');
@@ -251,7 +264,7 @@ const path=require('node:path');
     if(fs.existsSync(runtimeLink)){try{fs.unlinkSync(runtimeLink);}catch(error){if(error.code==='EPERM'||error.code==='EISDIR')fs.rmdirSync(runtimeLink);else throw error;}}
     fs.rmSync(shim,{force:true});fs.rmSync(script,{force:true});
   }
-  fs.writeFileSync(path.join(out,'video-ui-checks.json'),JSON.stringify({nativeCapabilities:{runtime:actual.caps.runtime,skillCount:actual.caps.skills.length},credentialManager:'3 providers round-tripped',nativeImport:imported.state.project.assets[0],uiProviderReplies:'controlled fixtures, no model call',nativeFlow,errors},null,2));
+  fs.writeFileSync(path.join(out,'video-ui-checks.json'),JSON.stringify({nativeCapabilities:{runtime:actual.caps.runtime,skillCount:actual.caps.skills.length},credentialManager:'3 providers round-tripped',nativeImport:imported.state.project.assets[0],uiProviderReplies:'controlled fixtures, no model call',interceptCheck,nativeFlow,errors},null,2));
   assert.deepEqual(errors,[]);
   console.log('NATIVE VIDEO UI + CREDENTIAL MANAGER + REAL RUST/WORKER CANVAS PREVIEW/RENDER/IMPORT/UNDO PASSED (disposable CLI responses, zero paid model calls)');
   await browser.close();
