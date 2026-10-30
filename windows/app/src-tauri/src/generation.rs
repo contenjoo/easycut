@@ -483,45 +483,79 @@ mod tests{
                 }
             }
         }
-        struct OwnedChild { child: Child, tree: ProcessTree }
-        impl Drop for OwnedChild {
-            fn drop(&mut self) {
+        struct OwnedChild { child: Child, tree: ProcessTree, stderr: Option<std::thread::JoinHandle<Vec<u8>>> }
+        impl OwnedChild {
+            fn stop(&mut self) -> String {
                 self.tree.terminate();
                 let _ = self.child.kill();
-                let _ = self.child.wait();
+                let status = self.child.wait();
+                let errors = self.stderr.take().and_then(|reader| reader.join().ok()).unwrap_or_default();
+                format!("parent status: {status:?}; stderr: {}", String::from_utf8_lossy(&errors))
+            }
+        }
+        impl Drop for OwnedChild {
+            fn drop(&mut self) {
+                let _ = self.stop();
             }
         }
         let node = node_path().expect("This Windows test requires Node.js (provided by CI setup-node)");
         let scratch = Scratch(std::env::temp_dir().join(format!("easycut-job-tree-{}", Id::new())));
         std::fs::create_dir_all(&scratch.0).unwrap();
-        let script = r#"
+        // File entry points mirror the production worker and avoid nested -e
+        // command-line quoting, which differs between Windows Node versions.
+        let parent_script = scratch.0.join("parent.cjs");
+        let descendant_script = scratch.0.join("heartbeat.cjs");
+        std::fs::write(&descendant_script, r#"
+          const fs=require('node:fs');
+          const beat=()=>fs.appendFileSync(process.argv[2],'x');
+          beat(); setInterval(beat,25);
+        "#).unwrap();
+        std::fs::write(&parent_script, r#"
           const {spawn}=require('node:child_process');
           let input=''; process.stdin.setEncoding('utf8');
           process.stdin.on('data',chunk=>input+=chunk);
           process.stdin.on('end',()=>{
             const request=JSON.parse(input);
-            const source="const fs=require('node:fs');const beat=()=>fs.appendFileSync(process.argv[1],'x');beat();setInterval(beat,25);";
-            spawn(process.execPath,['-e',source,request.heartbeat],{stdio:'ignore',windowsHide:true});
-            if(request.parentExitsFirst) process.exit(0);
-            setInterval(()=>{},1000);
+            console.error('stdin gate opened');
+            const descendant=spawn(process.execPath,[request.descendant,request.heartbeat],{
+              stdio:['ignore','ignore','inherit'],windowsHide:true
+            });
+            descendant.on('error',error=>{console.error('descendant spawn failed:',error);process.exit(2);});
+            descendant.once('spawn',()=>{
+              console.error('descendant started');
+              if(request.parentExitsFirst) process.exit(0);
+            });
+            if(!request.parentExitsFirst) setInterval(()=>{},1000);
           });
-        "#;
+          process.stdin.resume();
+        "#).unwrap();
         for parent_exits_first in [false, true] {
             let heartbeat = scratch.0.join(if parent_exits_first { "orphan.txt" } else { "running.txt" });
-            let mut child = tools::command(&node).args(["-e", script]).stdin(Stdio::piped())
-                .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+            let mut child = tools::command(&node).arg(&parent_script).stdin(Stdio::piped())
+                .stdout(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
             let tree = match ProcessTree::attach(&child) {
                 Ok(tree) => tree,
                 Err(error) => { let _ = child.kill(); let _ = child.wait(); panic!("{error}"); }
             };
-            let mut owned = OwnedChild { child, tree };
-            let payload = serde_json::to_vec(&json!({"heartbeat":heartbeat,"parentExitsFirst":parent_exits_first})).unwrap();
-            owned.child.stdin.take().unwrap().write_all(&payload).unwrap();
+            let stderr = child.stderr.take().unwrap();
+            let stderr = std::thread::spawn(move || {
+                let mut errors = Vec::new();
+                let _ = stderr.take(4096).read_to_end(&mut errors);
+                errors
+            });
+            let mut owned = OwnedChild { child, tree, stderr: Some(stderr) };
+            let payload = serde_json::to_vec(&json!({"descendant":descendant_script,"heartbeat":heartbeat,"parentExitsFirst":parent_exits_first})).unwrap();
+            let mut stdin = owned.child.stdin.take().unwrap();
+            stdin.write_all(&payload).unwrap();
+            drop(stdin);
             let deadline = Instant::now() + Duration::from_secs(8);
             while std::fs::read(&heartbeat).ok().filter(|b|!b.is_empty()).is_none() && Instant::now()<deadline {
                 std::thread::sleep(Duration::from_millis(25));
             }
-            assert!(heartbeat.is_file(), "The test-created descendant must start before cancellation");
+            if !heartbeat.is_file() {
+                let diagnostics = owned.stop();
+                panic!("The test-created descendant must start before cancellation (parentExitsFirst={parent_exits_first}, node={node:?}): {diagnostics}");
+            }
             let first = std::fs::read(&heartbeat).unwrap();
             std::thread::sleep(Duration::from_millis(100));
             assert_ne!(first,std::fs::read(&heartbeat).unwrap(), "The descendant must be alive before cancellation");
