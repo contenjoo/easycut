@@ -389,10 +389,53 @@ impl Drop for ProcessTree{
     }
 }
 
+fn sanitized_status_diagnostic(stderr: &[u8], secrets: &[String]) -> String {
+    let mut text = String::from_utf8_lossy(stderr).into_owned();
+    for secret in secrets.iter().filter(|s| !s.is_empty()) {
+        text = text.replace(secret, "[비공개]");
+    }
+    text.lines().take(16).map(|line| {
+        let lower = line.to_ascii_lowercase();
+        if ["authorization", "bearer ", "api_key", "apikey", "access_token", "refresh_token", "password", "sk-ant-", "sk-proj-", "aiza"]
+            .iter().any(|marker| lower.contains(marker)) {
+            "[인증 정보가 포함된 진단 줄 생략]".to_string()
+        } else {
+            line.chars().filter(|c| !c.is_control() || *c == '\t').collect()
+        }
+    }).collect::<Vec<_>>().join("\n").chars().take(1500).collect()
+}
+
+#[cfg(any(windows, test))]
+fn node_script_spelling(path: &str) -> String {
+    if path.get(..8).is_some_and(|prefix| prefix.eq_ignore_ascii_case(r"\\?\UNC\")) {
+        return format!(r"\\{}", &path[8..]);
+    }
+    if let Some(disk) = path.strip_prefix(r"\\?\") {
+        let bytes = disk.as_bytes();
+        if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\' {
+            return disk.to_string();
+        }
+    }
+    path.to_string()
+}
+
+fn node_script_path(path: &Path) -> PathBuf {
+    // Tauri's resource root is canonicalized on Windows. Node 20's CommonJS
+    // entry loader rejects the resulting namespaced spelling (nodejs/node#62446).
+    // Keep canonical filesystem paths elsewhere; adapt only this external arg.
+    #[cfg(windows)]
+    if let Some(path) = path.to_str() { return PathBuf::from(node_script_spelling(path)); }
+    path.to_path_buf()
+}
+
 fn run_worker(app:&AppHandle,node:&Path,input:Value,token:Option<u64>,timeout:Duration)->Result<Value,String>{
     let worker=resource(app,"worker.cjs")?;
+    let script=node_script_path(&worker);
+    // Only a passive capability check can expose startup diagnostics. Generation
+    // and API actions must never expose arbitrary renderer/provider stderr.
+    let status_diagnostics=input["action"]=="status" && input.get("apiKey").is_none() && input.get("request").is_none();
     let mut command=ai::agent_command(node);
-    command.arg(worker).current_dir(tools::app_data()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command.arg(&script).current_dir(tools::app_data()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(unix)]unsafe{
         use std::os::unix::process::CommandExt;
         command.pre_exec(||{unsafe extern "C"{fn setsid()->i32;}if setsid()<0{Err(std::io::Error::last_os_error())}else{Ok(())}});
@@ -440,12 +483,25 @@ fn run_worker(app:&AppHandle,node:&Path,input:Value,token:Option<u64>,timeout:Du
         }
         match child.try_wait(){Ok(Some(status))=>break Some(status),Err(_)=>{failure=Some("영상 작업이 중단됐습니다.".into());control.terminate();break child.wait().ok();},Ok(None)=>std::thread::sleep(Duration::from_millis(40))}
     };
-    control.terminate();let _=writer.join();let _=reader.join();let _=errors.join();
+    control.terminate();let _=writer.join();let _=reader.join();let stderr=errors.join().unwrap_or_default();
     // Drain events written immediately before the process exited.
     for event in rx.try_iter(){if let Err(error)=&event{failure=Some(error.clone());}if let Ok(event)=event{if event["event"]=="result"{result=Some(event["result"].clone());}else if event["event"]=="error"{failure=Some(event["error"].as_str().unwrap_or("영상 생성에 실패했습니다.").chars().take(1500).collect());}}}
     if let Some(token)=token{let state=app.state::<Generation>();let mut inner=state.0.lock().unwrap();if inner.token==token{inner.control=None;}}
     if let Some(mut error)=failure{if !secret.is_empty(){error=error.replace(&secret,"[API 키]");}return Err(error);}
-    if !status.is_some_and(|s|s.success()){return Err("영상 생성 도구가 중단됐습니다. Node.js·Chrome 또는 Edge와 연결 상태를 확인하세요.".into());}
+    if !status.is_some_and(|s|s.success()){
+        let mut error="영상 생성 도구가 중단됐습니다. Node.js·Chrome 또는 Edge와 연결 상태를 확인하세요.".to_string();
+        if status_diagnostics {
+            let mut secrets:Vec<String>=["claude","openai","gemini"].into_iter().filter_map(load_key).collect();
+            secrets.extend(std::env::vars().filter(|(name,_)| {
+                let name=name.to_ascii_uppercase();
+                ["KEY","TOKEN","SECRET","PASSWORD","CREDENTIAL","AUTH"].iter().any(|marker|name.contains(marker))
+            }).map(|(_,value)|value));
+            let detail=format!("exit={:?}; node={}; worker={}; script={}\n{}",status.and_then(|s|s.code()),node.display(),worker.display(),script.display(),String::from_utf8_lossy(&stderr));
+            let detail=sanitized_status_diagnostic(detail.as_bytes(),&secrets);
+            error.push_str("\n연결 상태 검사 진단: ");error.push_str(&detail);
+        }
+        return Err(error);
+    }
     result.ok_or("영상 작업 결과를 받지 못했습니다. 다시 시도하세요.".into())
 }
 
@@ -467,6 +523,19 @@ mod tests{
         assert!(ai::subscription_status(false,r#"{"loggedIn":true,"authMethod":"claude.ai"}"#));
         assert!(!ai::subscription_status(false,r#"{"loggedIn":true,"authMethod":"api_key"}"#));
         assert!(ai::subscription_status(true,"Logged in using ChatGPT"));assert!(!ai::subscription_status(true,"Logged in using an API key"));
+    }
+    #[test]fn status_diagnostic_redacts_credentials_and_bounds_output(){
+        let secret="disposable-private-value".to_string();
+        let stderr=format!("Error: Cannot find module 'worker.cjs'\n{secret}\nAuthorization: Bearer other-credential\n{}","x".repeat(5000));
+        let clean=sanitized_status_diagnostic(stderr.as_bytes(),&[secret.clone()]);
+        assert!(clean.contains("Cannot find module"));assert!(!clean.contains(&secret));assert!(!clean.contains("other-credential"));assert!(clean.chars().count()<=1500);
+    }
+    #[test]fn node_entry_argument_converts_only_windows_disk_and_unc_namespaces(){
+        assert_eq!(node_script_spelling(r"\\?\D:\앱 설치\resources\generation\worker.cjs"),r"D:\앱 설치\resources\generation\worker.cjs");
+        assert_eq!(node_script_spelling(r"\\?\UNC\server\share\worker.cjs"),r"\\server\share\worker.cjs");
+        for ordinary in [r"C:\Program Files\EasyCut\worker.cjs",r"\\server\share\worker.cjs","/tmp/worker.cjs",r"\\?\Volume{example}\worker.cjs",r"\\.\pipe\worker"] {
+            assert_eq!(node_script_spelling(ordinary),ordinary);
+        }
     }
 
     #[cfg(windows)]

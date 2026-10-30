@@ -268,4 +268,4 @@ const path=require('node:path');
   assert.deepEqual(errors,[]);
   console.log('NATIVE VIDEO UI + CREDENTIAL MANAGER + REAL RUST/WORKER CANVAS PREVIEW/RENDER/IMPORT/UNDO PASSED (disposable CLI responses, zero paid model calls)');
   await browser.close();
-})().catch(e=>{console.error(e);process.exitCode=1;});
+})().catch(e=>{console.error(e);process.exit(1);});

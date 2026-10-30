@@ -173,6 +173,7 @@ jobs:
 
       # UI instrumentation is a separate build; the installer above keeps devtools disabled.
       - name: Native WebView2 recording and natural edit UI
+        timeout-minutes: 15
         run: |
           $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           $testConfig.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"

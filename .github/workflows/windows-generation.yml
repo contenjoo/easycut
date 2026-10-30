@@ -1,0 +1,164 @@
+name: Windows generation debug
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Node Windows script path preflight
+        run: |
+          $worker = (Resolve-Path windows/app/src-tauri/resources/generation/worker.cjs).Path
+          $inputJson = @{action="status";jobDir=$env:RUNNER_TEMP;runtimeDir="$env:RUNNER_TEMP/video-runtime"} | ConvertTo-Json -Compress
+          $normal = $inputJson | & node $worker
+          if ($LASTEXITCODE -ne 0) { throw "Normal Node script path failed" }
+          $result = $normal | Select-Object -Last 1 | ConvertFrom-Json
+          if ($result.event -ne "result" -or $result.result.skills.Count -ne 5) { throw "Worker status result is invalid" }
+          Write-Host "NORMAL WINDOWS WORKER STATUS PASSED"
+          # Node 20 CJS entry points can reject Windows extended path prefixes.
+          # Record this vendor behavior; the app must pass a normal external path.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $verbatim = '\\?\' + $worker
+          $extended = $inputJson | & node $verbatim 2>&1
+          $extendedExit = $LASTEXITCODE
+          Write-Host "Extended-path Node exit code: $extendedExit"
+          $extended | Select-Object -First 8 | ForEach-Object { Write-Host $_ }
+          exit 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows
+          cache-on-failure: true
+
+      - name: Prepare FFmpeg resources
+        run: |
+          $bin = "windows/app/src-tauri/resources/bin"
+          New-Item -ItemType Directory -Force -Path $bin, windows/app/src-tauri/resources/licenses | Out-Null
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
+          Expand-Archive "$env:RUNNER_TEMP/ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP/ffmpeg"
+          $ff = Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Directory | Select-Object -First 1
+          Copy-Item "$($ff.FullName)/bin/ffmpeg.exe", "$($ff.FullName)/bin/ffprobe.exe" $bin
+          Copy-Item "$($ff.FullName)/LICENSE" windows/app/src-tauri/resources/licenses/FFmpeg-LICENSE.txt
+          # Existing README resources satisfy the globs; video creation needs no Whisper download.
+          Get-ChildItem $bin | Format-Table Name, Length
+
+      - name: Rust and generation worker tests
+        working-directory: windows
+        run: |
+          cargo test --workspace
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          node --test app/tests/generation-worker.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Real Canvas and Remotion rendering
+        run: |
+          $env:PATH = "$PWD\windows\app\src-tauri\resources\bin;$env:PATH"
+          $env:EASYCUT_GENERATION_EVIDENCE = "$env:RUNNER_TEMP/generation-evidence"
+          node windows/app/tests/generation-integration.cjs
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build debug app for native video creation checks
+        run: |
+          $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $testConfig.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+          $testConfig.app.windows[0] | Add-Member -NotePropertyName devtools -NotePropertyValue $true
+          $configPath = "$env:RUNNER_TEMP/generation-tauri.conf.json"
+          $testConfig | ConvertTo-Json -Depth 100 | Set-Content $configPath
+          Push-Location windows/app
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            npx tauri build --debug --no-bundle --features tauri/devtools --config $configPath
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally { Pop-Location }
+
+      - name: Native WebView2 video creation
+        timeout-minutes: 15
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/easycut-generation-ui-tests" --no-save playwright-core
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-generation-ui-tests/node_modules"
+          $env:PATH = "$PWD\windows\app\src-tauri\resources\bin;$env:PATH"
+          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/generation-webview-data"
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+          $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
+          $env:EASYCUT_GENERATION_MANIFEST = "$env:RUNNER_TEMP/generation-evidence/generation-manifest.json"
+          New-Item -ItemType Directory -Force $env:EASYCUT_NATIVE_OUTPUT | Out-Null
+          $bootstrap = @'
+          const {chromium}=require('playwright-core');
+          (async()=>{
+            let browser,lastError;
+            for(let n=0;n<60;n++){
+              try{browser=await chromium.connectOverCDP('http://127.0.0.1:9222');break;}
+              catch(error){lastError=error;await new Promise(resolve=>setTimeout(resolve,500));}
+            }
+            if(!browser)throw lastError||new Error('Native WebView2 CDP endpoint did not start');
+            const page=browser.contexts()[0].pages().find(p=>p.url().includes('tauri'))||browser.contexts()[0].pages()[0];
+            await page.waitForFunction(()=>window.__TAURI__?.core&&document.querySelector('#video-create'));
+            await page.evaluate(()=>localStorage.setItem('uiLang','ko'));
+            await page.reload();
+            await page.waitForFunction(()=>window.LANG==='ko'&&document.querySelector('#video-create'));
+            await browser.close();
+          })().catch(error=>{console.error(error);process.exit(1)});
+          '@
+          $bootstrapPath = "$env:RUNNER_TEMP/generation-native-bootstrap.cjs"
+          [IO.File]::WriteAllText($bootstrapPath, $bootstrap, [Text.UTF8Encoding]::new($false))
+          $exe = Resolve-Path windows/target/debug/easycut-windows.exe
+          $app = Start-Process $exe -PassThru -RedirectStandardOutput "$env:EASYCUT_NATIVE_OUTPUT/app-stdout.txt" -RedirectStandardError "$env:EASYCUT_NATIVE_OUTPUT/app-stderr.txt"
+          try {
+            node $bootstrapPath
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            node windows/app/tests/generation-native.cjs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally {
+            # Only the app started by this step is terminated; the runner is disposable.
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Collect native generation files
+        if: always()
+        run: |
+          $jobs = "$env:APPDATA/com.contenjoo.easycut.windows/generated-videos"
+          $evidence = "$env:RUNNER_TEMP/native-evidence/generated-jobs"
+          if (Test-Path $jobs) {
+            foreach ($job in Get-ChildItem $jobs -Directory) {
+              $destination = Join-Path $evidence $job.Name
+              New-Item -ItemType Directory -Force $destination | Out-Null
+              foreach ($pattern in @("request.json","source.json","applied-skills.json","preview-*.png","render.mp4")) {
+                Get-ChildItem $job.FullName -Filter $pattern -File | Copy-Item -Destination $destination
+              }
+            }
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: generation-debug-native-evidence
+          path: ${{ runner.temp }}/native-evidence
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: generation-debug-render-evidence
+          path: |
+            ${{ runner.temp }}/generation-evidence/generation-manifest.json
+            ${{ runner.temp }}/generation-evidence/*/preview-*.png
+            ${{ runner.temp }}/generation-evidence/*/render.mp4
+          if-no-files-found: ignore
