@@ -512,18 +512,35 @@ mod tests{
         "#).unwrap();
         std::fs::write(&parent_script, r#"
           const {spawn}=require('node:child_process');
+          const fs=require('node:fs');
           let input=''; process.stdin.setEncoding('utf8');
           process.stdin.on('data',chunk=>input+=chunk);
           process.stdin.on('end',()=>{
             const request=JSON.parse(input);
             console.error('stdin gate opened');
             const descendant=spawn(process.execPath,[request.descendant,request.heartbeat],{
-              stdio:['ignore','ignore','inherit'],windowsHide:true
+              stdio:['ignore','ignore','inherit'],windowsHide:true,
+              detached:request.parentExitsFirst
             });
             descendant.on('error',error=>{console.error('descendant spawn failed:',error);process.exit(2);});
             descendant.once('spawn',()=>{
               console.error('descendant started');
-              if(request.parentExitsFirst) process.exit(0);
+              if(request.parentExitsFirst){
+                // Avoid Node/libuv's own kill-on-close job in the orphan case.
+                // detached does not request Windows job breakaway, so the
+                // Rust-owned outer job must still terminate this descendant.
+                descendant.unref();
+                const deadline=Date.now()+3000;
+                const ready=setInterval(()=>{
+                  try {
+                    if(fs.statSync(request.heartbeat).size>=2){
+                      console.error('heartbeat active before parent exit');
+                      clearInterval(ready); process.exit(0);
+                    }
+                  } catch {}
+                  if(Date.now()>deadline){console.error('heartbeat startup timeout');process.exit(3);}
+                },10);
+              }
             });
             if(!request.parentExitsFirst) setInterval(()=>{},1000);
           });
@@ -565,6 +582,9 @@ mod tests{
                     std::thread::sleep(Duration::from_millis(20));
                 }
                 assert!(owned.child.try_wait().unwrap().is_some(), "The parent must already have exited in the orphan case");
+                let orphan = std::fs::read(&heartbeat).unwrap();
+                std::thread::sleep(Duration::from_millis(100));
+                assert_ne!(orphan,std::fs::read(&heartbeat).unwrap(), "The descendant must survive parent exit until the Rust-owned job is cancelled");
             } else {
                 assert!(owned.child.try_wait().unwrap().is_none());
             }
