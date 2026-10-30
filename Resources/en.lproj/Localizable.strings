@@ -198,6 +198,7 @@
 "API 키로 쓰려면 AI 탭 ⚙︎ › 연결 방식 › API 키" = "To use an API key: AI tab ⚙︎ › Connection › API key";
 "Apple 내장 (설치 불필요)" = "Apple built-in (no install)";
 "Base (매우 가벼움, 정확도 낮음)" = "Base (very light, less accurate)";
+"Canvas · 멤피스 등 자유 애니메이션" = "Canvas · Creative animation";
 "ChatGPT · Codex" = "ChatGPT · Codex";
 "ChatGPT 기본 모델" = "ChatGPT default model";
 "ChatGPT 로그인이 필요합니다" = "ChatGPT login required";
@@ -223,6 +224,7 @@
 "Claude Code를 설치하지 못했습니다. 인터넷 연결을 확인하세요.\n%lld" = "Could not install Claude Code. Check your internet connection.\n%lld";
 "Claude Code에 설정된 모델" = "Model set in Claude Code";
 "Claude Code에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다." = "Connected to Claude Code. EasyCut tools are available in new conversations.";
+"Claude Opus가 장면과 소리 코드를 작성하는 중…" = "Claude Opus is writing the animation code…";
 "Claude Pro/Max 구독이 있으면 API 키 없이 AI 편집을 쓸 수 있습니다. 아래 순서대로 한 번만 설정하세요." = "With a Claude Pro/Max subscription you can use AI editing without an API key. Set it up once, in this order.";
 "Claude 계정 로그인 (Pro/Max)" = "Log in to Claude (Pro/Max)";
 "Claude 데스크톱 설정 파일을 읽을 수 없습니다. 직접 확인해 주세요:\n%@" = "Can't read the Claude Desktop config file. Please check it yourself:\n%@";
@@ -287,6 +289,7 @@
 "OpenAI API 키로 로그인 (구독 대신)" = "Log in with an OpenAI API key (instead of a subscription)";
 "Plus/Pro 구독 · Codex" = "Plus/Pro subscription · Codex";
 "Pro/Max 구독" = "Pro/Max subscription";
+"Remotion · 모션그래픽" = "Remotion · Motion graphics";
 "S  또는  ⌘T" = "S  or  ⌘T";
 "SRT 가져오기…" = "Import SRT…";
 "SRT 내보내기…" = "Export SRT…";
@@ -543,6 +546,8 @@
 "또는 Claude Code/데스크톱에서 이 앱을 직접 조작할 수도 있습니다." = "Or control this app directly from Claude Code / Claude Desktop.";
 "또는 ⌘I 로 가져오기" = "or import with ⌘I";
 "또는 구독 계정으로 로그인해서 쓸 수 있습니다." = "Or log in with your subscription account.";
+"렌더링 실패" = "Rendering failed";
+"렌더링 중 코드나 설정이 바뀌었습니다. 샘플을 다시 생성하세요." = "The code or settings changed during rendering. Generate new samples.";
 "로그인" = "Log In";
 "로그인 시간이 초과되었습니다. 다시 눌러 주세요." = "Login timed out. Please click again.";
 "로그인 창 열기" = "Open Login Window";
@@ -582,6 +587,7 @@
 "모든 클립 선택" = "Select all clips";
 "모든 트랙 분할" = "Split All Tracks";
 "모든 트랙 분할  (⇧⌘T)" = "Split All Tracks  (⇧⌘T)";
+"모션그래픽 (Remotion)" = "Motion graphics (Remotion)";
 "모양" = "Shape";
 "모자이크" = "Mosaic";
 "무엇을 편집할까요? (Enter로 보내기)" = "What should I edit? (Enter to send)";
@@ -603,6 +609,7 @@
 "미리보기 생성 실패: %@" = "Preview build failed: %@";
 "미리보기 생성 실패: %lf" = "Preview build failed: %lf";
 "미리보기 생성 실패: %lld" = "Preview build failed: %lld";
+"미리보기 이후 코드나 설정이 바뀌었습니다. 샘플 4장을 다시 생성하세요." = "The code or settings changed after preview. Generate four new sample frames.";
 "미리보기 자막 표시" = "Show captions in preview";
 "미리보기 화면에서 끌어서 가릴 영역을 그립니다 (재생헤드부터 클립 끝까지)" = "Drag on the preview to draw an area to hide (from the playhead to the clip end)";
 "미리보기를 멈춘 상태에서 영역을 끌어 옮기고, 오른쪽 아래 점으로 크기를 바꿉니다. 영역을 고르고 ⌫로 지웁니다." = "With the preview paused, drag an area to move it and use the bottom-right dot to resize. Select an area and press ⌫ to remove it.";
@@ -676,9 +683,14 @@
 "새 자막" = "New caption";
 "새 프로젝트" = "New Project";
 "새 프로젝트.easycut" = "New Project.easycut";
+"샘플 4장을 확인한 뒤 전체 렌더링을 누르세요." = "Review the four samples, then approve the full render.";
+"샘플 생성 실패" = "Preview generation failed";
+"샘플 프레임 4장을 그리는 중…" = "Rendering four preview frames…";
+"샘플과 영상이 같도록 고정 시드와 프레임 시간만 사용해야 합니다. 장면을 다시 생성하세요." = "Use a fixed seed and frame time so previews match the video. Generate the scene again.";
 "생각 과정" = "Thinking";
 "생각 과정 보기" = "Show thinking";
 "생각 중…" = "Thinking…";
+"생성한 영상을 타임라인에 추가했습니다" = "Added the generated video to the timeline";
 "선택 구간을 자막으로 추가" = "Add Selection as Caption";
 "선택 삭제" = "Delete Selection";
 "선택 삭제 후 빈틈 메우기 (⌘⌫)" = "Delete selection and close gap (⌘⌫)";
@@ -690,6 +702,7 @@
 "선택한 단어 구간을 영상에서 잘라냄 (⌫)" = "Cut the selected words from the video (⌫)";
 "선택한 말을 영상에서 잘라내기" = "Cut the selected words from the video";
 "선택한 클립 그룹으로 묶기 / 풀기 (묶이면 함께 선택·이동)" = "Group / ungroup selected clips (grouped clips select and move together)";
+"설명으로 새 영상 만들기" = "Create a new video from a description";
 "설치 실패: %@" = "Install failed: %@";
 "설치 실패: %lf" = "Install failed: %lf";
 "설치 실패: %lld" = "Install failed: %lld";
@@ -819,8 +832,11 @@
 "열기 / 새 프로젝트" = "Open / new project";
 "영상 내보내기 (⌘E)" = "Export video (⌘E)";
 "영상 내보내기…" = "Export Video…";
+"영상 만들기" = "Make a Video";
+"영상 만들기…" = "Make a Video…";
 "영상 변환 중 (소프트웨어)…" = "Converting video (software)…";
 "영상 변환 중…" = "Converting video…";
+"영상 생성 · Canvas / Remotion" = "Generate Video · Canvas / Remotion";
 "영상, 오디오, 사진 파일을 선택하세요" = "Choose video, audio or photo files";
 "영상, 오디오, 사진을 여기로 끌어다 놓으세요" = "Drop video, audio or photos here";
 "영상/오디오 트랙을 찾을 수 없습니다: %@" = "No video/audio track found: %@";
@@ -829,6 +845,7 @@
 "영상·오디오·사진 가져오기 (⌘I)" = "Import video, audio, photos (⌘I)";
 "영상을 받지 못했습니다.\n" = "Couldn't download the video.\n";
 "영상을 타임라인에 올리고 [음성 인식]을 누르면\n말한 내용이 텍스트로 나타납니다.\n\n텍스트를 선택해 ⌫ 를 누르면\n그 부분이 영상에서 잘려 나갑니다." = "Put a video on the timeline and click [Transcribe]\nto see what was said as text.\n\nSelect text and press ⌫\nto cut that part out of the video.";
+"영상이 완성됐습니다. 재생해 보고 타임라인에 추가하세요." = "Your video is ready. Preview it and add it to the timeline.";
 "영어" = "English";
 "영역" = "Area";
 "영역 가리기" = "Hide area";
@@ -979,6 +996,7 @@
 "자막이 없습니다" = "No captions";
 "자막이 없습니다." = "No captions.";
 "자연스럽게" = "Natural";
+"자유 애니메이션 (Canvas)" = "Creative animation (Canvas)";
 "작업 단계가 너무 많아 멈췄습니다. 요청을 나눠 주세요." = "Stopped: too many steps. Please split your request.";
 "잘라낼 구간이 없습니다" = "Nothing to cut";
 "잘라낼 무음이 없습니다" = "No silences to cut";
@@ -1067,6 +1085,7 @@
 "채널 회원 전용 영상입니다." = "This video is for channel members only.";
 "처음 / 끝" = "Start / end";
 "처음 10초 잘라내고 나머지는 1.5배속" = "Cut the first 10 seconds, rest at 1.5×";
+"처음 사용할 렌더링 도구를 준비하는 중…" = "Preparing the rendering tools for first use…";
 "처음으로  (Home)" = "Go to Start  (Home)";
 "처음으로 (Home)" = "Go to start (Home)";
 "최고 화질" = "Best quality";
@@ -1225,5 +1244,6 @@
 "확대 (⌘=)" = "Zoom in (⌘=)";
 "확인" = "Check";
 "확인 중…" = "Checking…";
+"확인한 샘플의 코드로 영상과 소리를 렌더링하는 중…" = "Rendering the approved code…";
 "흐리게" = "Blur";
 "흰+외곽" = "White+outline";

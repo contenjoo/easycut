@@ -2,11 +2,11 @@
 
 [한국어](README.md) | **English**
 
-EasyCut is a macOS video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app.
+EasyCut is a macOS video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app. From 1.13.0, describe an animation, explainer or promo video, review its sample frames, then render it and continue editing on the timeline.
 
 **[⬇︎ Download the latest version (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [Website](https://contenjoo.github.io/easycut/)
 
-Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.6.0/EasyCut_0.6.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.6.3/EasyCut_0.6.3_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
 
 Made by [Learn Today (주식회사 오늘배움)](https://learntoday.kr/services), which also builds Joo.is and JooShow.
 
@@ -28,7 +28,7 @@ Requires an **Apple Silicon Mac (M1 or later) with macOS 14 or later**.
 2. The first time only: the app is not notarized, so if macOS warns you, go to System Settings › Privacy & Security and click **Open Anyway**.
 3. Download the Whisper model (574 MB) with **Turn On Whisper** in the Transcript tab, and the YouTube tool (yt-dlp) with **Install YouTube Tool** in the link window — once each.
 
-The Whisper speech engine and ffmpeg (for MKV etc.) are bundled, so there is nothing else to install (no Homebrew needed).
+The Whisper speech engine and ffmpeg (for MKV etc.) are bundled for standard editing, with no Homebrew needed. Creating new videos additionally requires Node.js LTS, npm and Google Chrome.
 AI editing is optional. Click **Log in with Claude** or **Log in with ChatGPT** in the AI tab and the app installs what it needs and logs you in (uses your subscription, no API key). Your own Claude API key also works; it is stored only in the macOS Keychain.
 
 Updates are automatic from 1.3.0 on: when a new version is released, the app tells you at launch and installs it with one click (**EasyCut › Check for Updates…**).
@@ -60,6 +60,7 @@ Needs Xcode Command Line Tools (Swift 5.10+), `cmake` (`brew install cmake`) and
 | Layout & effects | Size, position, opacity, picture-in-picture, fades, shape (circle, rounded rectangle), person background blur/removal |
 | Cut by captions | Deleting a caption line also deletes its video; dragging captions in the list reorders the video with them; Track 1 clips can be dragged to insert-reorder (⌥+drag = free move) |
 | AI editing | Edit by talking: "cut all the silences", "2× speed from 3:00 to 5:00" (one-click Claude Pro/Max or ChatGPT Plus/Pro login, or an API key). Choose the model (Fable 5.1 · Opus 5.5 · Opus 5 · Sonnet 5 · Haiku 4.5), reasoning effort and whether to show thinking |
+| Make a new video with AI (Mac) | Open **Create a Video**, describe the result, review four frames, render an MP4, and add it to the timeline. Choose Claude or GPT subscription sign-in/API keys, or a Gemini API key; production guidance is selected for the brief automatically |
 | AI app connection (MCP) | Control the app directly from Claude Code / Claude Desktop / Codex |
 | Export | MP4 (H.264/HEVC), MOV (ProRes), audio (M4A), 4K/1080p/720p/480p, SRT alongside, save the current frame as PNG |
 | Projects | Save/open `.easycut` files, up to 300 undo steps, **live auto-save** (unsaved new projects are kept for recovery at the next launch) |
@@ -121,7 +122,25 @@ Files such as MKV, WebM and AVI are converted to MP4 automatically on import (ff
 
 ## AI editing / connecting AI accounts
 
-### Get a Gemini API key and start on the free tier
+### Make a new video with AI (macOS)
+
+From macOS 1.13.0, choose **Create a Video** in the top toolbar, **File › Create a Video…**, or the AI tab. Choose **Claude / GPT / Gemini**, then the connection method. Claude and GPT support **Subscription Sign-in / API Key**; GPT subscription sign-in uses your ChatGPT account. Gemini currently connects with an API key. Each user connects their own account or key. Describe the subject, story, style, colors, movement, text and sound, then choose the aspect ratio and length.
+
+Click **Create Previews from Description** to generate four sample frames. Review the composition, wording and scene changes, then choose **Approve & Render Full Video**. The MP4 uses the same code and settings you reviewed. Use **Add to Timeline** to continue editing; the added clip can be undone with ⌘Z.
+
+**Automatically Apply Production Skills** is enabled by default. The selected AI chooses up to three relevant sets of reviewed guidance: product and brand motion, visual explanation, kinetic typography, data stories, or generative particles and patterns. Your style and exclusions take priority. The preview shows the selected guidance, the reason, and source links. You can turn automatic guidance off. This is a reviewed local catalog, not a live X search or an installer for arbitrary scripts. See the [sources and verification record](docs/VIDEO-SKILLS-2026-10-30.md).
+
+For video creation quality in EasyCut, we currently recommend **Claude Opus 5.5**. Claude supports a Claude Code subscription login or a Claude API key. GPT supports a ChatGPT subscription login or an OpenAI API key. Gemini currently uses an API key. Subscription connections use your account's limits. API keys are stored in your macOS Keychain, and API charges are separate from subscriptions. The API defaults are `claude-opus-5-5` (Claude), `gpt-6.1-sol` (GPT) and `gemini-3.8-flash` (Gemini); you can enter another supported model name. GPT and Gemini do not require a Claude login.
+
+- **Canvas** draws each frame and can synthesize original music and effects, or make a silent video as requested.
+- **Remotion** creates React-based motion graphics. Its default output is silent; add audio on the timeline.
+- Install Node.js LTS, npm and Google Chrome. Rendering packages are prepared in the app's support folder on first use. Rendering method and an optional existing Remotion project are under **Advanced Settings**.
+- Your description is sent to the selected AI provider. Generated code runs on this Mac. The full source video is not uploaded through this workflow, and the generator does not use file/shell tools or personal MCP servers.
+- Code, settings, samples and completed videos are kept in `~/Library/Application Support/EasyCut/generated-videos`. Changing approved code or settings requires new previews. Work continues if you close the sheet; **Stop** cancels it.
+
+Supports 2–60 seconds per video, even dimensions from 320–1920 pixels, and 24/30/60 fps. Canvas audio is synthesized; narration is not generated. This creation window is not yet available on Windows.
+
+### Edit existing videos with Gemini's free tier
 
 1. Choose **Gemini (free tier)** in EasyCut's AI tab and open [Google AI Studio's API keys page](https://aistudio.google.com/apikey).
 2. Sign in with Google and review the terms if prompted. New users may already have a default project and key.

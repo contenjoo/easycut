@@ -2,11 +2,11 @@
 
 **한국어** | [English](README.en.md)
 
-쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 macOS 설치형 영상 편집기입니다.
+쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 macOS 설치형 영상 편집기입니다. 1.13.0부터 원하는 내용을 설명해 애니메이션·설명·홍보 영상을 만들고 타임라인에서 편집할 수 있습니다.
 
 **[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.6.0/EasyCut_0.6.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.6.3/EasyCut_0.6.3_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
 
 만든 곳: [주식회사 오늘배움](https://learntoday.kr/services) — 주이즈·JooShow 등 오늘배움이 만든 다른 서비스도 이 페이지에서 볼 수 있습니다.
 
@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/c82c022a-1c3b-4895-94b8-a49f6609b6f9
 2. 처음 열 때 한 번: 서명·공증되지 않은 앱이라 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
 3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
 
-Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)가 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다.
+기본 편집에 쓰는 Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)는 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다. 새 영상 생성에는 Node.js LTS·npm과 Google Chrome이 필요합니다.
 AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또는 **[ChatGPT로 로그인]** 버튼 하나만 누르면 필요한 프로그램 설치부터 로그인까지 앱이 알아서 합니다(구독 계정 사용, API 키 불필요). 본인 Claude API 키로도 쓸 수 있으며 키는 macOS 키체인에만 저장됩니다.
 
 ## 소스에서 빌드
@@ -56,6 +56,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 | 화면 배치 | 크기·위치·불투명도, PIP(화면 속 화면), 페이드 인/아웃, 모양(원·둥근 사각형), 인물 배경 흐리게·지우기, 녹화 때 마우스 클릭 강조 |
 | 자막으로 컷 편집 | 자막 한 줄을 지우면 그 구간 영상도 삭제, 자막 목록에서 끌어 순서를 바꾸면 영상도 함께 이동, 트랙 1 클립은 끌어서 끼워 넣기(⌥+끌기 = 자유 이동) |
 | AI 편집 | "무음 다 잘라줘", "3분~5분 2배속" 처럼 말로 편집 (Claude Pro/Max 또는 ChatGPT Plus/Pro 원클릭 로그인, 또는 API 키). 모델(Fable 5.1·Opus 5.5·Opus 5·Sonnet 5·Haiku 4.5)·추론 강도·생각 과정 보기 선택 |
+| AI로 새 영상 만들기 (Mac) | 상단 **영상 만들기**에서 설명·화면비·길이 입력 → 제작 지침 자동 선택 → 미리보기 4장 확인 → MP4 렌더링 → 타임라인에 추가. Claude·GPT의 구독 로그인 또는 API 키, Gemini API 키 중 선택 |
 | AI 앱 연결(MCP) | Claude Code / Claude 데스크톱 / Codex에서 앱을 직접 조작 |
 | 내보내기 | MP4(H.264/HEVC), MOV(ProRes), 오디오(M4A), 4K/1080p/720p/480p, SRT 동시 저장, 장면 PNG 저장 |
 | 프로젝트 | `.easycut` 파일 저장/열기, 무제한에 가까운 실행 취소(300단계), **실시간 자동 저장**(저장 전 새 프로젝트는 복구용으로 보관 → 다음 실행 때 복구) |
@@ -117,7 +118,25 @@ MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁�
 
 ## AI 편집 / AI 계정 연결
 
-### 구독 없이 Gemini 무료 한도로 시작하기
+### AI로 새 영상 만들기 (macOS)
+
+상단 도구 막대의 **영상 만들기**를 누릅니다. **파일 › 영상 만들기…** 또는 AI 탭의 **영상 만들기**에서도 열 수 있습니다. **Claude / GPT / Gemini**에서 사용할 AI를 선택하고 연결 방식을 정합니다. Claude와 GPT는 **구독 로그인 / API 키** 중 고를 수 있으며, GPT 구독은 ChatGPT 계정으로 로그인합니다. Gemini는 현재 API 키로 연결합니다. 원하는 영상 설명·화면비·길이를 정하고 **설명으로 미리보기 만들기**를 누르면 선택한 AI가 새 장면 코드를 작성하고 샘플 프레임 4장을 보여 줍니다. 샘플을 확인한 뒤 **확인하고 전체 렌더링**을 누르면 MP4를 만들며, **타임라인에 추가**로 편집을 이어 갑니다. 추가한 클립은 ⌘Z로 되돌릴 수 있습니다.
+
+EasyCut의 현재 권장 모델은 **Claude Opus 5.5**입니다. Claude는 Claude Code 구독 로그인이나 Claude API 키로, GPT는 ChatGPT 구독 로그인이나 OpenAI API 키로 사용합니다. Gemini는 API 키로 연결합니다. API 키는 각 사용자의 macOS 키체인에 저장합니다. 기본 API 모델은 Claude `claude-opus-5-5`, GPT `gpt-6.1-sol`, Gemini `gemini-3.8-flash`이며 모델명을 직접 바꿀 수 있습니다. 구독 연결에는 본인 계정의 사용 한도가 적용되며, API 사용료는 구독 요금과 별도입니다. 세 공급자 모두 같은 스킬 선택·코드 검증·미리보기·로컬 렌더 과정을 사용합니다.
+
+애니메이션·설명·홍보 영상의 주제·줄거리·스타일·색상·움직임·텍스트·소리는 사용자가 설명합니다. 예시 버튼은 설명만 채우며 화면 크기·길이·제작 방식을 바꾸지 않습니다. 특정 장소·팔레트·표현 방식은 고정되지 않습니다. Canvas에서는 무음·효과음만·음악 포함 요청도 구분해 반영합니다.
+
+**제작 스킬 자동 적용**은 기본으로 켜져 있습니다. 선택한 AI가 설명의 의미를 보고 제품·브랜드 모션, 설명, 타이포, 데이터, 입자·패턴의 검토된 지침 중 필요한 것만 최대 3개 골라 적용합니다. 미리보기와 함께 적용한 스킬·선택 이유·원본 링크를 확인할 수 있고, 자동 적용을 끌 수도 있습니다. X에서 공유된 Bang Motion 등을 현재 Canvas/Remotion 환경에 맞게 변형한 고정 카탈로그이며, 생성 중 X를 검색하거나 외부 스크립트를 설치하지 않습니다. 원본과 사용 조건은 [영상 스킬 기록](docs/VIDEO-SKILLS-2026-10-30.md)에 정리했습니다.
+
+- **Canvas**: 사용자가 설명한 스타일로 장면을 프레임마다 그립니다. 배경음악과 효과음도 코드로 합성합니다.
+- **Remotion**: React 기반 모션그래픽을 만듭니다. 기본 생성물은 무음이며, 타임라인에서 음성·음악을 더할 수 있습니다.
+- 선택한 AI의 본인 계정·API 키와 Node.js LTS·npm, Google Chrome이 필요합니다. GPT·Gemini API는 Claude 로그인 없이 사용할 수 있습니다. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 준비합니다. 제작 방식 선택과 기존 Remotion 프로젝트 연결은 접힌 **고급 설정**에 있습니다.
+- 입력한 설명은 선택한 AI 공급자에 전송됩니다. 생성된 코드는 이 Mac에서 실행하며 원본 영상 전체는 보내지 않습니다. 생성기는 편집용 AI와 별도로 실행하며 파일·명령 도구나 개인 MCP를 사용하지 않습니다.
+- 코드·설정·샘플·완성 영상은 `~/Library/Application Support/EasyCut/generated-videos`에 보관됩니다. 샘플 확인 이후 코드나 설정이 바뀌면 전체 렌더링 전에 새 샘플이 필요합니다. 창을 닫아도 작업은 계속되며 **중지**로 취소할 수 있습니다.
+
+macOS 1.13.0부터 제공합니다. 현재 한 번에 2~60초, 320~1920 픽셀(짝수), 24·30·60fps를 지원합니다. Canvas 음악은 합성음이며 내레이션은 생성하지 않습니다. Windows에는 아직 이 생성 창이 없습니다.
+
+### 기존 영상 편집을 Gemini 무료 한도로 시작하기
 
 1. EasyCut의 AI 탭에서 **구독 없이 Gemini 무료 한도로 시작**을 누릅니다. 이미 연결했다면 연결 방식에서 **Gemini (무료 한도)**를 선택합니다.
 2. **Google에서 무료 키 발급하기**를 누르거나 [Google AI Studio API 키 페이지](https://aistudio.google.com/apikey)를 엽니다.

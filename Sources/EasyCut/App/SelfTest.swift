@@ -57,6 +57,22 @@ enum SelfTest {
     }
 
     static func runAsync(_ dir: URL) async throws {
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "video-generation" {
+            try await testVideoGeneration(dir)
+            return
+        }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "video-preview",
+           let path = ProcessInfo.processInfo.environment["EASYCUT_VIDEO_REQUEST"] {
+            let request = try JSONDecoder().decode(VideoGenerationRequest.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            let job = try await VideoGenerationJob.prepare(request: request, remotionProject: "", process: GenerationProcess()) { print($0) }
+            print("생성 코드와 미리보기:", job.directory.path)
+            print("적용 스킬:", job.skillSelection?.skills.map(\.id).joined(separator: ", ") ?? "없음")
+            print("선택 이유:", job.skillSelection?.reason ?? "")
+            check(FileManager.default.fileExists(atPath: job.directory.appendingPathComponent("applied-skills.json").path), "적용한 스킬과 버전 기록 보존")
+            for preview in job.previews { print("샘플:", preview.path) }
+            check(!FileManager.default.fileExists(atPath: job.directory.appendingPathComponent("render.mp4").path), "승인 전 전체 렌더링 없음")
+            return
+        }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural-export",
            let path = ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_PROJECT"] {
             let p = try JSONDecoder().decode(Project.self, from: Data(contentsOf: URL(fileURLWithPath: path)))

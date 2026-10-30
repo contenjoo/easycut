@@ -114,6 +114,22 @@ final class AgentLink: ObservableObject {
         return code == 0 && out.lowercased().contains("logged in")
     }
 
+    /// Subscription mode must not silently use a CLI that is logged in with an API key.
+    nonisolated static func subscriptionStatus(_ provider: Provider, output: String) -> Bool {
+        if provider == .codex {
+            let text = output.lowercased()
+            return text.contains("logged in") && text.contains("chatgpt") && !text.contains("api key")
+        }
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(output.utf8))) as? [String: Any] else { return false }
+        return object["loggedIn"] as? Bool == true && object["authMethod"] as? String == "claude.ai"
+    }
+
+    nonisolated static func subscriptionLoggedIn(_ provider: Provider) async -> Bool {
+        guard let bin = provider == .claude ? claudeBinary : codexBinary else { return false }
+        let (code, out) = await run(bin, provider == .claude ? ["auth", "status", "--json"] : ["login", "status"], timeout: 30)
+        return code == 0 && subscriptionStatus(provider, output: out)
+    }
+
     /// 한글 경로가 명령 인자로 넘어가면 깨지므로(자모 분해) 앱 실행 파일을 가리키는 영문 경로 링크를 만든다
     nonisolated static var mcpCommandPath: String {
         let link = AppPaths.support.appendingPathComponent("easycut-mcp")
@@ -142,19 +158,19 @@ final class AgentLink: ObservableObject {
 
     /// 설치 → 브라우저 로그인 → 로그인 확인까지 한 번에. 성공하면 true
     @discardableResult
-    func connect(_ p: Provider) async -> Bool {
+    func connect(_ p: Provider, requireSubscription: Bool = false) async -> Bool {
         guard !state(p).isWorking else { return false }
         do {
             if (p == .claude ? Self.claudeBinary : Self.codexBinary) == nil {
                 set(p, .working(p == .claude ? "Claude Code 설치 중…" : "Codex 설치 중…"))
                 try await (p == .claude ? Self.installClaude() : Self.installCodex())
             }
-            if await (p == .claude ? Self.claudeLoggedIn() : Self.codexLoggedIn()) {
+            if await (requireSubscription ? Self.subscriptionLoggedIn(p) : (p == .claude ? Self.claudeLoggedIn() : Self.codexLoggedIn())) {
                 set(p, .ready)
                 return true
             }
             set(p, .working("브라우저에서 로그인을 마쳐 주세요…"))
-            try await login(p)
+            try await login(p, requireSubscription: requireSubscription)
             set(p, .ready)
             return true
         } catch {
@@ -188,7 +204,7 @@ final class AgentLink: ObservableObject {
     }
 
     /// 로그인 명령을 띄우고(브라우저가 열림) 로그인될 때까지 기다린다 (최대 5분)
-    private func login(_ p: Provider) async throws {
+    private func login(_ p: Provider, requireSubscription: Bool = false) async throws {
         guard let bin = p == .claude ? Self.claudeBinary : Self.codexBinary else { throw MediaError.failed("설치를 확인할 수 없습니다.") }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: bin)
@@ -217,7 +233,7 @@ final class AgentLink: ObservableObject {
         let deadline = Date().addingTimeInterval(300)
         while Date() < deadline {
             try await Task.sleep(nanoseconds: 2_000_000_000)
-            if await (p == .claude ? Self.claudeLoggedIn() : Self.codexLoggedIn()) { return }
+            if await (requireSubscription ? Self.subscriptionLoggedIn(p) : (p == .claude ? Self.claudeLoggedIn() : Self.codexLoggedIn())) { return }
             if !proc.isRunning, proc.terminationStatus != 0 {
                 throw MediaError.failed("로그인을 마치지 못했습니다. 다시 눌러 주세요.")
             }

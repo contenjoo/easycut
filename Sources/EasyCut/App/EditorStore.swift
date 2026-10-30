@@ -48,6 +48,7 @@ final class EditorStore: ObservableObject {
     @Published var showLinkSheet = false
     @Published var showClaudeSheet = false
     @Published var showNaturalEdit = false
+    @Published var showVideoGeneration = false
     @AppStorage("spokenEditEnabled") var spokenEditEnabled = false
     @Published var naturalEditBackup: Project?
     func restoreNaturalEdit() {
@@ -81,6 +82,7 @@ final class EditorStore: ObservableObject {
     let media = MediaCache()
     let downloader = ModelDownloader()
     lazy var ai = AIAssistant(store: self)
+    lazy var videoGenerator = VideoGenerator()
     lazy var control = ControlServer(store: self)
     lazy var recording = RecordController(store: self)
 

@@ -93,6 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } ? .terminateNow : .terminateCancel
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { store?.videoGenerator.cancel() }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         guard store != nil else { pending += urls; return }
         openURLs(urls)
@@ -157,6 +161,7 @@ struct AppCommands: Commands {
         }
         CommandGroup(replacing: .newItem) {
             Button("새 프로젝트") { store.newProject() }.keyboardShortcut("n")
+            Button("영상 만들기…") { store.showVideoGeneration = true }
             Button("프로젝트 열기…") { store.openPanel() }.keyboardShortcut("o")
             Divider()
             Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")

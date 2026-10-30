@@ -16,7 +16,7 @@ mkdir -p "$ROOT/.build" "$ROOT/dist"
 WORK=$(mktemp -d "$ROOT/.build/app-build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 APP="$WORK/EasyCut.app"
-VERSION="1.12.6"
+VERSION="1.13.0"
 
 # 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
 SIGN_ID="${EASYCUT_SIGN_ID:-EasyCut Self-Signed}"
@@ -55,6 +55,7 @@ cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
 "NSSpeechRecognitionUsageDescription" = "EasyCut uses speech recognition to turn speech in your videos into text (transcripts and captions). Recognition runs on this Mac.";
 STRINGS
 cp "$BIN" "$APP/Contents/MacOS/EasyCut"
+cp "$ROOT/Resources/VideoSkillNotices.txt" "$APP/Contents/Resources/VideoSkillNotices.txt"
 
 echo "▶ 내장 도구 (Whisper·ffmpeg)"
 if [ -x "$ROOT/vendor/bin/whisper-cli" ] && [ -x "$ROOT/vendor/bin/ffmpeg" ]; then
@@ -94,7 +95,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>25</string>
+  <key>CFBundleVersion</key><string>26</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -166,12 +167,33 @@ if [ "$INSTALL_APP" = true ]; then
   # 정상 종료는 저장 확인창을 거친다. 취소하면 설치하지 않는다.
   osascript -e 'if application id "com.contenjoo.easycut" is running then tell application id "com.contenjoo.easycut" to quit'
   running_status=0
-  pgrep -f '^/Applications/EasyCut.app/Contents/MacOS/EasyCut([[:space:]]|$)' >/dev/null || running_status=$?
+  # AppKit의 정상 종료가 반환된 뒤 프로세스가 사라지기까지 잠깐 걸릴 수 있다.
+  # 종료를 기다리기만 하며 저장 취소나 실행 중인 앱을 강제로 종료하지 않는다.
+  for attempt in {1..50}; do
+    running_status=0
+    pgrep -f '^/Applications/EasyCut.app/Contents/MacOS/EasyCut([[:space:]]|$)' >/dev/null || running_status=$?
+    if [ "$running_status" -ne 0 ]; then break; fi
+    sleep 0.2
+  done
   if [ "$running_status" -ne 1 ]; then
     echo "EasyCut을 종료한 뒤 다시 설치해 주세요." >&2
     exit 1
   fi
-  ditto "$APP" /Applications/EasyCut.app
+  # Replace the bundle instead of merging: stale files invalidate the new signature.
+  PREVIOUS="$WORK/previous.app"
+  if [ -d /Applications/EasyCut.app ]; then
+    BACKUP="$ROOT/dist/EasyCut-before-$VERSION-install.app.zip"
+    ditto -c -k --sequesterRsrc --keepParent /Applications/EasyCut.app "$WORK/previous.app.zip"
+    unzip -tq "$WORK/previous.app.zip" >/dev/null
+    mv -f "$WORK/previous.app.zip" "$BACKUP"
+    mv /Applications/EasyCut.app "$PREVIOUS"
+  fi
+  if ! ditto "$APP" /Applications/EasyCut.app || ! codesign --verify --deep --strict /Applications/EasyCut.app; then
+    rm -rf /Applications/EasyCut.app
+    if [ -d "$PREVIOUS" ]; then mv "$PREVIOUS" /Applications/EasyCut.app; fi
+    echo "설치 검증 실패 — 기존 앱을 복원했습니다." >&2
+    exit 1
+  fi
   echo "✅ 설치: /Applications/EasyCut.app"
 fi
 echo "✅ 완료: dist/EasyCut.app.zip"

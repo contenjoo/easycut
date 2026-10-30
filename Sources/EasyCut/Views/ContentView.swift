@@ -44,6 +44,7 @@ struct ContentView: View {
         .sheet(isPresented: $store.showLinkSheet) { LinkSheet(store: store) }
         .sheet(isPresented: $store.showClaudeSheet) { ConnectSheet(ai: store.ai) }
         .sheet(isPresented: $store.showNaturalEdit) { NaturalEditSheet(store: store, ai: store.ai) }
+        .sheet(isPresented: $store.showVideoGeneration) { VideoGenerationSheet(store: store, generator: store.videoGenerator) }
         .sheet(isPresented: $store.showRecordSheet) { RecordSheet(rec: store.recording) }
         .alert("알림", isPresented: Binding(get: { store.alert != nil }, set: { if !$0 { store.alert = nil } })) {
             Button("확인") { store.alert = nil }
@@ -86,6 +87,8 @@ struct MainToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
+            Button { store.showVideoGeneration = true } label: { Label("영상 만들기", systemImage: "film.stack") }
+                .help("설명으로 새 영상 만들기")
             Button { store.importPanel() } label: { Label("가져오기", systemImage: "square.and.arrow.down") }
                 .help("미디어 가져오기 (⌘I)")
             Button { store.showNaturalEdit = true } label: { Label("말·파일명 편집", systemImage: "waveform.and.sparkles") }

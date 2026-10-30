@@ -74,6 +74,13 @@ struct AIPanel: View {
             .padding(10)
             Divider()
 
+            Button { store.showVideoGeneration = true } label: {
+                Label("영상 만들기", systemImage: "film.stack")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
+            .padding(8)
+
             if ai.backend == .gemini && !ai.hasGeminiKey {
                 ScrollView { GeminiSetup(ai: ai).padding(12) }
             } else if ai.backend != .api && ai.backend != .gemini && !ai.ready {
