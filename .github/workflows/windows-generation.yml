@@ -194,6 +194,8 @@ jobs:
 
       - name: Native WebView2 video creation
         timeout-minutes: 15
+        env:
+          EASYCUT_VALIDATE_INSTALLED: ${{ inputs.installerRunId != '' }}
         run: |
           npm install --prefix "$env:RUNNER_TEMP/easycut-generation-ui-tests" --no-save playwright-core
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -223,8 +225,7 @@ jobs:
           '@
           $bootstrapPath = "$env:RUNNER_TEMP/generation-native-bootstrap.cjs"
           [IO.File]::WriteAllText($bootstrapPath, $bootstrap, [Text.UTF8Encoding]::new($false))
-          # WebView2's process environment enables CDP for the exact installed
-          # production binary too; no alternate devtools build is made in that mode.
+          # The exact installed binary is never rebuilt with devtools enabled.
           if ($env:EASYCUT_INSTALLED_EXE) {
             $exe = Resolve-Path $env:EASYCUT_INSTALLED_EXE
           } else {
@@ -238,8 +239,10 @@ jobs:
             Stop-Process -Id $prelaunchProcess.ProcessId -Force -ErrorAction SilentlyContinue
             Wait-Process -Id $prelaunchProcess.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
           }
-          $app = Start-Process $exe -PassThru -RedirectStandardOutput "$env:EASYCUT_NATIVE_OUTPUT/app-stdout.txt" -RedirectStandardError "$env:EASYCUT_NATIVE_OUTPUT/app-stderr.txt"
+          $app = $null
+          $policyBackup = @()
           function Save-NativeProcessSnapshot([string]$stage) {
+            if (-not $app) { return }
             $app.Refresh()
             $processes = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(easycut.*|msedgewebview2)\.exe$' } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,CommandLine)
             $snapshot = @{
@@ -252,6 +255,40 @@ jobs:
             $snapshot | ConvertTo-Json -Depth 20 | Write-Host
           }
           try {
+            if ($env:EASYCUT_VALIDATE_INSTALLED -eq "true") {
+              # WebView2 150+ ignores environment/HKCU overrides for elevated
+              # hosts. Use only this app's HKLM values on the disposable runner.
+              # https://learn.microsoft.com/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags
+              $policyName = [IO.Path]::GetFileName($launchPath)
+              if ($policyName -ine "easycut-windows.exe") { throw "Unexpected installed executable for app-scoped WebView2 policy: $policyName" }
+              $integrity = @(& whoami /groups | Select-String 'S-1-16-' | ForEach-Object { $_.Line.Trim() })
+              $integrity | Write-Host
+              ConvertTo-Json -InputObject $integrity | Set-Content "$env:EASYCUT_NATIVE_OUTPUT/native-integrity.json"
+              # UserDataFolder has the same documented app-specific policy form:
+              # https://learn.microsoft.com/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions
+              $overrides = @{
+                AdditionalBrowserArguments="--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+                UserDataFolder="$env:RUNNER_TEMP/generation-installed-webview-data"
+              }
+              foreach ($setting in $overrides.GetEnumerator()) {
+                $registryPath = "SOFTWARE\Policies\Microsoft\Edge\WebView2\$($setting.Key)"
+                $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registryPath,$true)
+                $backup = @{path=$registryPath;name=$policyName;keyExisted=($null -ne $key);valueExisted=$false;value=$null;kind=$null}
+                try {
+                  if ($key -and $key.GetValueNames() -contains $policyName) {
+                    $backup.valueExisted=$true
+                    $backup.value=$key.GetValue($policyName,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                    $backup.kind=$key.GetValueKind($policyName)
+                  }
+                } finally { if ($key) { $key.Dispose() } }
+                $policyBackup += $backup
+                $key = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($registryPath)
+                try { $key.SetValue($policyName,[string]$setting.Value,[Microsoft.Win32.RegistryValueKind]::String) }
+                finally { $key.Dispose() }
+              }
+              Write-Host "Applied temporary WebView2 HKLM policies only for $policyName"
+            }
+            $app = Start-Process $exe -PassThru -RedirectStandardOutput "$env:EASYCUT_NATIVE_OUTPUT/app-stdout.txt" -RedirectStandardError "$env:EASYCUT_NATIVE_OUTPUT/app-stderr.txt"
             $null = $app.WaitForExit(1000)
             Save-NativeProcessSnapshot "native-launch"
             if ($app.HasExited) { throw "Native application exited before CDP startup (PID $($app.Id), exit $($app.ExitCode))" }
@@ -260,9 +297,26 @@ jobs:
             node windows/app/tests/generation-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally {
-            Save-NativeProcessSnapshot "native-final-processes"
-            # Only the app started by this step is terminated; the runner is disposable.
-            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+            try {
+              Save-NativeProcessSnapshot "native-final-processes"
+            } finally {
+              # Only the app started by this step is terminated; the runner is disposable.
+              if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
+              $restoreFailures = @()
+              foreach ($backup in $policyBackup) {
+                $key = $null
+                try {
+                  $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($backup.path,$true)
+                  if ($backup.valueExisted) {
+                    if (-not $key) { $key = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($backup.path) }
+                    $key.SetValue($backup.name,$backup.value,$backup.kind)
+                  } elseif ($key) { $key.DeleteValue($backup.name,$false) }
+                } catch { $restoreFailures += $_.Exception.Message }
+                finally { if ($key) { $key.Dispose() } }
+              }
+              if ($restoreFailures.Count) { throw "Could not restore temporary WebView2 policy: $($restoreFailures -join '; ')" }
+              if ($policyBackup.Count) { Write-Host "Restored only the app-scoped WebView2 policy values" }
+            }
           }
 
       - name: Collect native generation files
