@@ -6,6 +6,17 @@ The Windows edition of EasyCut: a Tauri 2 app (Rust backend + HTML/JS UI) that s
 - `app/src-tauri` — Tauri backend: commands, ffmpeg/ffprobe probing, Whisper (whisper-cli) transcription, ffmpeg filter-graph export, `--selftest`.
 - `app/ui` — the interface (no bundler): timeline canvas, preview player, transcript/captions panels and prompt video creation.
 
+## Fonts and effects (0.8.0)
+
+Select a clip, then use the pinned **Basic / Effects / Layout** tabs in the right inspector. Effects are visible cards with names, icons and selection marks. The controls above the gallery adjust duration or intensity and replay the selected effect. Set entrance and exit transitions independently.
+
+- 18 transitions, including slide, wipe, zoom, rotation, blur, pixelation, iris and flip.
+- 15 text entrance animations, including typing, bounce, float, shake and reveal. Caption animation restarts for each caption.
+- 9 visual looks with adjustable intensity.
+- Search all fonts installed on this Windows PC, with Korean aliases and family previews. Additional installed fonts appear automatically; the app does not download fonts.
+
+The three-pane workspace keeps media, preview/timeline and the selected clip's controls visible. Less frequent toolbar actions are under **More**. Effects are saved in the shared `.easycut` format and applied during MP4 export. Windows and macOS use different rendering engines, so blur, perspective and text clipping can look slightly different. [Validation and remaining Windows checks](../docs/QA-WINDOWS-STUDIO-2026-11-02.md).
+
 ## Create a video (0.7.0)
 
 Open **Create a Video** in the toolbar, **File › Create a Video…**, or the AI tab. Describe an animation, explainer or promotional video in your own style, then choose the canvas size, 2–60 second length and 24/30/60 fps. Four examples are available as starting points; they only replace the description.

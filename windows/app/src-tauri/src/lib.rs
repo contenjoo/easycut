@@ -6,7 +6,9 @@ mod generation;
 mod clicks;
 mod control;
 mod edits;
+mod effect_edit;
 mod export;
+mod fonts;
 mod link;
 mod media;
 mod privacy;
@@ -611,42 +613,21 @@ fn tracks_edit(app: AppHandle, st: State<AppState>, action: String) -> Value {
 
 /// 클립 속성 한꺼번에 (volume, opacity, scale, offsetX, offsetY, fadeIn, fadeOut, text)
 #[tauri::command]
-fn update_clip(app: AppHandle, st: State<AppState>, id: Id, props: HashMap<String, Value>) -> Value {
+fn update_clip(app: AppHandle, st: State<AppState>, id: Id, props: HashMap<String, Value>) -> Res<Value> {
     with(&st, |e| {
+        let updated = effect_edit::prepare_clip(&e.project, id, &props)?;
         e.apply(|p| {
             if let Some(c) = p.clip_mut(id) {
-                for (k, v) in &props {
-                    let f = v.as_f64();
-                    match (k.as_str(), f) {
-                        ("volume", Some(x)) => c.volume = x.clamp(0.0, 4.0),
-                        ("opacity", Some(x)) => c.opacity = x.clamp(0.0, 1.0),
-                        ("scale", Some(x)) => c.scale = x.clamp(0.05, 4.0),
-                        ("offsetX", Some(x)) => c.offset_x = x,
-                        ("offsetY", Some(x)) => c.offset_y = x,
-                        ("fadeIn", Some(x)) => c.fade_in = x.max(0.0),
-                        ("fadeOut", Some(x)) => c.fade_out = x.max(0.0),
-                        ("text", _) => c.text = v.as_str().unwrap_or("").to_string(),
-                        ("textStyle", _) => {
-                            if let Ok(st) = serde_json::from_value(v.clone()) {
-                                c.text_style = st;
-                            }
-                        }
-                        // 맥 파일 형식 그대로 (없으면 기본)
-                        ("shape" | "backgroundEffect" | "showClicks", _) => {
-                            if v.is_null() || v.as_str() == Some("none") || v.as_bool() == Some(false) {
-                                c.extra.remove(k.as_str());
-                            } else {
-                                c.extra.insert(k.clone(), v.clone());
-                            }
-                        }
-                        _ => {}
-                    }
-                }
+                *c = updated;
             }
-        })
-    });
-    changed(&app, &st)
+        });
+        Ok::<(), String>(())
+    })?;
+    Ok(changed(&app, &st))
 }
+
+#[tauri::command]
+fn list_fonts() -> Res<Vec<fonts::FontFamily>> { fonts::installed() }
 
 // MARK: 개인정보 가리기
 
@@ -745,8 +726,9 @@ fn add_text(app: AppHandle, st: State<AppState>, time: f64, text: String) -> Val
 }
 
 #[tauri::command]
-fn update_project(app: AppHandle, st: State<AppState>, props: HashMap<String, Value>) -> Value {
+fn update_project(app: AppHandle, st: State<AppState>, props: HashMap<String, Value>) -> Res<Value> {
     with(&st, |e| {
+        let caption_style = props.get("captionStyle").map(|value| effect_edit::prepare_style(&e.project.caption_style, value)).transpose()?;
         e.apply(|p| {
             for (k, v) in &props {
                 match k.as_str() {
@@ -760,9 +742,7 @@ fn update_project(app: AppHandle, st: State<AppState>, props: HashMap<String, Va
                     }
                     "showCaptions" => p.show_captions = v.as_bool().unwrap_or(p.show_captions),
                     "captionStyle" => {
-                        if let Ok(s) = serde_json::from_value(v.clone()) {
-                            p.caption_style = s;
-                        }
+                        if let Some(style) = &caption_style { p.caption_style = style.clone(); }
                     }
                     "captions" => {
                         if let Ok(c) = serde_json::from_value::<Vec<Caption>>(v.clone()) {
@@ -772,9 +752,10 @@ fn update_project(app: AppHandle, st: State<AppState>, props: HashMap<String, Va
                     _ => {}
                 }
             }
-        })
-    });
-    changed(&app, &st)
+        });
+        Ok::<(), String>(())
+    })?;
+    Ok(changed(&app, &st))
 }
 
 // MARK: 대본 · 자막 · 무음
@@ -1473,7 +1454,7 @@ pub fn run() {
             generation::generation_save_key, generation::generation_connect, generation::generation_start,
             generation::generation_render, generation::generation_cancel, generation::generation_import, generation::generation_open,
             natural_edit_backup, natural_edit_restore,
-            get_state, new_project, open_project, save_project, undo, redo,
+            get_state, new_project, open_project, save_project, undo, redo, list_fonts,
             import_files, add_to_timeline, remove_asset,
             split, delete_clips, ripple_delete_range, move_clips, reorder_clip, trim_clip, set_speed, update_clip, update_track, add_text, update_project,
             delete_words, update_word, remove_fillers, generate_captions, export_srt, import_srt, silence_ranges,

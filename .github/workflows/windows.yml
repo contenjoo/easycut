@@ -77,7 +77,11 @@ jobs:
       - name: Core tests
         working-directory: windows
         run: |
+          $env:PATH = "$PWD\app\src-tauri\resources\bin;$env:PATH"
+          $env:EASYCUT_EFFECT_FFMPEG = "$PWD\app\src-tauri\resources\bin\ffmpeg.exe"
           cargo test --workspace
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          node --test app/tests/effects-preview.test.mjs app/tests/effect-controls.test.mjs
           if ($LASTEXITCODE -ne 0) { exit 1 }
           node app/tests/natural-edit.test.mjs
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -215,6 +219,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit 1 }
             $env:EASYCUT_GENERATION_MANIFEST = "$env:RUNNER_TEMP/generation-evidence/generation-manifest.json"
             node windows/app/tests/generation-native.cjs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            node windows/app/tests/studio-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally {
             Get-CimInstance Win32_Process | Where-Object { $_.Name -match "easycut|msedgewebview2" } | Select-Object Name,ProcessId,ParentProcessId,CommandLine | Format-List

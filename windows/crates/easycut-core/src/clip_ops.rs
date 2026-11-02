@@ -109,9 +109,13 @@ impl Project {
                     && (a.opacity - b.opacity).abs() < 0.0001
                     && (a.scale - b.scale).abs() < 0.0001
                     && (a.offset_x - b.offset_x).abs() < 0.0001
-                    && (a.offset_y - b.offset_y).abs() < 0.0001;
+                    && (a.offset_y - b.offset_y).abs() < 0.0001
+                    && a.visual_filter == b.visual_filter && a.filter_intensity == b.filter_intensity
+                    && a.transition_out.as_ref().is_none_or(|t| t.effect == "none")
+                    && b.transition_in.as_ref().is_none_or(|t| t.effect == "none");
                 if same {
                     let (out, fade) = (b.source_out, b.fade_out);
+                    let transition_out = b.transition_out.clone();
                     // 가리기 영역은 원본 시간 기준이라 그대로 합친다
                     let mut blurs = a.blurs();
                     for r in b.blurs() {
@@ -121,6 +125,7 @@ impl Project {
                     }
                     clips[p].source_out = out;
                     clips[p].fade_out = fade;
+                    clips[p].transition_out = transition_out;
                     clips[p].set_blurs(blurs);
                     clips.remove(i);
                     merged += 1;

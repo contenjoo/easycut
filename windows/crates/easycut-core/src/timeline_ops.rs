@@ -169,10 +169,12 @@ impl Project {
         let mut right = c;
         left.source_out = cut;
         left.fade_out = 0.0;
+        left.transition_out = None;
         right.id = Id::new();
         right.source_in = cut;
         right.start = t;
         right.fade_in = 0.0;
+        right.transition_in = None;
         let rid = right.id;
         self.tracks[ti].clips[ci] = left;
         self.tracks[ti].clips.insert(ci + 1, right);

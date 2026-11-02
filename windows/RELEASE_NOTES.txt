@@ -1,4 +1,19 @@
-EasyCut for Windows 0.7.0
+EasyCut for Windows 0.8.0 (검증 중 / validation build)
+
+[새 기능] 폰트·효과·전환 선택
+• 오른쪽 [기본 / 효과 / 배치]에서 필요한 설정을 한눈에 확인합니다. 효과 카드에 이름·아이콘·선택 표시를 넣고, 시간·강도·효과 재생을 위에 고정했습니다.
+• 시작·끝 전환 18종, 텍스트 등장 효과 15종, 색감 필터 9종을 선택합니다. 타이핑·팝업·통통 튀기·흔들기·원형 열기·카드 뒤집기 등을 지원합니다.
+• PC에 설치된 전체 글꼴을 검색하고 미리 봅니다. 한글 별칭 검색을 지원하며, 조회 실패 시 다시 시도할 수 있습니다.
+• 미디어·미리보기·타임라인·속성을 세 영역으로 정리하고, 드물게 쓰는 도구는 [더 보기]에 모았습니다.
+• 효과는 프로젝트에 저장되며 미리보기와 영상 내보내기에 적용됩니다. Mac과 같은 효과 식별자를 사용하되 렌더러 차이로 세부 모양은 다를 수 있습니다.
+
+[New] Fonts, effects and a simpler editor
+• Pinned Basic / Effects / Layout tabs, named effect cards and visible duration, intensity and replay controls.
+• Choose 18 entrance/exit transitions, 15 text animations and 9 adjustable visual looks.
+• Search and preview the fonts installed on your PC, including Korean family aliases.
+• Effects persist in projects and render in MP4 exports. Mac and Windows use the same effect identifiers; rendering details can differ.
+
+---- Previous release: EasyCut for Windows 0.7.0 ----
 
 [새 기능] 설명으로 영상 만들기
 • 상단 [영상 만들기], 파일 메뉴 또는 AI 탭에서 시작합니다. 주제·줄거리·스타일·움직임·글자·소리를 자유롭게 설명하세요.

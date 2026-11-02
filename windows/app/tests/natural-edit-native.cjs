@@ -86,6 +86,7 @@ const assert = require('node:assert/strict');
   assert(gutter >= 12, 'Timeline horizontal scrollbar must reserve visible space without hover');
   await page.mouse.move(0,0);
   await page.screenshot({path:process.env.EASYCUT_NATIVE_OUTPUT+'/persistent-scrollbar.png'});
+  await page.click('.toolbar-more > summary');
   await page.click('#natural-edit');
   await page.check('#ne-file-on');
   await page.fill('#ne-filename','강의_소리꺼줘_자막추가.mp4');

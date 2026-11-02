@@ -8,25 +8,24 @@
 </head>
 <body>
   <header id="toolbar">
-    <div class="group">
-      <button data-cmd="import" class="primary" data-i18n="import">가져오기</button>
-      <button data-cmd="generation" id="video-create">🎬 <span data-l="영상 만들기">영상 만들기</span></button>
-      <button id="natural-edit">말·파일명 편집</button>
-      <button data-cmd="record" id="rec-btn" title="Ctrl+Alt+R">🔴 <span data-l="녹화">녹화</span></button>
-      <span id="title" class="title"></span>
+    <div class="group toolbar-edit">
+      <span class="app-wordmark">EasyCut</span>
+      <button data-cmd="import" class="primary"><span aria-hidden="true">＋</span> <span data-i18n="import">가져오기</span></button>
+      <button data-cmd="text"><span class="toolbar-symbol" aria-hidden="true">Aa</span> <span data-l="텍스트">텍스트</span></button>
+      <button data-cmd="addCaption"><span aria-hidden="true">▤</span> <span data-l="자막">자막</span></button>
+      <button data-cmd="generation" id="video-create"><span aria-hidden="true">▣</span> <span data-l="영상 만들기">영상 만들기</span></button>
+      <button data-cmd="record" id="rec-btn" title="Ctrl+Alt+R"><span class="record-dot" aria-hidden="true"></span> <span data-l="녹화">녹화</span></button>
     </div>
-    <div class="group">
-      <button data-cmd="undo" data-i18n-title="undo" title="실행 취소 (Ctrl+Z)">↶</button>
-      <button data-cmd="redo" data-i18n-title="redo" title="다시 실행 (Ctrl+Y)">↷</button>
-      <button data-cmd="split" data-i18n="split">분할</button>
-      <button data-cmd="delete" data-i18n="delete">삭제</button>
-      <button data-cmd="text" data-i18n="text">텍스트</button>
-      <button data-cmd="silence" data-i18n="silence">무음 컷</button>
-      <button data-cmd="transcribe" data-i18n="transcribe">음성 인식</button>
-      <button data-cmd="captions" data-i18n="makeCaptions">자막 생성</button>
-      <button data-cmd="ai" title="Ctrl+4">✨ <span data-l="AI 편집">AI 편집</span></button>
-      <button data-cmd="shortcuts" title="Ctrl+/">⌨</button>
+    <span id="title" class="title"></span>
+    <div class="group toolbar-project">
+      <div class="history-controls"><button data-cmd="undo" data-i18n-title="undo" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소">↶</button><button data-cmd="redo" data-i18n-title="redo" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행">↷</button></div>
+      <button data-cmd="ai" title="Ctrl+4"><span aria-hidden="true">✧</span> <span data-l="AI 편집">AI 편집</span></button>
       <button data-cmd="save" data-i18n="save">저장</button>
+      <details class="toolbar-more"><summary data-l="더 보기">더 보기</summary><div class="toolbar-dropdown">
+        <button data-cmd="newProject" data-l="새 프로젝트">새 프로젝트</button><button data-cmd="open" data-l="프로젝트 열기…">프로젝트 열기…</button><button data-cmd="saveAs" data-l="다른 이름으로 저장…">다른 이름으로 저장…</button>
+        <hr/><button data-cmd="link" data-l="링크로 가져오기">링크로 가져오기</button><button data-cmd="transcribe" data-l="음성 인식">음성 인식</button><button data-cmd="captions" data-l="자막 생성">자막 생성</button><button data-cmd="silence" data-l="무음 컷">무음 컷</button><button id="natural-edit" data-l="말·파일명 편집">말·파일명 편집</button>
+        <hr/><button data-cmd="importSrt" data-l="SRT 가져오기…">SRT 가져오기…</button><button data-cmd="exportSrt" data-l="SRT 내보내기…">SRT 내보내기…</button><button data-cmd="snapshot" data-l="현재 장면 PNG 저장">현재 장면 PNG 저장</button><button data-cmd="sttSettings" data-l="음성 인식 설정…">음성 인식 설정…</button><button data-cmd="shortcuts" data-l="단축키 보기">단축키 보기</button>
+      </div></details>
       <button data-cmd="export" class="primary" data-i18n="export">내보내기</button>
     </div>
   </header>
@@ -37,7 +36,7 @@
         <button data-tab="media" class="on" data-i18n="media">미디어</button>
         <button data-tab="transcript" data-i18n="transcript">대본</button>
         <button data-tab="captions" data-i18n="captionsTab">자막</button>
-        <button data-tab="ai">✨ AI</button>
+        <button data-tab="ai">AI</button>
       </nav>
       <div id="tab-media" class="tab on"></div>
       <div id="tab-transcript" class="tab"></div>
@@ -47,14 +46,14 @@
 
     <div class="vsplit" data-split="left"></div>
     <section id="center">
+      <div class="preview-heading"><span data-l="미리보기">미리보기</span><span id="preview-size"></span></div>
       <div id="stage">
         <div id="canvas">
           <video id="video" playsinline></video>
           <img id="still" alt="" />
           <div id="overlay"></div>
         </div>
-        <div id="empty-hint"><div style="font-size:34px">🎞</div><div data-i18n="dropHint">영상, 오디오, 사진을 여기로 끌어다 놓으세요</div>
-          <div class="hint" data-l="또는 Ctrl+I 로 가져오기">또는 Ctrl+I 로 가져오기</div><button data-cmd="import" class="primary" data-l="미디어 가져오기…">미디어 가져오기…</button></div>
+        <div id="empty-hint"><div class="empty-stage-icon" aria-hidden="true">▧</div><h2 data-l="첫 장면을 추가하세요">첫 장면을 추가하세요</h2><p class="hint" data-l="영상·사진·오디오를 끌어 놓으세요">영상·사진·오디오를 끌어 놓으세요</p><button data-cmd="import" class="primary" data-l="파일 가져오기">파일 가져오기</button></div>
         <div id="speed-badge"></div>
       </div>
       <div id="scrub">
@@ -63,22 +62,15 @@
         <span id="dur">00:00.00</span>
       </div>
       <div id="transport">
-        <button data-cmd="start" data-l-title="처음으로 (Home)">⏮</button>
-        <button data-cmd="back5" data-l-title="5초 뒤로 (Shift+←)">−5s</button>
-        <button data-cmd="prevFrame" data-l-title="이전 프레임 (,)">‹</button>
-        <button data-cmd="play" id="playBtn" class="primary" data-l-title="재생/일시정지 (Space)">▶</button>
-        <button data-cmd="nextFrame" data-l-title="다음 프레임 (.)">›</button>
-        <button data-cmd="fwd5" data-l-title="5초 앞으로 (Shift+→)">+5s</button>
-        <button data-cmd="end" data-l-title="끝으로 (End)">⏭</button>
-        <span class="sep"></span>
-        <button id="cc-btn" data-cmd="toggleCaptions" data-l-title="미리보기 자막 표시">💬</button>
-        <span id="vol-ic" data-l-title="미리보기 볼륨">🔊</span><input id="vol" type="range" min="0" max="1" step="0.01" value="1" />
-        <span class="sep"></span>
-        <span data-l-title="재생 속도 (최대 20배속) — [ 느리게, ] 빠르게, \ 1배속">🐇</span>
-        <select id="rate" title="J / K / L · [ ] \">
-          <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option><option value="6">6x</option><option value="8">8x</option><option value="10">10x</option><option value="12">12x</option><option value="16">16x</option><option value="20">20x</option>
-        </select>
-        <input id="rate-slider" type="range" min="-1.386" max="2.996" step="0.01" value="0" />
+        <label class="transport-speed"><span data-l="속도">속도</span><select id="rate" aria-label="재생 속도">
+          <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="6">6×</option><option value="8">8×</option><option value="10">10×</option><option value="12">12×</option><option value="16">16×</option><option value="20">20×</option>
+        </select></label>
+        <div class="playback-controls"><button data-cmd="start" data-l-title="처음으로 (Home)" aria-label="처음으로">⏮</button><button data-cmd="prevFrame" data-l-title="이전 프레임 (,)" aria-label="이전 프레임">‹</button><button data-cmd="play" id="playBtn" class="primary" data-l-title="재생/일시정지 (Space)" aria-label="재생 또는 일시정지">▶</button><button data-cmd="nextFrame" data-l-title="다음 프레임 (.)" aria-label="다음 프레임">›</button><button data-cmd="end" data-l-title="끝으로 (End)" aria-label="끝으로">⏭</button></div>
+        <details class="transport-settings"><summary data-l="재생 설정">재생 설정</summary><div class="transport-popover">
+          <label class="style-slider"><span id="vol-ic" data-l-title="미리보기 볼륨">🔊</span><input id="vol" aria-label="미리보기 볼륨" type="range" min="0" max="1" step="0.01" value="1"/></label>
+          <label class="style-slider"><span data-l="재생 속도">재생 속도</span><input id="rate-slider" type="range" min="-1.386" max="2.996" step="0.01" value="0"/></label>
+          <div class="row"><button data-cmd="back5">−5s</button><button data-cmd="fwd5">+5s</button><button id="cc-btn" data-cmd="toggleCaptions" data-l="자막 표시">자막 표시</button></div>
+        </div></details>
       </div>
     </section>
 
@@ -89,13 +81,13 @@
 
   <section id="timeline-wrap">
     <div id="tl-toolbar">
-      <button data-cmd="split" title="S / Ctrl+T">✂ <span data-l="분할">분할</span></button>
-      <button data-cmd="markIn" title="I">[ I</button>
-      <button data-cmd="markOut" title="O">O ]</button>
+      <span class="timeline-label" data-l="타임라인">타임라인</span><button data-cmd="split" title="S / Ctrl+T">✂ <span data-l="분할">분할</span></button><button data-cmd="delete" data-l="삭제">삭제</button>
+      <button data-cmd="markIn" title="I"><span data-l="시작">시작</span> [</button>
+      <button data-cmd="markOut" title="O"><span data-l="끝">끝</span> ]</button>
       <span id="range-info"></span>
       <span class="spacer"></span>
-      <button id="snap-btn" data-cmd="toggleSnap" title="N">🧲</button>
-      <button id="follow-btn" data-cmd="toggleFollow" data-l-title="재생헤드 따라가기">⇥</button>
+      <button id="snap-btn" data-cmd="toggleSnap" title="N" data-l="스냅">스냅</button>
+      <button id="follow-btn" data-cmd="toggleFollow" data-l-title="재생헤드 따라가기" data-l="따라가기">따라가기</button>
       <button data-cmd="trackSmaller" data-l-title="트랙 높이 줄이기">⇕−</button>
       <button data-cmd="trackBigger" data-l-title="트랙 높이 늘리기">⇕+</button>
       <button data-cmd="zoomOut" title="Ctrl+-">−</button>

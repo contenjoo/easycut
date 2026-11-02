@@ -1,0 +1,5 @@
+{
+  "transitions": ["none", "fade", "slideLeft", "slideRight", "slideUp", "slideDown", "wipeLeft", "wipeRight", "zoom", "wipeUp", "wipeDown", "zoomOut", "rotate", "blur", "pixelate", "iris", "squeeze", "flip", "slideDiagonal"],
+  "textAnimations": ["none", "fade", "slideUp", "slideDown", "pop", "typewriter", "bounce", "zoomIn", "zoomOut", "rotateIn", "blurIn", "wipeRight", "wipeUp", "scaleX", "float", "shake"],
+  "visualFilters": ["none", "warm", "cool", "mono", "sepia", "vivid", "soft", "vintage", "dramatic", "noir"]
+}

@@ -195,6 +195,12 @@ pub struct TextStyle {
     pub position_y: f64,
     /// 빈 문자열 = 시스템 기본 글꼴
     pub font_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation_duration: Option<f64>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for TextStyle {
@@ -214,6 +220,9 @@ impl TextStyle {
             outline_color: Rgba::BLACK,
             position_y: 0.88,
             font_name: String::new(),
+            animation: None,
+            animation_duration: None,
+            extra: Default::default(),
         }
     }
 
@@ -225,6 +234,36 @@ impl TextStyle {
             position_y: 0.5,
             ..TextStyle::caption()
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TransitionSettings {
+    pub effect: String,
+    pub duration: f64,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Default for TransitionSettings {
+    fn default() -> Self {
+        Self { effect: "none".into(), duration: 0.5, extra: Default::default() }
+    }
+}
+
+impl TransitionSettings {
+    pub fn clamped_duration(&self, clip_duration: f64) -> f64 {
+        if self.effect == "none" || !self.duration.is_finite() || !clip_duration.is_finite() { return 0.0; }
+        self.duration.max(0.0).min(clip_duration.max(0.0) / 2.0)
+    }
+}
+
+impl TextStyle {
+    pub fn animation_duration_for(&self, total: f64) -> f64 {
+        let requested = self.animation_duration.unwrap_or(0.6);
+        if !requested.is_finite() || !total.is_finite() { return 0.0; }
+        requested.max(0.0).min(total.max(0.0) / 2.0)
     }
 }
 
@@ -259,6 +298,14 @@ pub struct Clip {
     pub offset_y: f64,
     pub fade_in: f64,
     pub fade_out: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition_in: Option<TransitionSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition_out: Option<TransitionSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visual_filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_intensity: Option<f64>,
     /// 이 버전이 모르는 항목(맥 앱의 그룹·모양·클릭 기록 등)도 그대로 보존한다
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -283,6 +330,10 @@ impl Default for Clip {
             offset_y: 0.0,
             fade_in: 0.0,
             fade_out: 0.0,
+            transition_in: None,
+            transition_out: None,
+            visual_filter: None,
+            filter_intensity: None,
             extra: Default::default(),
         }
     }

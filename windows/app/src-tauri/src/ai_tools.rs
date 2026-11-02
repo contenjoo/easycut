@@ -24,6 +24,9 @@ fn string(d: &str) -> Value {
 
 pub fn definitions() -> Vec<Value> {
     let n = json!({ "type": "number" });
+    let transition = json!({"type":"string", "enum":easycut_core::effects::TRANSITIONS, "description":"클립 시작·끝 화면 전환 18종. none=없음, 소리·타임라인 길이는 유지"});
+    let text_animation = json!({"type":"string", "enum":easycut_core::effects::TEXT_ANIMATIONS, "description":"텍스트·자막 등장 효과 15종. none=없음"});
+    let visual_filter = json!({"type":"string", "enum":easycut_core::effects::VISUAL_FILTERS, "description":"영상·사진 색감 필터. none=원본"});
     let range_array = json!({ "type": "array", "items": { "type": "object", "properties": { "start": n, "end": n }, "required": ["start", "end"] } });
     vec![
         tool("get_project_state", "현재 프로젝트 상태: 전체 길이, 재생헤드, 캔버스, 트랙별 클립(id, 종류, 이름, 시작/끝, 속도, 볼륨), 자막 목록 일부, 대본 유무, 선택 항목. 편집 전에 먼저 호출해 구조를 파악한다.", json!({}), &[]),
@@ -46,7 +49,9 @@ pub fn definitions() -> Vec<Value> {
                      "clip_ids": { "type": "array", "items": { "type": "string" }, "description": "대상 클립 id, 선택" } }), &["speed"]),
         tool("set_clip_properties", "클립 속성 변경: 볼륨(0~2), 불투명도(0~1), 크기(배율), 위치(offset_x/y: 캔버스 대비 -1~1), 페이드 인/아웃(초), 텍스트 클립의 글자.",
              json!({ "clip_id": string("클립 id"), "volume": n, "opacity": n, "scale": n, "offset_x": n, "offset_y": n,
-                     "fade_in": n, "fade_out": n, "text": string("텍스트 클립 내용") }), &["clip_id"]),
+                     "fade_in": n, "fade_out": n, "text": string("텍스트 클립 내용"),
+                     "transition_in": transition, "transition_out": transition, "transition_in_duration":num("시작 전환 길이(초), 기본 0.5"), "transition_out_duration":num("끝 전환 길이(초), 기본 0.5"),
+                     "text_animation":text_animation,"animation_duration":num("글자 등장 길이(초), 기본 0.6"), "visual_filter":visual_filter,"filter_intensity":num("필터 강도 0~1, 기본 1") }), &["clip_id"]),
         tool("delete_clips", "클립 삭제. ripple=true면 같은 트랙 뒤 클립을 당긴다.",
              json!({ "clip_ids": { "type": "array", "items": { "type": "string" } }, "ripple": { "type": "boolean" } }), &["clip_ids"]),
         tool("move_clip", "클립을 다른 시간/트랙으로 옮긴다. 트랙 번호는 0이 맨 아래(기본).",
@@ -54,7 +59,7 @@ pub fn definitions() -> Vec<Value> {
         tool("add_text", "화면에 제목/텍스트를 추가한다.",
              json!({ "text": string("내용"), "start": num("시작(초)"), "duration": num("길이(초, 기본 4)"),
                      "position_y": num("세로 위치 0(위)~1(아래), 기본 0.5"), "font_size": num("1080p 기준 글자 크기, 기본 96"),
-                     "color": string("글자색 #RRGGBB") }), &["text", "start"]),
+                     "color": string("글자색 #RRGGBB"), "text_animation":text_animation,"animation_duration":num("등장 효과 길이(초), 기본 0.6") }), &["text", "start"]),
         tool("generate_captions", "대본으로 자막을 새로 만든다(기존 자막 대체).", json!({ "max_chars": { "type": "integer", "description": "자막 한 줄 최대 글자 수 (기본 20)" } }), &[]),
         tool("edit_captions", "자막 추가/수정/삭제. 번호는 get_project_state의 자막 번호.",
              json!({ "add": { "type": "array", "items": { "type": "object", "properties": { "start": n, "end": n, "text": { "type": "string" } }, "required": ["start", "end", "text"] } },
@@ -68,7 +73,8 @@ pub fn definitions() -> Vec<Value> {
              json!({ "font_size": num("1080p 기준 글자 크기"), "text_color": string("#RRGGBB"), "background_color": string("#RRGGBB"),
                      "background_opacity": num("0~1 (0이면 배경 없음)"), "outline": { "type": "boolean" }, "outline_color": string("외곽선 색 #RRGGBB"),
                      "bold": { "type": "boolean" }, "font_name": string("글꼴 이름 (예: Malgun Gothic), 빈 문자열이면 기본"),
-                     "position_y": num("0(위)~1(아래)"), "visible": { "type": "boolean", "description": "자막 표시 여부" } }), &[]),
+                     "position_y": num("0(위)~1(아래)"), "visible": { "type": "boolean", "description": "자막 표시 여부" },
+                     "text_animation":text_animation,"animation_duration":num("자막 등장 효과 길이(초), 기본 0.6") }), &[]),
         tool("set_canvas", "화면 크기/비율 변경.", json!({ "width": n, "height": n }), &["width", "height"]),
         tool("set_playhead", "재생헤드를 옮긴다.", json!({ "time": num("초") }), &["time"]),
         tool("set_playback_speed", "미리보기 재생 속도(0.25~16배)를 바꾸고 선택적으로 재생한다.",
@@ -399,18 +405,14 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
         }
 
         "set_clip_properties" => {
-            let Some(cid) = s(input, "clip_id").and_then(|k| find_clip(k, &project(app))) else { return err("클립을 찾지 못했습니다") };
+            let current = project(app);
+            let Some(cid) = s(input, "clip_id").and_then(|k| find_clip(k, &current)) else { return err("클립을 찾지 못했습니다") };
+            if let Err(error) = crate::effect_edit::validate_ai(input) { return err(&error); }
+            let Some(clip) = current.clip(cid) else { return err("클립을 찾지 못했습니다"); };
+            let properties = crate::effect_edit::ai_props(input, clip);
+            let updated = match crate::effect_edit::prepare_clip(&current, cid, &properties) { Ok(clip) => clip, Err(error) => return err(&error) };
             edit(app, |p| {
-                if let Some(c) = p.clip_mut(cid) {
-                    if let Some(v) = d(input, "volume") { c.volume = v.clamp(0.0, 4.0) }
-                    if let Some(v) = d(input, "opacity") { c.opacity = v.clamp(0.0, 1.0) }
-                    if let Some(v) = d(input, "scale") { c.scale = v.clamp(0.05, 8.0) }
-                    if let Some(v) = d(input, "offset_x") { c.offset_x = v }
-                    if let Some(v) = d(input, "offset_y") { c.offset_y = v }
-                    if let Some(v) = d(input, "fade_in") { c.fade_in = v.max(0.0) }
-                    if let Some(v) = d(input, "fade_out") { c.fade_out = v.max(0.0) }
-                    if let (Some(v), ClipKind::Text) = (s(input, "text"), c.kind) { c.text = v.to_string() }
-                }
+                if let Some(c) = p.clip_mut(cid) { *c = updated; }
             });
             ("클립 속성 변경".into(), false)
         }
@@ -437,10 +439,15 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
 
         "add_text" => {
             let (Some(text), Some(st)) = (s(input, "text"), d(input, "start")) else { return err("text, start가 필요합니다") };
+            if let Err(error) = crate::effect_edit::validate_ai(input) { return err(&error); }
+            let animated_style = match crate::effect_edit::prepare_style(&easycut_core::TextStyle::title(), &crate::effect_edit::ai_style_props(input)) {
+                Ok(style) => style, Err(error) => return err(&error),
+            };
             edit(app, |p| {
                 let ti = p.tracks.len().saturating_sub(1).max(1);
                 let id = p.insert_text(text, ti, st, d(input, "duration").unwrap_or(4.0));
                 if let Some(c) = p.clip_mut(id) {
+                    c.text_style = animated_style;
                     if let Some(y) = d(input, "position_y") { c.text_style.position_y = y }
                     if let Some(f) = d(input, "font_size") { c.text_style.font_size = f }
                     if let Some(col) = s(input, "color").and_then(hex_color) { c.text_style.text_color = col }
@@ -513,8 +520,13 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
         }
 
         "set_caption_style" => {
+            if let Err(error) = crate::effect_edit::validate_ai(input) { return err(&error); }
+            let animated_style = match crate::effect_edit::prepare_style(&project(app).caption_style, &crate::effect_edit::ai_style_props(input)) {
+                Ok(style) => style, Err(error) => return err(&error),
+            };
             edit(app, |p| {
                 let cs = &mut p.caption_style;
+                *cs = animated_style;
                 if let Some(v) = d(input, "font_size") { cs.font_size = v }
                 if let Some(c) = s(input, "text_color").and_then(hex_color) { cs.text_color = c }
                 if let Some(c) = s(input, "background_color").and_then(hex_color) {
@@ -774,6 +786,12 @@ fn project_state(app: &AppHandle) -> String {
                 "  - id {} | {} | {:.2}~{:.2}초 | 원본 {:.2}~{:.2} | {}배속 | 볼륨 {:.0}% | 크기 {:.0}%",
                 &c.id.to_string()[..8], label, c.start, c.end(), c.source_in, c.source_out, c.speed, c.volume * 100.0, c.scale * 100.0
             ));
+            if let Some(fx) = &c.transition_in { o.push(format!("      시작 전환 {} {}초", fx.effect, fx.duration)); }
+            if let Some(fx) = &c.transition_out { o.push(format!("      끝 전환 {} {}초", fx.effect, fx.duration)); }
+            if let Some(filter) = &c.visual_filter { o.push(format!("      색감 {filter} 강도 {}", c.filter_intensity.unwrap_or(1.0))); }
+            if c.kind == ClipKind::Text { if let Some(animation) = &c.text_style.animation {
+                o.push(format!("      글자 등장 {animation} {}초", c.text_style.animation_duration.unwrap_or(0.6)));
+            } }
             for (n, r) in c.blurs().iter().enumerate().take(30) {
                 let (a, b) = (c.timeline_time(r.start.max(c.source_in)), c.timeline_time(r.end.min(c.source_out)));
                 o.push(format!("      가리기 [{n}] {} {:?} [{:.3},{:.3},{:.3},{:.3}] {a:.2}~{b:.2}초", r.label, r.style, r.x, r.y, r.w, r.h));

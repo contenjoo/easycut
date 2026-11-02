@@ -1,4 +1,6 @@
 import { naturalEditDialog } from "./natural-edit.js";
+import { renderClipEffects } from "./effect-controls.js";
+import { initFontBrowser } from "./font-browser.js";
 // EasyCut for Windows — 화면 로직 (상태, 명령, 패널)
 import { Timeline } from "./timeline.js";
 import { Player } from "./player.js";
@@ -130,19 +132,19 @@ function initSplitters() {
   const root = document.documentElement;
   const get = (k, d) => +(localStorage.getItem("pane." + k) || d);
   const set = (k, v) => { root.style.setProperty(`--${k}`, v + "px"); localStorage.setItem("pane." + k, String(v)); };
-  set("left-w", get("left-w", 330));
-  set("right-w", get("right-w", 280));
-  set("tl-h", get("tl-h", 290));
+  set("left-w", Math.max(240, Math.min(300, get("left-w", 250))));
+  set("right-w", Math.max(320, Math.min(380, get("right-w", 340))));
+  set("tl-h", Math.max(180, Math.min(innerHeight * 0.36, get("tl-h", 230))));
   document.querySelectorAll("[data-split]").forEach((h) => {
     h.onmousedown = (e) => {
       e.preventDefault();
       const kind = h.dataset.split;
       const sx = e.clientX, sy = e.clientY;
-      const start = { left: get("left-w", 330), right: get("right-w", 280), timeline: get("tl-h", 290) }[kind];
+      const start = { left: get("left-w", 250), right: get("right-w", 340), timeline: get("tl-h", 230) }[kind];
       document.body.classList.add("resizing");
       const move = (ev) => {
-        if (kind === "left") set("left-w", Math.max(240, Math.min(620, start + ev.clientX - sx)));
-        if (kind === "right") set("right-w", Math.max(220, Math.min(520, start - (ev.clientX - sx))));
+        if (kind === "left") set("left-w", Math.max(240, Math.min(300, innerWidth - get("right-w", 340) - 410, start + ev.clientX - sx)));
+        if (kind === "right") set("right-w", Math.max(320, Math.min(380, innerWidth - get("left-w", 250) - 410, start - (ev.clientX - sx))));
         if (kind === "timeline") set("tl-h", Math.max(150, Math.min(innerHeight - 260, start - (ev.clientY - sy))));
         timeline?.refresh();
         player?.refresh();
@@ -195,9 +197,12 @@ export function setState(v) {
   loadMedia();
 }
 
+let pendingEdit = Promise.resolve();
 export async function run(cmd, args) {
   try {
-    const v = await invoke(cmd, args);
+    const operation = invoke(cmd, args);
+    pendingEdit = operation.catch(() => null);
+    const v = await operation;
     if (v && v.project) setState(v);
     return v;
   } catch (e) {
@@ -212,7 +217,7 @@ function render() {
   document.title = `${name} — EasyCut`;
   $('[data-cmd="undo"]').disabled = !S.canUndo;
   $('[data-cmd="redo"]').disabled = !S.canRedo;
-  $("#empty-hint").style.display = S.project?.assets.length ? "none" : "";
+  $("#empty-hint").style.display = U.clips().length ? "none" : "";
   renderMedia();
   renderTranscript();
   renderCaptions();
@@ -220,6 +225,7 @@ function render() {
   timeline?.refresh();
   player?.refresh();
   $("#dur").textContent = U.fmt(U.duration());
+  if ($("#preview-size")) $("#preview-size").textContent = S.project ? `${S.project.canvasWidth} × ${S.project.canvasHeight}` : "";
   $("#cc-btn")?.classList.toggle("on", !!S.project?.showCaptions);
   showTime();
 }
@@ -265,7 +271,7 @@ function renderMedia() {
   const el = $("#tab-media");
   const p = S.project;
   const kinds = { video: T("video"), audio: T("audio"), image: T("image") };
-  el.innerHTML = `<div class="row"><button class="primary" id="m-import">${T("import")}</button><button id="m-link" title="Ctrl+Shift+I">🔗 ${L("링크로 가져오기")}</button><span class="hint">${p?.assets.length || 0}${T("items")}</span></div>`;
+  el.innerHTML = `<div class="media-panel-head"><div><b>${L("미디어")}</b><span class="hint">${L("{}개", p?.assets.length || 0)}</span></div><button class="primary" id="m-import">＋ ${L("파일 가져오기")}</button><button class="media-link" id="m-link" title="Ctrl+Shift+I">${L("링크로 가져오기")}</button></div>`;
   if (!p?.assets.length) {
     el.innerHTML += `<p class="hint">${T("noMedia")}</p>`;
   } else {
@@ -397,101 +403,84 @@ function renderCaptions() {
 
 // MARK: 오른쪽 인스펙터
 
+const inspectorView = { context: "", section: "basic" };
+
+export async function previewSelectedEffect({ clip, caption, fromEnd = false } = {}) {
+  const clipID = clip?.id, captionID = caption?.id;
+  await pendingEdit;
+  if (!player || !S.project) return;
+  const chosenCaption = captionID ? S.project.captions.find((c) => c.id === captionID) : (!clipID && !S.sel.size ? S.project.captions.find((c) => c.id === S.selCap) : null);
+  const chosenClip = clipID ? U.findClip(clipID)?.c : (S.sel.size === 1 ? U.findClip([...S.sel][0])?.c : null);
+  const target = chosenCaption || chosenClip;
+  if (!target) return toast(L("미리 볼 텍스트나 클립을 선택하세요."));
+  const start = Math.max(0, target.start), end = chosenCaption ? target.end : U.clipEnd(target);
+  const lead = Math.min(Math.max(0.6, (chosenClip?.transitionOut?.duration ?? 0.5) + 0.15), end - start);
+  player.pause();
+  player.setRate(1);
+  seek(fromEnd ? Math.max(start, end - lead) : Math.min(start + 0.001, end));
+  player.play();
+}
+
 function renderInspector() {
-  const el = $("#inspector");
-  const p = S.project;
+  const root = $("#inspector"), p = S.project;
   if (!p) return;
   const selected = U.clips().filter((x) => S.sel.has(x.c.id));
   const cap = !selected.length && S.selCap ? p.captions.find((c) => c.id === S.selCap) : null;
-  if (cap) return captionInspector(el, cap);
+  const clip = selected.length === 1 ? selected[0].c : null;
+  const asset = clip ? U.asset(clip.assetID) : null;
+  const kind = clip?.kind === "text" ? "text" : asset?.kind || "video";
+  const context = clip?.id || cap?.id || (selected.length ? "multiple" : "project");
+  const contextChanged = inspectorView.context !== context;
+  if (contextChanged) { inspectorView.context = context; inspectorView.section = clip && kind !== "text" && kind !== "audio" ? "effects" : "basic"; }
+  const section = inspectorView.section;
+  const title = clip ? (kind === "text" ? L("텍스트") : asset?.name || L("클립")) : cap ? L("자막") : selected.length ? L("여러 클립") : L("프로젝트");
+  const icon = clip ? ({ text: "Aa", video: "▣", audio: "≋", image: "▧" }[kind]) : cap ? "▤" : "☷";
+  const subtitle = clip ? L("시작 {} · 길이 {}", U.fmt(clip.start), U.fmt(U.clipDur(clip))) : cap ? `${U.fmt(cap.start)} – ${U.fmt(cap.end)}` : L("편집 속성");
+  const oldScroll = contextChanged ? 0 : root.querySelector(".inspector-body")?.scrollTop || 0;
+  root.innerHTML = `<div class="inspector-context" data-testid="inspector-context-header"><div class="inspector-heading"><span class="inspector-context-icon" aria-hidden="true">${icon}</span><div><h2>${esc(title)}</h2><p>${esc(subtitle)}</p></div></div>${clip || cap ? `<nav class="inspector-tabs" aria-label="${L("편집 속성")}" data-testid="inspector-tabs">${[["basic", "기본"], ["effects", "효과"], ["layout", "배치"]].map(([id, label]) => `<button type="button" data-section="${id}" data-testid="inspector-tab-${id}" class="${section === id ? "on" : ""}" aria-pressed="${section === id}">${L(label)}</button>`).join("")}</nav>` : ""}</div><div class="inspector-body"></div>`;
+  root.querySelectorAll("[data-section]").forEach((b) => { b.onclick = () => { inspectorView.section = b.dataset.section; root.querySelector(".inspector-body").scrollTop = 0; renderInspector(); }; });
+  const el = root.querySelector(".inspector-body");
   const pct = (v) => Math.round(v * 100) + "%";
-  const slider = (key, label, min, max, step, val, fmt) =>
-    `<div class="row"><label>${L(label)}</label><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"/><span class="hint" data-v="${key}">${fmt(val)}</span></div>`;
+  const slider = (key, label, min, max, step, val, fmt) => `<label class="style-slider"><span>${L(label)}</span><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val ?? 0}"/><output data-v="${key}">${fmt(val ?? 0)}</output></label>`;
   const speedGrid = (cur) => `<div class="speedgrid">${[0.5, 1, 1.5, 2, 3, 4, 8, 10, 16, 20].map((s) => `<button class="mini ${cur != null && Math.abs(cur - s) < 0.001 ? "primary" : ""}" data-speed="${s}">${s}x</button>`).join("")}</div>`;
-  const wireSpeeds = (ids) => el.querySelectorAll("[data-speed]").forEach((b) => (b.onclick = () => run("set_speed", { ids, speed: +b.dataset.speed })));
-
-  if (selected.length === 1) {
-    const { c } = selected[0];
-    const a = U.asset(c.assetID);
-    const isText = c.kind === "text";
-    const kind = isText ? "text" : a?.kind || "video";
-    const icon = { text: "🔤", video: "🎬", audio: "🎵", image: "🖼" }[kind];
-    const shape = c.shape || "none";
-    const fmts = { volume: pct, scale: pct, opacity: pct, offsetX: (v) => (+v).toFixed(2), offsetY: (v) => (+v).toFixed(2), fadeIn: (v) => L("{}초", (+v).toFixed(1)), fadeOut: (v) => L("{}초", (+v).toFixed(1)) };
-    el.innerHTML = `<div class="insp">
-      <div class="ihead">${icon} <b>${esc(isText ? L("텍스트") : a?.name || L("클립"))}</b></div>
-      <div class="hint">${L("시작 {} · 길이 {}", U.fmt(c.start), U.fmt(U.clipDur(c)))}${c.groupID ? " · 🔗 " + L("그룹") : ""}</div>
-      ${isText ? `<h3>${L("내용")}</h3><textarea id="i-text" rows="3" style="width:100%"></textarea><div id="i-tstyle"></div>` : ""}
-      ${kind === "video" || kind === "audio" ? `<h3>${L("속도 (최대 20배)")}</h3>
-        <div class="row"><input type="range" id="i-speed" min="${Math.log(0.1)}" max="${Math.log(20)}" step="0.01" value="${Math.log(c.speed)}" style="flex:1"/><span class="hint" id="i-speed-v">${c.speed}x</span></div>
-        ${speedGrid(c.speed)}` : ""}
-      ${kind === "video" || kind === "audio" ? `<h3>${L("오디오")}</h3>${slider("volume", "볼륨", 0, 2, 0.01, c.volume, pct)}
-        <div class="row"><button class="mini" id="i-mute">${L(c.volume === 0 ? "소리 켜기" : "음소거")}</button>
-        ${a?.hasAudio ? `<button class="mini" id="i-stt">${L(a.words ? "다시 인식" : "음성 인식")}</button>` : ""}</div>` : ""}
-      ${kind !== "audio" ? `<h3>${L("화면")}</h3>
-        ${slider("scale", "크기", 0.1, 4, 0.01, c.scale, pct)}
-        ${slider("offsetX", "가로 위치", -1, 1, 0.01, c.offsetX, fmts.offsetX)}
-        ${slider("offsetY", "세로 위치", -1, 1, 0.01, c.offsetY, fmts.offsetY)}
-        ${slider("opacity", "불투명도", 0, 1, 0.01, c.opacity, pct)}
-        ${!isText ? `<div class="row"><label>${L("모양")}</label><div class="seg small">${[["none", "기본"], ["circle", "원"], ["rounded", "둥근 사각형"]].map(([v, t]) => `<button data-shape="${v}" class="${shape === v ? "on" : ""}">${L(t)}</button>`).join("")}</div></div>` : ""}
-        <div class="row"><span class="hint">${L("화면 배치")}</span><button class="mini" data-layout="full">${L("전체")}</button><button class="mini" data-layout="br">PIP ↘</button><button class="mini" data-layout="bl">PIP ↙</button></div>` : ""}
-      ${!isText && a && (kind === "video" || kind === "image") ? `<div id="i-privacy">${privacyHTML(c, a)}</div>` : ""}
-      <h3>${L("전환 (페이드)")}</h3>
-      ${slider("fadeIn", "페이드 인", 0, 3, 0.1, c.fadeIn, fmts.fadeIn)}
-      ${slider("fadeOut", "페이드 아웃", 0, 3, 0.1, c.fadeOut, fmts.fadeOut)}
-      <hr/><div class="row"><button class="mini" id="i-split">✂ ${L("분할")}</button><button class="mini" id="i-dup">⧉ ${L("복제")}</button><button class="mini danger-text" id="i-del">🗑 ${L("삭제")}</button></div>
-    </div>`;
+  const wireSpeeds = (ids) => el.querySelectorAll("[data-speed]").forEach((b) => { b.onclick = () => run("set_speed", { ids, speed: +b.dataset.speed }); });
+  if (cap) { captionInspector(el, cap, { section, preview: () => previewSelectedEffect({ caption: cap }) }); return; }
+  if (clip) {
+    const c = clip, a = asset, isText = kind === "text";
+    const fmts = { volume: pct, scale: pct, opacity: pct, offsetX: (v) => (+v).toFixed(2), offsetY: (v) => (+v).toFixed(2), fadeIn: (v) => L("{}초", (+v).toFixed(1)), fadeOut: (v) => L("{}초", (+v).toFixed(1)), textY: pct };
+    const update = (props) => run("update_clip", { id: c.id, props });
+    const fades = `<h3>${L(kind === "audio" ? "소리 페이드" : "화면·소리 페이드")}</h3>${slider("fadeIn", "페이드 인", 0, 3, 0.1, c.fadeIn, fmts.fadeIn)}${slider("fadeOut", "페이드 아웃", 0, 3, 0.1, c.fadeOut, fmts.fadeOut)}`;
+    if (section === "basic") {
+      el.innerHTML = isText ? `<h3>${L("내용")}</h3><textarea id="i-text" rows="3" class="inspector-text"></textarea><div id="i-tstyle"></div>` :
+        `${kind === "video" || kind === "audio" ? `<h3>${L("속도 (최대 20배)")}</h3><label class="style-slider"><input type="range" id="i-speed" min="${Math.log(0.1)}" max="${Math.log(20)}" step="0.01" value="${Math.log(c.speed || 1)}"/><output id="i-speed-v">${c.speed}x</output></label>${speedGrid(c.speed)}<h3>${L("오디오")}</h3>${slider("volume", "볼륨", 0, 2, 0.01, c.volume, pct)}<div class="row"><button class="mini" id="i-mute">${L(c.volume === 0 ? "소리 켜기" : "음소거")}</button>${a?.hasAudio ? `<button class="mini" id="i-stt">${L(a.words ? "다시 인식" : "음성 인식")}</button>` : ""}</div>` : `<h3>${L("이미지")}</h3><p class="hint">${esc(a?.name || L("클립"))}</p><p class="hint">${a?.width || 0} × ${a?.height || 0}</p>`}`;
+    } else if (section === "effects") {
+      el.innerHTML = kind === "audio" ? fades : `<div id="i-effects"></div><details class="advanced-controls"><summary>${L("페이드 세부 설정")}</summary>${fades}</details>`;
+      if (kind !== "audio") renderClipEffects(el.querySelector("#i-effects"), { clip: c, kind, onClip: update, preview: (fromEnd) => previewSelectedEffect({ clip: c, fromEnd }) });
+    } else {
+      el.innerHTML = kind === "audio" ? `<p class="hint">${L("오디오 클립에는 화면 배치가 없습니다.")}</p>` : `<h3>${L("화면 배치")}</h3><div class="row"><button class="mini" data-layout="full">${L("전체")}</button><button class="mini" data-layout="br">PIP ↘</button><button class="mini" data-layout="bl">PIP ↙</button></div>${slider("scale", "크기", 0.1, 4, 0.01, c.scale, pct)}${slider("offsetX", "가로 위치", -1, 1, 0.01, c.offsetX, fmts.offsetX)}${slider("offsetY", "세로 위치", -1, 1, 0.01, c.offsetY, fmts.offsetY)}${isText ? slider("textY", "텍스트 위치", 0.05, 0.95, 0.01, c.textStyle.positionY, pct) : ""}${slider("opacity", "불투명도", 0, 1, 0.01, c.opacity, pct)}${!isText ? `<h3>${L("모양")}</h3><div class="inspector-segment">${[["none", "기본"], ["circle", "원"], ["rounded", "둥근 사각형"]].map(([id, label]) => `<button data-shape="${id}" class="${(c.shape || "none") === id ? "on" : ""}">${L(label)}</button>`).join("")}</div>` : ""}${!isText && a && (kind === "video" || kind === "image") ? `<details class="advanced-controls"><summary>${L("개인정보 가리기")}</summary><div id="i-privacy">${privacyHTML(c, a)}</div></details>` : ""}`;
+    }
+    el.insertAdjacentHTML("beforeend", `<div class="inspector-actions"><button id="i-split">${L("분할")}</button><button id="i-dup">${L("복제")}</button><button class="danger-text" id="i-del">${L("삭제")}</button></div>`);
     const q = (s) => el.querySelector(s);
-    if (isText) {
-      q("#i-text").value = c.text;
-      q("#i-text").onkeydown = (e) => e.stopPropagation();
-      q("#i-text").onchange = () => run("update_clip", { id: c.id, props: { text: q("#i-text").value } });
-      styleControls(q("#i-tstyle"), c.textStyle, (st) => run("update_clip", { id: c.id, props: { textStyle: st } }), true);
-    }
-    if (q("#i-speed")) {
-      q("#i-speed").oninput = (e) => (q("#i-speed-v").textContent = (Math.round(Math.exp(+e.target.value) * 100) / 100) + "x");
-      q("#i-speed").onchange = (e) => run("set_speed", { ids: [c.id], speed: Math.round(Math.exp(+e.target.value) * 100) / 100 });
-      wireSpeeds([c.id]);
-    }
-    if (q("#i-mute")) q("#i-mute").onclick = () => run("update_clip", { id: c.id, props: { volume: c.volume === 0 ? 1 : 0 } });
+    if (q("#i-text")) { q("#i-text").value = c.text; q("#i-text").onkeydown = (e) => e.stopPropagation(); q("#i-text").onchange = () => update({ text: q("#i-text").value }); styleControls(q("#i-tstyle"), c.textStyle, (textStyle) => update({ textStyle }), false); }
+    if (q("#i-speed")) { q("#i-speed").oninput = (e) => { q("#i-speed-v").textContent = (Math.round(Math.exp(+e.target.value) * 100) / 100) + "x"; }; q("#i-speed").onchange = (e) => run("set_speed", { ids: [c.id], speed: Math.round(Math.exp(+e.target.value) * 100) / 100 }); wireSpeeds([c.id]); }
+    if (q("#i-mute")) q("#i-mute").onclick = () => update({ volume: c.volume === 0 ? 1 : 0 });
     if (q("#i-stt")) q("#i-stt").onclick = () => transcribeAsset(a.id);
-    el.querySelectorAll("[data-shape]").forEach((b) => (b.onclick = () => run("update_clip", { id: c.id, props: { shape: b.dataset.shape } })));
-    el.querySelectorAll("[data-layout]").forEach((b) => (b.onclick = () => {
-      const L0 = { full: { scale: 1, offsetX: 0, offsetY: 0 }, br: { scale: 0.3, offsetX: 0.33, offsetY: 0.32 }, bl: { scale: 0.3, offsetX: -0.33, offsetY: 0.32 } }[b.dataset.layout];
-      run("update_clip", { id: c.id, props: L0 });
-    }));
+    el.querySelectorAll("[data-shape]").forEach((b) => { b.onclick = () => update({ shape: b.dataset.shape }); });
+    el.querySelectorAll("[data-layout]").forEach((b) => { b.onclick = () => update({ full: { scale: 1, offsetX: 0, offsetY: 0 }, br: { scale: 0.3, offsetX: 0.33, offsetY: 0.32 }, bl: { scale: 0.3, offsetX: -0.33, offsetY: 0.32 } }[b.dataset.layout]); });
     if (q("#i-privacy")) wirePrivacy(q("#i-privacy"), c, a, player);
-    q("#i-split").onclick = split;
-    q("#i-dup").onclick = commands.duplicate;
-    q("#i-del").onclick = () => deleteSelection(true);
-    el.querySelectorAll("input[data-k]").forEach((inp) => {
-      const k = inp.dataset.k;
-      const out = el.querySelector(`[data-v="${k}"]`);
-      inp.oninput = () => {
-        c[k] = +inp.value; // 미리보기 즉시 반영
-        out.textContent = fmts[k](+inp.value);
-        player?.refresh();
-      };
-      inp.onchange = () => run("update_clip", { id: c.id, props: { [k]: +inp.value } });
-    });
+    q("#i-split").onclick = split; q("#i-dup").onclick = commands.duplicate; q("#i-del").onclick = () => deleteSelection(true);
+    el.querySelectorAll("input[data-k]").forEach((inp) => { const key = inp.dataset.k; inp.oninput = () => { el.querySelector(`[data-v="${key}"]`).textContent = fmts[key](+inp.value); }; inp.onchange = () => update(key === "textY" ? { textStyle: { ...c.textStyle, positionY: +inp.value } } : { [key]: +inp.value }); });
   } else if (selected.length > 1) {
     const ids = selected.map((x) => x.c.id);
-    el.innerHTML = `<div class="insp"><div class="ihead">▦ <b>${L("{}개 클립 선택", selected.length)}</b></div>
-      <h3>${L("속도 한꺼번에")}</h3>${speedGrid(null)}
-      <div class="row"><button class="mini" id="i-group">🔗 ${L("그룹으로 묶기")}</button><button class="mini" id="i-join">${L("하나로 합치기")}</button></div>
-      <div class="row"><button class="mini danger-text" id="i-del">🗑 ${L("삭제")}</button><button class="mini danger-text" id="i-rdel">⇤ ${L("삭제 후 당기기")}</button></div></div>`;
-    wireSpeeds(ids);
-    el.querySelector("#i-group").onclick = commands.group;
-    el.querySelector("#i-join").onclick = commands.join;
-    el.querySelector("#i-del").onclick = () => deleteSelection(false);
-    el.querySelector("#i-rdel").onclick = () => deleteSelection(true);
+    el.innerHTML = `<h3>${L("속도 한꺼번에")}</h3>${speedGrid(null)}<div class="row"><button class="mini" id="i-group">${L("그룹으로 묶기")}</button><button class="mini" id="i-join">${L("하나로 합치기")}</button></div><div class="row"><button class="mini danger-text" id="i-del">${L("삭제")}</button><button class="mini danger-text" id="i-rdel">${L("삭제 후 당기기")}</button></div>`;
+    wireSpeeds(ids); el.querySelector("#i-group").onclick = commands.group; el.querySelector("#i-join").onclick = commands.join; el.querySelector("#i-del").onclick = () => deleteSelection(false); el.querySelector("#i-rdel").onclick = () => deleteSelection(true);
   } else {
     const presets = [["1920×1080 (가로 FHD)", 1920, 1080], ["3840×2160 (가로 4K)", 3840, 2160], ["1280×720 (가로 HD)", 1280, 720], ["1080×1920 (세로 쇼츠/릴스)", 1080, 1920], ["1080×1080 (정사각형)", 1080, 1080], ["1080×1350 (4:5 피드)", 1080, 1350]];
     const cur = `${p.canvasWidth}x${p.canvasHeight}`;
     const has = presets.some(([, w, h]) => `${w}x${h}` === cur);
     const clipsN = U.clips().length;
-    el.innerHTML = `<div class="insp"><div class="ihead">▭ <b>${L("프로젝트")}</b></div>
-      <p class="hint">${L("클립을 선택하면 속도·볼륨·크기를 조절할 수 있습니다.")}</p>
+    el.innerHTML = `<div class="project-controls">
+      <p class="hint">${L("클립을 선택하면 글꼴·효과·배치를 바꿀 수 있습니다.")}</p>
       <h3>${L("화면 크기")}</h3><select id="i-canvas" style="width:100%">${has ? "" : `<option value="${cur}">${p.canvasWidth}×${p.canvasHeight} (${L("원본")})</option>`}
         ${presets.map(([t, w, h]) => `<option value="${w}x${h}">${L(t)}</option>`).join("")}</select>
       <h3>${L("프레임 레이트")}</h3><div class="seg small">${[24, 25, 30, 50, 60].map((f) => `<button data-fps="${f}" class="${Math.round(p.fps) === f ? "on" : ""}">${f}</button>`).join("")}</div>
@@ -516,6 +505,7 @@ function renderInspector() {
     el.querySelector("#q-png").onclick = snapshot;
     el.querySelector("#q-keys").onclick = shortcutsDialog;
   }
+  el.scrollTop = oldScroll;
 }
 
 // MARK: 명령
@@ -859,8 +849,14 @@ const commands = {
 // MARK: 단축키
 
 function onKey(e) {
+  if (document.querySelector("#font-browser[open]")) return;
   const tag = e.target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if ((tag === "BUTTON" || tag === "SUMMARY") && ["Space", "Enter", "NumpadEnter"].includes(e.code)) return;
+  if (e.code === "Escape") {
+    const menus = document.querySelectorAll(".toolbar-more[open],.transport-settings[open]");
+    if (menus.length) { menus.forEach((menu) => { menu.open = false; }); e.preventDefault(); return; }
+  }
   const ctrl = e.ctrlKey || e.metaKey;
   // 글자 키는 자판 배치·Alt 조합과 상관없이 물리 키로 (Ctrl+Alt+R이 다른 글자로 바뀌는 경우)
   const k = e.code.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.code === "Slash" ? "/" : e.code === "Equal" ? "=" : e.code === "Minus" ? "-" : e.key.toLowerCase();
@@ -937,11 +933,14 @@ async function init() {
   window.addEventListener("error", (e) => toast("JS: " + e.message));
   window.addEventListener("unhandledrejection", (e) => toast("JS: " + (e.reason?.message ?? e.reason)));
   applyI18n();
-  document.querySelector("#natural-edit").onclick = naturalEditDialog;
+  document.querySelector("#natural-edit").onclick = () => { document.querySelector(".toolbar-more").open = false; naturalEditDialog(); };
   initSplitters();
+  initFontBrowser({ invoke });
   timeline = new Timeline($("#timeline"), $("#tl-scroll"));
   player = new Player($("#canvas"), $("#stage"));
-  document.querySelectorAll("[data-cmd]").forEach((b) => (b.onclick = () => commands[b.dataset.cmd]?.()));
+  document.querySelectorAll("[data-cmd]").forEach((b) => { b.onclick = () => { b.closest(".toolbar-more")?.removeAttribute("open"); return commands[b.dataset.cmd]?.(); }; });
+  document.querySelectorAll("[aria-label]").forEach((el) => el.setAttribute("aria-label", L(el.getAttribute("aria-label"))));
+  document.addEventListener("pointerdown", (e) => { for (const detail of document.querySelectorAll(".toolbar-more[open],.transport-settings[open]")) if (!detail.contains(e.target)) detail.open = false; });
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
   $("#rate").onchange = (e) => player.setRate(+e.target.value);
   $("#rate-slider").oninput = (e) => player.setRate(Math.round(Math.exp(+e.target.value) * 100) / 100);
@@ -987,7 +986,7 @@ async function init() {
   });
   const modal = { box: modalBox(), show: showModal, hide: hideModal };
   initTranscript({ S, U, run, invoke, seek, toast, switchTab, ask, modal, player, timeline, generateCaptions, addCaption, render });
-  initCaptions({ S, U, run, invoke, seek, toast, switchTab, render, commands, ask, captionMenu, selectionChanged: () => window.dispatchEvent(new Event("selection")) });
+  initCaptions({ S, U, run, invoke, seek, toast, switchTab, render, commands, ask, captionMenu, previewSelectedEffect, selectionChanged: () => window.dispatchEvent(new Event("selection")) });
   setState(await invoke("get_state"));
   syncToggles();
   reportUi();

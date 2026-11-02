@@ -1,6 +1,7 @@
 //! EasyCut 편집 코어. UI·플랫폼과 무관한 순수 로직만 둔다.
 
 pub mod clip_ops;
+pub mod effects;
 pub mod model;
 pub mod privacy;
 pub mod review_ops;

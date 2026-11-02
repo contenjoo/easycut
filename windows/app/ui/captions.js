@@ -1,5 +1,7 @@
 // 자막 탭과 자막 인스펙터 (맥 Panels.swift CaptionsPanel / CaptionRow / TextStyleControls)
 import { startDrag } from "./drag.js";
+import { renderFontPicker } from "./font-browser.js";
+import { renderTextEffects } from "./effect-controls.js";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -43,45 +45,39 @@ export async function generateCaptions(confirmFirst = true) {
 }
 
 /// 글자 스타일 편집 (자막 전체 스타일, 텍스트 클립). 바뀌면 onChange(새 스타일)
-export function styleControls(el, style, onChange, showPosition) {
-  const fonts = FONTS.includes(style.fontName) || !style.fontName ? FONTS : [style.fontName, ...FONTS];
-  el.innerHTML = `
-    <div class="row"><label>${L("크기")}</label><input type="range" data-s="fontSize" min="16" max="200" value="${style.fontSize}"/><span class="hint" data-v="fontSize">${Math.round(style.fontSize)}</span></div>
-    <div class="row"><label>${L("글꼴")}</label><select data-s="fontName"><option value="">${L("기본 (맑은 고딕)")}</option>${fonts.map((f) => `<option ${f === style.fontName ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></div>
-    <div class="row"><label></label><label class="hint"><input type="checkbox" data-s="bold" ${style.bold ? "checked" : ""}/> ${L("굵게")}</label>
-      <label class="hint"><input type="checkbox" data-s="outline" ${style.outline ? "checked" : ""}/> ${L("외곽선")}</label></div>
-    <div class="row"><label>${L("글자")}</label><input type="color" data-c="textColor" value="${hex(style.textColor)}"/>
-      <label style="width:auto">${L("배경")}</label><input type="color" data-c="backgroundColor" value="${hex(style.backgroundColor)}"/>
-      <input type="range" data-s="bgAlpha" min="0" max="1" step="0.05" value="${style.backgroundColor.a}" title="${L("배경 투명도")}" style="max-width:70px"/>
-      ${style.outline ? `<label style="width:auto">${L("외곽선")}</label><input type="color" data-c="outlineColor" value="${hex(style.outlineColor)}"/>` : ""}</div>
-    ${showPosition ? `<div class="row"><label>${L("위치")}</label><input type="range" data-s="positionY" min="0.05" max="0.95" step="0.01" value="${style.positionY}"/><span class="hint" data-v="positionY">${L(style.positionY > 0.66 ? "아래" : style.positionY < 0.33 ? "위" : "가운데")}</span></div>` : ""}
-    <div class="row"><span class="hint">${L("빠른 스타일")}</span>
-      <button class="mini" data-q="basic">${L("기본")}</button><button class="mini" data-q="yellow">${L("노랑")}</button><button class="mini" data-q="white">${L("흰+외곽")}</button></div>`;
+export function styleControls(el, style, onChange, showPosition, options = {}) {
+  style = { fontSize: 54, fontName: "", bold: true, outline: false, textColor: WHITE, backgroundColor: CAPTION_BG, outlineColor: BLACK, positionY: 0.88, ...style };
+  const swatches = [["흰색", "#ffffff"], ["검정", "#000000"], ["노랑", "#ffdb33"], ["민트", "#66e6b3"], ["하늘색", "#59b3ff"], ["코랄", "#ff8073"]];
+  el.innerHTML = `<div class="text-style-controls"><div class="font-picker-host"></div>
+    <label class="style-slider"><span>${L("글자 크기")}</span><input type="range" data-s="fontSize" min="16" max="200" value="${style.fontSize}"/><output data-v="fontSize">${Math.round(style.fontSize)}</output></label>
+    <div class="text-toggles"><label><input type="checkbox" data-s="bold" ${style.bold ? "checked" : ""}/> <b>${L("굵게")}</b></label><label><input type="checkbox" data-s="outline" ${style.outline ? "checked" : ""}/> ${L("외곽선")}</label></div>
+    <h3>${L("색상")}</h3><div class="style-colors"><label>${L("글자")} <input type="color" data-c="textColor" value="${hex(style.textColor)}"/></label><label>${L("배경")} <input type="color" data-c="backgroundColor" value="${hex(style.backgroundColor)}"/></label>${style.outline ? `<label>${L("외곽선")} <input type="color" data-c="outlineColor" value="${hex(style.outlineColor)}"/></label>` : ""}</div>
+    <label class="style-slider"><span>${L("배경 투명도")}</span><input type="range" data-s="bgAlpha" min="0" max="1" step="0.05" value="${style.backgroundColor.a}"/><output data-v="bgAlpha">${Math.round(style.backgroundColor.a * 100)}%</output></label>
+    <div class="text-swatches">${swatches.map(([name, color]) => `<button type="button" data-swatch="${color}" title="${L(name)}" aria-label="${L(name)}" style="--swatch:${color}"></button>`).join("")}</div>
+    <h3>${L("빠른 스타일")}</h3><div class="text-presets">${[["basic", "자막"], ["white", "제목"], ["yellow", "강조"]].map(([id, label]) => `<button type="button" data-q="${id}" class="style-preset ${id}"><span>가나다</span><small>${L(label)}</small></button>`).join("")}</div>
+    ${showPosition ? `<label class="style-slider"><span>${L("세로 위치")}</span><input type="range" data-s="positionY" min="0.05" max="0.95" step="0.01" value="${style.positionY}"/><output data-v="positionY">${Math.round(style.positionY * 100)}%</output></label>` : ""}
+    ${options.showEffects ? `<details class="advanced-controls"><summary>${L("텍스트 효과")}</summary><div class="shared-text-effects"></div></details>` : ""}</div>`;
   const commit = (patch) => onChange({ ...style, ...patch });
+  renderFontPicker(el.querySelector(".font-picker-host"), style.fontName, (fontName) => commit({ fontName }));
   el.querySelectorAll("[data-s]").forEach((inp) => {
     const k = inp.dataset.s;
     if (inp.type === "range") {
-      inp.oninput = () => {
-        const out = el.querySelector(`[data-v="${k}"]`);
-        if (out) out.textContent = k === "positionY" ? L(+inp.value > 0.66 ? "아래" : +inp.value < 0.33 ? "위" : "가운데") : Math.round(+inp.value);
-      };
+      inp.oninput = () => { const out = el.querySelector(`[data-v="${k}"]`); if (out) out.textContent = k === "fontSize" ? Math.round(+inp.value) : Math.round(+inp.value * 100) + "%"; };
       inp.onchange = () => commit(k === "bgAlpha" ? { backgroundColor: { ...style.backgroundColor, a: +inp.value } } : { [k]: +inp.value });
     } else if (inp.type === "checkbox") inp.onchange = () => commit({ [k]: inp.checked });
-    else inp.onchange = () => commit({ [k]: inp.value });
   });
   el.querySelectorAll("[data-c]").forEach((inp) => {
     const k = inp.dataset.c;
-    inp.onchange = () => {
-      const a = k === "backgroundColor" ? (style.backgroundColor.a > 0.01 ? style.backgroundColor.a : 0.6) : 1;
-      commit({ [k]: rgba(inp.value, a), ...(k === "outlineColor" ? { outline: true } : {}) });
-    };
+    inp.onchange = () => commit({ [k]: rgba(inp.value, k === "backgroundColor" ? (style.backgroundColor.a || 0.6) : 1), ...(k === "outlineColor" ? { outline: true } : {}) });
   });
-  el.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => {
+  el.querySelectorAll("[data-swatch]").forEach((b) => { b.onclick = () => commit({ textColor: rgba(b.dataset.swatch) }); });
+  el.querySelectorAll("[data-q]").forEach((b) => { b.onclick = () => {
     const q = b.dataset.q;
-    if (q === "basic") commit({ textColor: WHITE, backgroundColor: CAPTION_BG, outline: false });
-    if (q === "yellow") commit({ textColor: YELLOW, backgroundColor: CLEAR, outline: true, outlineColor: BLACK });
-    if (q === "white") commit({ textColor: WHITE, backgroundColor: CLEAR, outline: true, outlineColor: BLACK });
-  }));
+    if (q === "basic") commit({ fontSize: 54, textColor: WHITE, backgroundColor: CAPTION_BG, outline: false });
+    if (q === "yellow") commit({ fontSize: 64, textColor: YELLOW, backgroundColor: CLEAR, outline: true, outlineColor: BLACK });
+    if (q === "white") commit({ fontSize: 96, textColor: WHITE, backgroundColor: CLEAR, outline: true, outlineColor: BLACK });
+  }; });
+  if (options.showEffects) renderTextEffects(el.querySelector(".shared-text-effects"), { style, onChange, preview: options.preview });
 }
 
 // MARK: 자막 탭
@@ -103,7 +99,7 @@ export function renderCaptions(el) {
       <label class="hint" style="width:auto"><input type="checkbox" id="c-show" ${p.showCaptions ? "checked" : ""}/> ${L("자막 표시")}</label>
       ${caps.length ? `<button class="mini danger-text" id="c-clear">${L("자막 모두 삭제")}</button>` : ""}</div>
     <div class="caplist"></div>
-    <details class="capstyle" ${localStorage.getItem("capStyleOpen") === "0" ? "" : "open"}><summary>${L("자막 스타일")}</summary><div id="c-style"></div></details>`;
+    <details class="capstyle" ${localStorage.getItem("capStyleOpen") === "1" ? "open" : ""}><summary>${L("자막 스타일")}</summary><div id="c-style"></div></details>`;
   const q = (s) => el.querySelector(s);
   q("#c-gen").onclick = () => generateCaptions();
   q("#c-add").onclick = () => addCaption();
@@ -116,7 +112,7 @@ export function renderCaptions(el) {
     if (ok) run("clear_captions");
   };
   el.querySelector("details.capstyle").ontoggle = (e) => localStorage.setItem("capStyleOpen", e.target.open ? "1" : "0");
-  styleControls(q("#c-style"), p.captionStyle, (st) => run("update_project", { props: { captionStyle: st } }), true);
+  styleControls(q("#c-style"), p.captionStyle, (st) => run("update_project", { props: { captionStyle: st } }), true, { showEffects: true, preview: () => { const caption = sortedCaptions().find((c) => c.id === S.selCap) || sortedCaptions()[0]; return caption ? X.previewSelectedEffect({ caption }) : X.toast(L("미리 볼 자막을 추가하세요.")); } });
 
   const list = q(".caplist");
   if (!caps.length) {
@@ -177,28 +173,37 @@ function markSelected(list) {
 
 // MARK: 자막 인스펙터 (오른쪽)
 
-export function captionInspector(el, c) {
+export function captionInspector(el, c, { section = "basic", preview } = {}) {
   const { S, U, run } = X;
-  const dur = U.duration();
-  el.innerHTML = `<div style="padding:10px">
-    <h3>${L("자막")}</h3>
-    <textarea id="ci-text" rows="3" style="width:100%"></textarea>
-    <div class="row"><label>${L("시작")}</label><input type="range" id="ci-s" min="0" max="${Math.max(dur, c.end)}" step="0.01" value="${c.start}"/><span class="hint" id="ci-sv">${U.fmt(c.start)}</span></div>
-    <div class="row"><label>${L("끝")}</label><input type="range" id="ci-e" min="0" max="${Math.max(dur, c.end) + 5}" step="0.01" value="${c.end}"/><span class="hint" id="ci-ev">${U.fmt(c.end)}</span></div>
-    <div class="row"><button id="ci-sp">${L("시작을 재생헤드로")}</button><button id="ci-ep">${L("끝을 재생헤드로")}</button></div>
-    <div class="row"><button id="ci-dv">✂ ${L("자막과 영상 함께 삭제")}</button></div>
-    <div class="row"><button id="ci-d">✕ ${L("자막만 삭제 (영상 유지)")}</button></div>
-  </div>`;
+  const dur = U.duration(), style = S.project.captionStyle;
+  if (section === "effects") {
+    el.innerHTML = `<div class="caption-effects"></div><p class="hint">${L("모든 자막에 같은 효과가 적용됩니다.")}</p>`;
+    renderTextEffects(el.querySelector(".caption-effects"), { style, onChange: (captionStyle) => run("update_project", { props: { captionStyle } }), preview });
+    return;
+  }
+  el.innerHTML = section === "basic" ? `<h3>${L("내용")}</h3><textarea id="ci-text" rows="3" class="inspector-text"></textarea><h3>${L("전체 자막 스타일")}</h3><div id="ci-style"></div>` : `
+    <h3>${L("표시 시간")}</h3>
+    <label class="style-slider"><span>${L("시작")}</span><input type="range" id="ci-s" min="0" max="${Math.max(dur, c.end)}" step="0.01" value="${c.start}"/><output id="ci-sv">${U.fmt(c.start)}</output></label>
+    <label class="style-slider"><span>${L("끝")}</span><input type="range" id="ci-e" min="0" max="${Math.max(dur, c.end) + 5}" step="0.01" value="${c.end}"/><output id="ci-ev">${U.fmt(c.end)}</output></label>
+    <div class="row"><button class="mini" id="ci-sp">${L("시작을 재생헤드로")}</button><button class="mini" id="ci-ep">${L("끝을 재생헤드로")}</button></div>
+    <h3>${L("전체 자막 위치")}</h3><label class="style-slider"><span>${L("세로 위치")}</span><input type="range" id="ci-y" min="0.05" max="0.95" step="0.01" value="${style.positionY}"/><output id="ci-yv">${Math.round(style.positionY * 100)}%</output></label>`;
+  el.insertAdjacentHTML("beforeend", `<details class="advanced-controls"><summary>${L("자막 삭제")}</summary><div class="quick"><button class="danger-text" id="ci-dv">${L("자막과 영상 함께 삭제")}</button><button class="danger-text" id="ci-d">${L("자막만 삭제 (영상 유지)")}</button></div></details>`);
   const q = (s) => el.querySelector(s);
-  q("#ci-text").value = c.text;
-  q("#ci-text").onchange = (e) => run("update_caption", { id: c.id, text: e.target.value });
-  q("#ci-text").onkeydown = (e) => e.stopPropagation();
-  q("#ci-s").oninput = (e) => (q("#ci-sv").textContent = U.fmt(+e.target.value));
-  q("#ci-e").oninput = (e) => (q("#ci-ev").textContent = U.fmt(+e.target.value));
-  q("#ci-s").onchange = (e) => run("update_caption", { id: c.id, start: +e.target.value });
-  q("#ci-e").onchange = (e) => run("update_caption", { id: c.id, end: +e.target.value });
-  q("#ci-sp").onclick = () => run("update_caption", { id: c.id, start: S.time });
-  q("#ci-ep").onclick = () => run("update_caption", { id: c.id, end: S.time });
+  if (section === "basic") {
+    q("#ci-text").value = c.text;
+    q("#ci-text").onchange = (e) => run("update_caption", { id: c.id, text: e.target.value });
+    q("#ci-text").onkeydown = (e) => e.stopPropagation();
+    styleControls(q("#ci-style"), style, (captionStyle) => run("update_project", { props: { captionStyle } }), false);
+  } else {
+    q("#ci-s").oninput = (e) => { q("#ci-sv").textContent = U.fmt(+e.target.value); };
+    q("#ci-e").oninput = (e) => { q("#ci-ev").textContent = U.fmt(+e.target.value); };
+    q("#ci-s").onchange = (e) => run("update_caption", { id: c.id, start: +e.target.value });
+    q("#ci-e").onchange = (e) => run("update_caption", { id: c.id, end: +e.target.value });
+    q("#ci-sp").onclick = () => run("update_caption", { id: c.id, start: S.time });
+    q("#ci-ep").onclick = () => run("update_caption", { id: c.id, end: S.time });
+    q("#ci-y").oninput = (e) => { q("#ci-yv").textContent = Math.round(+e.target.value * 100) + "%"; };
+    q("#ci-y").onchange = (e) => run("update_project", { props: { captionStyle: { ...style, positionY: +e.target.value } } });
+  }
   q("#ci-dv").onclick = () => deleteCaptions([c.id], true);
   q("#ci-d").onclick = () => deleteCaptions([c.id], false);
 }

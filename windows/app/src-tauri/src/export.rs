@@ -4,6 +4,11 @@ use easycut_core::{ClipKind, MediaKind, Project, Rgba, TextStyle};
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
+#[path = "export_effects.rs"]
+mod effects;
+#[cfg(test)]
+#[path = "export_effect_tests.rs"]
+mod tests;
 
 pub struct Options {
     pub path: String,
@@ -72,8 +77,8 @@ pub fn font_name() -> &'static str {
 /// 스타일의 글꼴 (맥에서 만든 프로젝트의 맥 전용 글꼴은 기본 글꼴로)
 fn style_font(st: &TextStyle) -> String {
     let f = st.font_name.trim();
-    let mac_only = f.is_empty() || f.starts_with("AppleSDGothic") || f.starts_with("Apple SD") || f.starts_with(".") || f.contains("-");
-    if mac_only { font_name().to_string() } else { f.to_string() }
+    let mac_only = f.is_empty() || (cfg!(windows) && (f.starts_with("AppleSDGothic") || f.starts_with("Apple SD") || f.starts_with('.')));
+    if mac_only { font_name().to_string() } else { f.replace([',', '\n', '\r'], " ") }
 }
 
 fn style_line(name: &str, st: &TextStyle, unit: f64) -> String {
@@ -99,71 +104,50 @@ fn style_line(name: &str, st: &TextStyle, unit: f64) -> String {
 fn build_ass(p: &Project, w: i64, h: i64, captions: bool) -> Option<String> {
     let unit = (w.min(h) as f64) / 1080.0;
     let mut events = String::new();
-    let mut styles = vec![style_line("Cap", &p.caption_style, unit)];
+    let styles = vec![style_line("Cap", &p.caption_style, unit)];
     let mut n = 0;
     if captions && p.show_captions {
         for c in &p.captions {
             let y = p.caption_style.position_y * h as f64;
-            let _ = writeln!(events, "Dialogue: 0,{},{},Cap,,0,0,0,,{{\\an5\\pos({},{:.0})}}{}", ass_time(c.start), ass_time(c.end), w / 2, y, ass_text(&c.text));
+            events.push_str(&effects::ass_events("Cap",&p.caption_style,&c.text,c.start,c.end,w as f64/2.0,y,w,h,p.fps,0,1.0,0.0,0.0));
             n += 1;
-        }
-    }
-    for (ti, tr) in p.tracks.iter().enumerate() {
-        if tr.hidden {
-            continue;
-        }
-        for c in tr.clips.iter().filter(|c| c.kind == ClipKind::Text) {
-            let name = format!("T{ti}_{n}");
-            styles.push(style_line(&name, &c.text_style, unit * c.scale));
-            let x = w as f64 / 2.0 + c.offset_x * w as f64;
-            let y = (c.text_style.position_y + c.offset_y) * h as f64;
-            let _ = writeln!(events, "Dialogue: {},{},{},{name},,0,0,0,,{{\\an5\\pos({x:.0},{y:.0})}}{}", 1 + ti, ass_time(c.start), ass_time(c.end()), ass_text(&c.text));
-            n += 1;
-        }
-    }
-    // 마우스 클릭 강조: 노란 원이 0.7초 동안 커지며 사라짐 (맥과 같은 모양)
-    styles.push("Style: Click,Arial,20,&H001AD6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1".into());
-    for tr in p.tracks.iter().filter(|t| !t.hidden) {
-        for c in tr.clips.iter().filter(|c| c.kind == ClipKind::Media && c.extra.get("showClicks").and_then(|v| v.as_bool()) == Some(true)) {
-            let Some(a) = p.asset(c.asset_id) else { continue };
-            let Some(marks) = a.extra.get("clicks").and_then(|v| v.as_array()) else { continue };
-            if a.width <= 0.0 || a.height <= 0.0 {
-                continue;
-            }
-            let fit = (w as f64 / a.width).min(h as f64 / a.height) * c.scale;
-            let (vw, vh) = (a.width * fit, a.height * fit);
-            let (x0, y0) = ((w as f64 - vw) / 2.0 + c.offset_x * w as f64, (h as f64 - vh) / 2.0 + c.offset_y * h as f64);
-            let r = 0.02 * vw.min(vh);
-            let k = 0.5523 * r;
-            let circle = format!("m {r:.1} 0 b {r:.1} {k:.1} {k:.1} {r:.1} 0 {r:.1} b -{k:.1} {r:.1} -{r:.1} {k:.1} -{r:.1} 0 b -{r:.1} -{k:.1} -{k:.1} -{r:.1} 0 -{r:.1} b {k:.1} -{r:.1} {r:.1} -{k:.1} {r:.1} 0");
-            for m in marks {
-                let (Some(mt), Some(mx), Some(my)) = (m["t"].as_f64(), m["x"].as_f64(), m["y"].as_f64()) else { continue };
-                if mt < c.source_in || mt > c.source_out {
-                    continue;
-                }
-                let t0 = c.start + (mt - c.source_in) / c.speed;
-                let dur = 0.7 / c.speed;
-                let ms = (dur * 1000.0).round() as i64;
-                let _ = writeln!(
-                    events,
-                    "Dialogue: 9,{},{},Click,,0,0,0,,{{\\an5\\pos({:.0},{:.0})\\blur{:.1}\\1a&H59&\\t(0,{ms},\\fscx250\\fscy250\\1a&HFF&)\\p1}}{circle}{{\\p0}}",
-                    ass_time(t0),
-                    ass_time(t0 + dur),
-                    x0 + mx * vw,
-                    y0 + my * vh,
-                    (r * 0.35).max(1.0),
-                );
-                n += 1;
-            }
         }
     }
     if n == 0 {
         return None;
     }
-    Some(format!(
+    Some(ass_document(&styles,&events,w,h))
+}
+
+/// 클릭은 그 원본 클립의 투명 레이어에 그려 같은 전환·불투명도와 트랙 순서를 따른다.
+fn build_click_ass(p:&Project,c:&easycut_core::Clip,w:i64,h:i64)->Option<String>{
+    if c.extra.get("showClicks").and_then(|v|v.as_bool())!=Some(true){return None;}
+    let a=p.asset(c.asset_id)?;
+    let marks=a.extra.get("clicks")?.as_array()?;
+    if a.width<=0.0||a.height<=0.0{return None;}
+    let circle_shape=c.extra.get("shape").and_then(|v|v.as_str())==Some("circle");
+    let (aw,ah)=if circle_shape{let side=a.width.min(a.height);(side,side)}else{(a.width,a.height)};
+    let fit=(w as f64/aw).min(h as f64/ah)*c.scale;
+    let(vw,vh)=(a.width*fit,a.height*fit);
+    let(x0,y0)=((w as f64-vw)/2.0+c.offset_x*w as f64,(h as f64-vh)/2.0+c.offset_y*h as f64);
+    let r=0.02*(aw*fit).min(ah*fit);let k=0.5523*r;
+    let circle=format!("m {r:.1} 0 b {r:.1} {k:.1} {k:.1} {r:.1} 0 {r:.1} b -{k:.1} {r:.1} -{r:.1} {k:.1} -{r:.1} 0 b -{r:.1} -{k:.1} -{k:.1} -{r:.1} 0 -{r:.1} b {k:.1} -{r:.1} {r:.1} -{k:.1} {r:.1} 0");
+    let mut events=String::new();
+    for m in marks{
+        let(Some(t),Some(x),Some(y))=(m["t"].as_f64(),m["x"].as_f64(),m["y"].as_f64())else{continue;};
+        if t<c.source_in||t>c.source_out{continue;}
+        let t0=(t-c.source_in)/c.speed;let duration=0.7/c.speed;let ms=(duration*1000.0).round()as i64;
+        let _=writeln!(events,"Dialogue: 0,{},{},Click,,0,0,0,,{{\\an5\\pos({:.1},{:.1})\\blur{:.1}\\1a&H59&\\t(0,{ms},\\fscx250\\fscy250\\1a&HFF&)\\p1}}{circle}{{\\p0}}",ass_time(t0),ass_time((t0+duration).min(c.duration())),x0+x*vw,y0+y*vh,(r*0.35).max(1.0));
+    }
+    if events.is_empty(){return None;}
+    Some(ass_document(&["Style: Click,Arial,20,&H001AD6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1".into()],&events,w,h))
+}
+
+fn ass_document(styles:&[String],events:&str,w:i64,h:i64)->String{
+    format!(
         "[Script Info]\nScriptType: v4.00+\nPlayResX: {w}\nPlayResY: {h}\nWrapStyle: 0\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n{}\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n{events}",
         styles.join("\n")
-    ))
+    )
 }
 
 /// 구간만 남긴 프로젝트 (앞뒤를 잘라 내고 0초부터)
@@ -191,6 +175,9 @@ pub fn out_size(p: &Project, short: u32) -> (i64, i64) {
 }
 
 pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl Fn() -> bool) -> Result<(), String> {
+    #[cfg(test)]
+    let ffmpeg = std::env::var_os("EASYCUT_EFFECT_FFMPEG").map(std::path::PathBuf::from).or_else(||tools::find_tool("ffmpeg")).ok_or("ffmpeg를 찾을 수 없습니다.")?;
+    #[cfg(not(test))]
     let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다.")?;
     let sliced;
     let p = match opts.range {
@@ -206,6 +193,10 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     }
     let (w, h) = out_size(p, opts.height);
     let fps = if p.fps > 0.0 { p.fps } else { 30.0 };
+    let has_text = p.tracks.iter().filter(|t| !t.hidden).flat_map(|t| &t.clips).any(|c| c.kind == ClipKind::Text && !c.text.trim().is_empty());
+    if opts.format != "m4a" && (has_text || (opts.burn_captions && p.show_captions && !p.captions.is_empty())) && !has_subtitles_filter(&ffmpeg) {
+        return Err("텍스트·자막을 내보내려면 subtitles(libass)를 지원하는 ffmpeg가 필요합니다.".into());
+    }
     let work = tools::temp_dir().join(format!("export-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&work);
 
@@ -223,8 +214,24 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     let mut input = 0usize;
     let mut k = 0usize;
 
-    for tr in &p.tracks {
-        for c in tr.clips.iter().filter(|c| c.kind == ClipKind::Media) {
+    for (ti,tr) in p.tracks.iter().enumerate() {
+        let mut clips:Vec<_>=tr.clips.iter().collect();
+        clips.sort_by(|a,b|a.start.total_cmp(&b.start));
+        for c in clips {
+            if c.kind==ClipKind::Text {
+                if !audio_only&&!tr.hidden&&!c.text.trim().is_empty()&&c.duration()>0.01 {
+                    let x=w as f64/2.0+c.offset_x*w as f64;
+                    let y=(c.text_style.position_y+c.offset_y)*h as f64;
+                    let events=effects::ass_events("Text",&c.text_style,&c.text,0.0,c.duration(),x,y,w,h,fps,ti,c.opacity,c.fade_in,c.fade_out);
+                    let ass=ass_document(&[style_line("Text",&c.text_style,w.min(h)as f64/1080.0*c.scale)],&events,w,h);
+                    let file=format!("text-{k}.ass");
+                    std::fs::write(work.join(&file),ass).map_err(|e|e.to_string())?;
+                    let chain=format!("color=c=black@0:s={w}x{h}:r={fps}:d={:.6},format=rgba,subtitles={file}:alpha=1,format=yuva444p",c.duration());
+                    last=effects::append_layer(&mut graph,&last,&chain,&format!("t{k}"),c,w,h,fps,0.0,0.0,x,y,w as f64,h as f64,None);
+                    k+=1;
+                }
+                continue;
+            }
             let Some(a) = p.asset(c.asset_id) else { continue };
             let dur = c.duration();
             if dur <= 0.01 {
@@ -287,7 +294,9 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
                     }
                     head = format!("[{cur}]");
                 }
-                let mut chain = format!("{head}{crop}scale={vw}:{vh},format=yuva420p");
+                // 필터 혼합에는 가리기가 끝난 레이어만 사용한다.
+                let color = effects::filter_chain(c.visual_filter.as_deref(), c.filter_intensity, vw.min(vh));
+                let mut chain = format!("{head}{crop}scale={vw}:{vh}{color},format=yuva420p");
                 match shape {
                     "circle" => {
                         let rim = (vw as f64 * 0.018).max(2.0);
@@ -300,19 +309,12 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
                     }
                     _ => {}
                 }
-                if c.opacity < 0.999 {
-                    let _ = write!(chain, ",colorchannelmixer=aa={:.3}", c.opacity);
-                }
-                if c.fade_in > 0.01 {
-                    let _ = write!(chain, ",fade=t=in:st=0:d={:.3}:alpha=1", c.fade_in.min(dur / 2.0));
-                }
-                if c.fade_out > 0.01 {
-                    let fo = c.fade_out.min(dur / 2.0);
-                    let _ = write!(chain, ",fade=t=out:st={:.3}:d={fo:.3}:alpha=1", dur - fo);
-                }
-                let _ = writeln!(graph, "{chain},setpts=PTS+{:.4}/TB[v{k}];", c.start);
-                let _ = writeln!(graph, "[{last}][v{k}]overlay=x={x:.0}:y={y:.0}:eof_action=pass:enable='between(t,{:.4},{:.4})'[o{k}];", c.start, c.end());
-                last = format!("o{k}");
+                let clicks=if has_subtitles_filter(&ffmpeg){build_click_ass(p,c,w,h)}else{None};
+                let click_file=if let Some(ass)=clicks{
+                    let file=format!("click-{k}.ass");
+                    std::fs::write(work.join(&file),ass).map_err(|e|e.to_string())?;Some(file)
+                }else{None};
+                last=effects::append_layer(&mut graph,&last,&chain,&format!("m{k}"),c,w,h,fps,x,y,x+vw as f64/2.0,y+vh as f64/2.0,vw as f64,vh as f64,click_file.as_deref());
             }
             if audible {
                 let mut chain = format!("[{i}:a]asetpts=PTS-STARTPTS");
@@ -336,7 +338,7 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
         }
     }
 
-    // 자막·텍스트
+    // 전체 자막은 클릭·텍스트·모든 영상 트랙을 합성한 뒤 항상 맨 위에 그린다.
     let ass = if !audio_only && has_subtitles_filter(&ffmpeg) { build_ass(p, w, h, opts.burn_captions) } else { None };
     if let Some(ass) = ass {
         std::fs::write(work.join("subs.ass"), ass).map_err(|e| e.to_string())?;
