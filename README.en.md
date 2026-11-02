@@ -4,9 +4,11 @@
 
 EasyCut is a Mac and Windows video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app. From macOS 1.13.0 and Windows 0.7.0, describe an animation, explainer or promo video, review its sample frames, then render it and continue editing on the timeline.
 
-**[⬇︎ Download the latest version (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [Website](https://contenjoo.github.io/easycut/)
+**[⬇︎ Download Mac 1.14.0](https://github.com/contenjoo/easycut/releases/download/v1.14.0/EasyCut-1.14.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
 
-Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.7.0/EasyCut_0.7.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.8.0/EasyCut_0.8.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+
+**macOS 1.14.0 and Windows 0.8.0:** Choose installed fonts and effects in the right-hand **Basic / Effects / Layout** tabs, adjust duration or intensity, and replay the result. Main tools have names and icons; additional tools are in **More**.
 
 Made by [Learn Today (주식회사 오늘배움)](https://learntoday.kr/services), which also builds Joo.is and JooShow.
 
@@ -26,7 +28,7 @@ The Mac app follows your macOS language: English on English (and any non-Korean)
 
 Requires an **Apple Silicon Mac (M1 or later) with macOS 14 or later**.
 
-1. Download `EasyCut-x.y.z.dmg` from [Releases](https://github.com/contenjoo/easycut/releases/latest), open it and drag EasyCut into the Applications folder.
+1. Download [EasyCut-1.14.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.14.0/EasyCut-1.14.0.dmg), open it and drag EasyCut into the Applications folder.
 2. The first time only: the app is not notarized, so if macOS warns you, go to System Settings › Privacy & Security and click **Open Anyway**.
 3. Download the Whisper model (574 MB) with **Turn On Whisper** in the Transcript tab, and the YouTube tool (yt-dlp) with **Install YouTube Tool** in the link window — once each.
 
@@ -37,7 +39,7 @@ Updates are automatic from 1.3.0 on: when a new version is released, the app tel
 
 ### Windows
 
-Run [EasyCut_0.7.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.7.0/EasyCut_0.7.0_x64-setup.exe) on **Windows 10/11 64-bit**. Start a new video from **Create a Video** in the toolbar. Prepare Node.js LTS, npm and Chrome or Edge for video creation. Rendering packages are installed in the app's support folder on first use.
+Run [EasyCut_0.8.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.8.0/EasyCut_0.8.0_x64-setup.exe) on **Windows 10/11 64-bit**. Start a new video from **Create a Video** in the toolbar. Prepare Node.js LTS, npm and Chrome or Edge for video creation. Rendering packages are installed in the app's support folder on first use.
 
 ## Build from source
 
@@ -63,6 +65,7 @@ Needs Xcode Command Line Tools (Swift 5.10+), `cmake` (`brew install cmake`) and
 | Filler removal | Finds filler words such as "um"/"uh" in the transcript and deletes them at once |
 | Captions | Generate from the transcript, add/edit by hand, drag on the timeline, style (font, color, background, outline, position), SRT import/export, burn into the video |
 | Text (titles) | Text clips on top of the picture with position, size and color |
+| Effects & fonts (Mac and Windows) | 18 entrance/exit transitions, 15 text animations and 9 video/photo filters. Named cards in Basic/Effects/Layout tabs, adjustable duration/intensity, replay, and searchable installed fonts with Korean aliases and samples. Effects apply to previews and exports; rendering details can differ by platform |
 | Layout & effects | Size, position, opacity, picture-in-picture, fades, shape (circle, rounded rectangle), person background blur/removal |
 | Cut by captions | Deleting a caption line also deletes its video; dragging captions in the list reorders the video with them; Track 1 clips can be dragged to insert-reorder (⌥+drag = free move) |
 | AI editing | Edit by talking: "cut all the silences", "2× speed from 3:00 to 5:00" (one-click Claude Pro/Max or ChatGPT Plus/Pro login, or an API key). Choose the model (Fable 5.1 · Opus 5.5 · Opus 5 · Sonnet 5 · Haiku 4.5), reasoning effort and whether to show thinking |

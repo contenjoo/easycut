@@ -75,10 +75,12 @@ extension Project {
         var right = c
         left.sourceOut = cut
         left.fadeOut = 0
+        left.transitionOut = nil
         right.id = UUID()
         right.sourceIn = cut
         right.start = t
         right.fadeIn = 0
+        right.transitionIn = nil
         tracks[loc.track].clips[loc.index] = left
         tracks[loc.track].clips.insert(right, at: loc.index + 1)
         return right.id
@@ -296,9 +298,14 @@ extension Project {
                     && abs(a.speed - b.speed) < 0.0001 && abs(a.sourceOut - b.sourceIn) < 0.002
                     && abs(a.volume - b.volume) < 0.0001 && abs(a.opacity - b.opacity) < 0.0001
                     && abs(a.scale - b.scale) < 0.0001 && abs(a.offsetX - b.offsetX) < 0.0001 && abs(a.offsetY - b.offsetY) < 0.0001
+                    && (a.transitionOut?.effect ?? ClipTransition.none) == ClipTransition.none
+                    && (b.transitionIn?.effect ?? ClipTransition.none) == ClipTransition.none
+                    && (a.visualFilter ?? VisualFilter.none) == (b.visualFilter ?? VisualFilter.none)
+                    && abs((a.filterIntensity ?? 1) - (b.filterIntensity ?? 1)) < 0.0001
                 if same {
                     clips[p].sourceOut = b.sourceOut
                     clips[p].fadeOut = b.fadeOut
+                    clips[p].transitionOut = b.transitionOut
                     // 가리기 영역은 원본 시간 기준이라 그대로 합친다
                     let blurs = (a.blurs ?? []) + (b.blurs ?? []).filter { r in !(a.blurs ?? []).contains { $0.id == r.id } }
                     clips[p].blurs = blurs.isEmpty ? nil : blurs
@@ -450,10 +457,15 @@ extension Project {
             let l = tracks[la.track].clips[la.index], r = tracks[lb.track].clips[lb.index]
             let alike = l.volume == r.volume && l.opacity == r.opacity && l.scale == r.scale && l.offsetX == r.offsetX && l.offsetY == r.offsetY
                 && l.shape == r.shape && l.backgroundEffect == r.backgroundEffect && l.showClicks == r.showClicks
+                && (l.transitionOut?.effect ?? ClipTransition.none) == ClipTransition.none
+                && (r.transitionIn?.effect ?? ClipTransition.none) == ClipTransition.none
+                && (l.visualFilter ?? VisualFilter.none) == (r.visualFilter ?? VisualFilter.none)
+                && abs((l.filterIntensity ?? 1) - (r.filterIntensity ?? 1)) < 0.0001
             if alike, abs(r.sourceIn - l.sourceOut) < 0.0005, abs(l.end - r.start) < 0.01 {
                 var m = l
                 m.sourceOut = r.sourceOut
                 m.fadeOut = r.fadeOut
+                m.transitionOut = r.transitionOut
                 let blurs = (l.blurs ?? []) + (r.blurs ?? []).filter { x in !(l.blurs ?? []).contains { $0.id == x.id } }
                 m.blurs = blurs.isEmpty ? nil : blurs
                 tracks[la.track].clips[la.index] = m

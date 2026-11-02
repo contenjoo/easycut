@@ -29,4 +29,8 @@ enum Theme {
 
     static let accentColor = Color(nsColor: accent)
     static let panelBG = Color(nsColor: c(28, 29, 33))
+    static let inspectorInset = Color.primary.opacity(0.035)
+    static let inspectorCard = Color.primary.opacity(0.025)
+    static let inspectorBorder = Color.primary.opacity(0.11)
+    static let inspectorSelection = accentColor.opacity(0.11)
 }

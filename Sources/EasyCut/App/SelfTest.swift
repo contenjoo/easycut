@@ -57,6 +57,10 @@ enum SelfTest {
     }
 
     static func runAsync(_ dir: URL) async throws {
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "effects" {
+            try await testEffects(dir)
+            return
+        }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "video-generation" {
             try await testVideoGeneration(dir)
             return

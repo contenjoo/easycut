@@ -69,6 +69,10 @@ enum CompositionBuilder {
                                          scale: clip.scale, offsetX: clip.offsetX, offsetY: clip.offsetY,
                                          fadeIn: clip.fadeIn, fadeOut: clip.fadeOut)
                 common.sourceIn = clip.sourceIn
+                common.transitionIn = clip.transitionIn
+                common.transitionOut = clip.transitionOut
+                common.visualFilter = clip.visualFilter
+                common.filterIntensity = clip.filterIntensity
                 common.speed = clip.speed
                 common.shape = clip.shape ?? .none
                 common.backgroundEffect = clip.backgroundEffect ?? .none

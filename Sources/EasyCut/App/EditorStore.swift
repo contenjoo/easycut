@@ -8,6 +8,9 @@ enum LeftTab: String, CaseIterable, Identifiable {
     case captions = "자막"
     case ai = "AI"
     var id: String { rawValue }
+    var symbol: String {
+        switch self { case .media: "square.stack"; case .transcript: "text.alignleft"; case .captions: "captions.bubble"; case .ai: "sparkles" }
+    }
 }
 
 struct JobProgress: Equatable {
@@ -724,6 +727,37 @@ final class EditorStore: ObservableObject {
     // MARK: 재생 이동
 
     func seek(_ t: Double) { player.seek(t) }
+
+    /// 변경한 효과가 합성된 뒤 선택 항목의 시작(또는 끝 전환 직전)부터 다시 재생한다.
+    func previewSelectedEffect(fromEnd: Bool = false, captionsOnly: Bool = false) {
+        let originalSelection = selection
+        let originalCaption = selectedCaption
+        let start: Double
+        if captionsOnly {
+            let caption = project.captions.first(where: { $0.id == selectedCaption })
+                ?? project.captions.first(where: { $0.start <= time && $0.end > time })
+                ?? project.captions.first
+            guard let caption else { showToast("자막을 먼저 추가하세요"); return }
+            start = caption.start
+        } else if selection.count == 1, let id = selection.first, let clip = project.clip(id) {
+            let window = clip.transitionOut?.clampedDuration(for: clip.duration) ?? min(0.6, clip.duration / 2)
+            start = fromEnd ? max(clip.start, clip.end - window - 0.25) : clip.start
+        } else if let id = selectedCaption, let caption = project.captions.first(where: { $0.id == id }) {
+            start = caption.start
+        } else {
+            start = project.captions.first(where: { $0.start <= time && $0.end > time })?.start ?? 0
+        }
+        player.pause()
+        let version = timelineVersion
+        let pending = rebuildTask
+        Task { [weak self] in
+            await pending?.value
+            guard let self, self.timelineVersion == version,
+                  self.selection == originalSelection, self.selectedCaption == originalCaption else { return }
+            self.seek(start)
+            self.player.play()
+        }
+    }
 
     func jumpEditPoint(forward: Bool) {
         let pts = project.editPoints + project.captions.flatMap { [$0.start] }

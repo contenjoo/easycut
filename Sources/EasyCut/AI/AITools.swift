@@ -12,6 +12,12 @@ enum AITools {
     static let num: [String: Any] = ["type": "number"]
     static func num(_ d: String) -> [String: Any] { ["type": "number", "description": d] }
     static func str(_ d: String) -> [String: Any] { ["type": "string", "description": d] }
+    static let transitionSchema: [String: Any] = ["type": "string", "enum": ClipTransition.allCases.map(\.rawValue),
+        "description": "클립 시작·끝 화면 전환. 18종: 페이드, 슬라이드·와이프, 확대·축소·회전·흐림·픽셀·원형·뒤집기 등. none=없음. 소리와 타임라인 길이는 유지"]
+    static let textAnimationSchema: [String: Any] = ["type": "string", "enum": TextAnimation.allCases.map(\.rawValue),
+        "description": "글자 등장 효과 15종: 페이드·이동·팝업·타이핑·바운스·확대·축소·회전·흐림·와이프·늘이기·떠오르기·흔들기. none=없음"]
+    static let visualFilterSchema: [String: Any] = ["type": "string", "enum": VisualFilter.allCases.map(\.rawValue),
+        "description": "영상·사진 색감. none=원본, warm,cool,mono,sepia,vivid,soft,vintage,dramatic,noir"]
     static let rangeArray: [String: Any] = [
         "type": "array",
         "items": ["type": "object", "properties": ["start": num, "end": num], "required": ["start", "end"]] as [String: Any],
@@ -40,9 +46,14 @@ enum AITools {
              ["speed": num("배속 0.1~20"), "start": num("구간 시작(초), 선택"), "end": num("구간 끝(초), 선택"),
               "clip_ids": ["type": "array", "items": ["type": "string"], "description": "대상 클립 id, 선택"] as [String: Any]],
              required: ["speed"]),
-        tool("set_clip_properties", "클립 속성 변경: 볼륨(0~2), 불투명도(0~1), 크기(배율), 위치(offset_x/y: 캔버스 대비 -1~1), 페이드 인/아웃(초), 텍스트 클립의 글자.",
+        tool("set_clip_properties", "클립 속성 변경: 볼륨(0~2), 불투명도(0~1), 크기(배율), 위치(offset_x/y: 캔버스 대비 -1~1), 페이드 인/아웃(초), 화면 시작·끝 전환, 텍스트 클립의 글자·등장 효과.",
              ["clip_id": str("클립 id"), "volume": num, "opacity": num, "scale": num, "offset_x": num, "offset_y": num,
-              "fade_in": num, "fade_out": num, "text": str("텍스트 클립 내용")],
+              "fade_in": num, "fade_out": num, "text": str("텍스트 클립 내용"),
+              "transition_in": transitionSchema, "transition_out": transitionSchema,
+              "transition_in_duration": num("시작 화면 전환 길이(초), 기본 0.5"),
+              "transition_out_duration": num("끝 화면 전환 길이(초), 기본 0.5"),
+              "text_animation": textAnimationSchema, "animation_duration": num("글자 등장 길이(초), 기본 0.6"),
+              "visual_filter": visualFilterSchema, "filter_intensity": num("색감 필터 강도 0~1, 기본 1")],
              required: ["clip_id"]),
         tool("delete_clips", "클립 삭제. ripple=true면 같은 트랙 뒤 클립을 당긴다.",
              ["clip_ids": ["type": "array", "items": ["type": "string"]] as [String: Any], "ripple": ["type": "boolean"]],
@@ -52,7 +63,8 @@ enum AITools {
         tool("add_text", "화면에 제목/텍스트를 추가한다.",
              ["text": str("내용"), "start": num("시작(초)"), "duration": num("길이(초, 기본 4)"),
               "position_y": num("세로 위치 0(위)~1(아래), 기본 0.5"), "font_size": num("1080p 기준 글자 크기, 기본 96"),
-              "color": str("글자색 #RRGGBB")],
+              "color": str("글자색 #RRGGBB"), "text_animation": textAnimationSchema,
+              "animation_duration": num("등장 효과 길이(초), 기본 0.6")],
              required: ["text", "start"]),
         tool("generate_captions", "대본으로 자막을 새로 만든다(기존 자막 대체).", ["max_chars": ["type": "integer", "description": "자막 한 줄 최대 글자 수 (기본 20)"]]),
         tool("edit_captions", "자막 추가/수정/삭제. 번호는 get_project_state의 자막 번호.",
@@ -67,7 +79,8 @@ enum AITools {
              ["font_size": num("1080p 기준 글자 크기"), "text_color": str("#RRGGBB"), "background_color": str("#RRGGBB"),
               "background_opacity": num("0~1 (0이면 배경 없음)"), "outline": ["type": "boolean"], "outline_color": str("외곽선 색 #RRGGBB"),
               "bold": ["type": "boolean"], "font_name": str("글꼴 PostScript 이름 (예: AppleSDGothicNeo-Bold), 빈 문자열이면 기본"),
-              "position_y": num("0(위)~1(아래)"), "visible": ["type": "boolean", "description": "자막 표시 여부"]]),
+              "position_y": num("0(위)~1(아래)"), "visible": ["type": "boolean", "description": "자막 표시 여부"],
+              "text_animation": textAnimationSchema, "animation_duration": num("자막마다 등장 효과 길이(초), 기본 0.6")]),
         tool("set_canvas", "화면 크기/비율 변경.", ["width": num, "height": num], required: ["width", "height"]),
         tool("set_playhead", "재생헤드를 옮긴다.", ["time": num("초")], required: ["time"]),
         tool("set_playback_speed", "미리보기 재생 속도(0.25~20배)를 바꾸고 선택적으로 재생한다.",
@@ -228,6 +241,13 @@ enum AITools {
 
         case "set_clip_properties":
             guard let cid = s("clip_id").flatMap({ findClip($0, store.project) }) else { return ("클립을 찾지 못했습니다", true) }
+            if let error = validateEffectInput(input) { return (error, true) }
+            if input["visual_filter"] != nil || input["filter_intensity"] != nil {
+                guard let c = store.project.clip(cid), c.kind == .media,
+                      let asset = store.project.asset(c.assetID), [.video, .image].contains(asset.kind) else {
+                    return ("색감 필터는 영상과 사진에 적용할 수 있습니다", true)
+                }
+            }
             store.apply { p in
                 guard let loc = p.locate(clip: cid) else { return }
                 var c = p.tracks[loc.track].clips[loc.index]
@@ -239,6 +259,15 @@ enum AITools {
                 if let v = d("fade_in") { c.fadeIn = max(0, v) }
                 if let v = d("fade_out") { c.fadeOut = max(0, v) }
                 if let v = s("text"), c.kind == .text { c.text = v }
+                if c.kind == .text || p.asset(c.assetID)?.kind != .audio {
+                    c.transitionIn = updatedTransition(c.transitionIn, effect: s("transition_in"), duration: d("transition_in_duration"))
+                    c.transitionOut = updatedTransition(c.transitionOut, effect: s("transition_out"), duration: d("transition_out_duration"))
+                }
+                if c.kind == .text { applyTextAnimation(input, to: &c.textStyle) }
+                if let name = s("visual_filter"), let filter = VisualFilter(rawValue: name) {
+                    c.visualFilter = filter == .none ? nil : filter
+                }
+                if let value = d("filter_intensity") { c.filterIntensity = value }
                 p.tracks[loc.track].clips[loc.index] = c
             }
             return ("클립 속성 변경", false)
@@ -354,6 +383,7 @@ enum AITools {
 
         case "add_text":
             guard let text = s("text"), let st = d("start") else { return ("text, start가 필요합니다", true) }
+            if let error = validateEffectInput(input) { return (error, true) }
             store.apply { p in
                 let ti = max(1, p.tracks.count - 1)
                 let id = p.insertText(text, track: ti, at: st, duration: d("duration") ?? 4)
@@ -361,6 +391,7 @@ enum AITools {
                     if let y = d("position_y") { p.tracks[loc.track].clips[loc.index].textStyle.positionY = y }
                     if let f = d("font_size") { p.tracks[loc.track].clips[loc.index].textStyle.fontSize = f }
                     if let c = s("color").flatMap(hexColor) { p.tracks[loc.track].clips[loc.index].textStyle.textColor = c }
+                    applyTextAnimation(input, to: &p.tracks[loc.track].clips[loc.index].textStyle)
                 }
             }
             return ("텍스트 추가: \(text)", false)
@@ -409,7 +440,9 @@ enum AITools {
             return ("자막 \(from)번을 \(to)번 자리로 옮김", false)
 
         case "set_caption_style":
+            if let error = validateEffectInput(input) { return (error, true) }
             store.apply { p in
+                applyTextAnimation(input, to: &p.captionStyle)
                 if let v = d("font_size") { p.captionStyle.fontSize = v }
                 if let c = s("text_color").flatMap(hexColor) { p.captionStyle.textColor = c }
                 if let c = s("background_color").flatMap(hexColor) {
@@ -495,6 +528,51 @@ enum AITools {
         return RGBA(r: Double((v >> 16) & 0xFF) / 255, g: Double((v >> 8) & 0xFF) / 255, b: Double(v & 0xFF) / 255, a: 1)
     }
 
+    static func validateEffectInput(_ input: [String: Any]) -> String? {
+        for key in ["transition_in", "transition_out"] {
+            if let value = input[key] {
+                guard let name = value as? String, ClipTransition(rawValue: name) != nil else {
+                    return "\(key): 지원하지 않는 화면 전환입니다"
+                }
+            }
+        }
+        if let value = input["text_animation"] {
+            guard let name = value as? String, TextAnimation(rawValue: name) != nil else {
+                return "text_animation: 지원하지 않는 글자 등장 효과입니다"
+            }
+        }
+        if let value = input["visual_filter"] {
+            guard let name = value as? String, VisualFilter(rawValue: name) != nil else {
+                return "visual_filter: 지원하지 않는 색감 필터입니다"
+            }
+        }
+        if input["filter_intensity"] != nil {
+            guard let value = (input["filter_intensity"] as? NSNumber)?.doubleValue,
+                  value.isFinite, (0...1).contains(value) else { return "filter_intensity: 필터 강도는 0~1로 입력하세요" }
+        }
+        for key in ["transition_in_duration", "transition_out_duration", "animation_duration"] where input[key] != nil {
+            guard let value = (input[key] as? NSNumber)?.doubleValue, value.isFinite, (0...10).contains(value) else {
+                return "\(key): 효과 길이는 0~10초로 입력하세요"
+            }
+        }
+        return nil
+    }
+
+    static func updatedTransition(_ current: TransitionSettings?, effect: String?, duration: Double?) -> TransitionSettings? {
+        guard effect != nil || duration != nil else { return current }
+        var next = current ?? TransitionSettings()
+        if let effect, let value = ClipTransition(rawValue: effect) { next.effect = value }
+        if let duration { next.duration = duration }
+        return next.effect == .none ? nil : next
+    }
+
+    static func applyTextAnimation(_ input: [String: Any], to style: inout TextStyle) {
+        if let value = input["text_animation"] as? String, let effect = TextAnimation(rawValue: value) {
+            style.animation = effect == .none ? nil : effect
+        }
+        if let duration = (input["animation_duration"] as? NSNumber)?.doubleValue { style.animationDuration = duration }
+    }
+
     @MainActor
     static func projectState(_ store: EditorStore) -> String {
         let p = store.project
@@ -511,6 +589,12 @@ enum AITools {
                 let label = c.kind == .text ? "텍스트 \"\(c.text)\"" : "\(p.asset(c.assetID)?.kind.rawValue ?? "?") \(p.asset(c.assetID)?.name ?? "")"
                 o.append(String(format: "  - id %@ | %@ | %.2f~%.2f초 | 원본 %.2f~%.2f | %g배속 | 볼륨 %.0f%% | 크기 %.0f%%",
                                 String(c.id.uuidString.prefix(8)), label, c.start, c.end, c.sourceIn, c.sourceOut, c.speed, c.volume * 100, c.scale * 100))
+                if let fx = c.transitionIn, fx.effect != .none { o.append("      시작 전환 \(fx.effect.rawValue) \(fx.duration)초") }
+                if let fx = c.transitionOut, fx.effect != .none { o.append("      끝 전환 \(fx.effect.rawValue) \(fx.duration)초") }
+                if let filter = c.visualFilter, filter != .none { o.append("      색감 \(filter.rawValue) 강도 \(c.filterIntensity ?? 1)") }
+                if c.kind == .text, let fx = c.textStyle.animation, fx != .none {
+                    o.append("      글자 등장 \(fx.rawValue) \(c.textStyle.animationDuration ?? 0.6)초")
+                }
                 for (n, r) in (c.blurs ?? []).enumerated().prefix(30) {
                     let a = c.timelineTime(atSource: max(r.start, c.sourceIn)), b = c.timelineTime(atSource: min(r.end, c.sourceOut))
                     o.append(String(format: "      가리기 [%d] %@ %@ [%.3f,%.3f,%.3f,%.3f] %.2f~%.2f초", n, r.label, r.style.rawValue, r.x, r.y, r.w, r.h, a, b))
@@ -518,6 +602,7 @@ enum AITools {
             }
         }
         o.append("자막 \(p.captions.count)개 (표시 \(p.showCaptions ? "켬" : "끔"), 크기 \(Int(p.captionStyle.fontSize)), 위치 \(String(format: "%.2f", p.captionStyle.positionY)))")
+        if let fx = p.captionStyle.animation, fx != .none { o.append("자막 등장 \(fx.rawValue) \(p.captionStyle.animationDuration ?? 0.6)초") }
         for (n, c) in p.captions.prefix(20).enumerated() {
             o.append(String(format: "  [%d] %.2f~%.2f %@", n, c.start, c.end, c.text))
         }

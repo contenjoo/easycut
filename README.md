@@ -4,9 +4,11 @@
 
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 Mac·Windows 설치형 영상 편집기입니다. macOS 1.13.0·Windows 0.7.0부터 원하는 내용을 설명해 애니메이션·설명·홍보 영상을 만들고 타임라인에서 편집할 수 있습니다.
 
-**[⬇︎ 최신 버전 다운로드 (Releases)](https://github.com/contenjoo/easycut/releases/latest)** · [소개 페이지](https://contenjoo.github.io/easycut/)
+**[⬇︎ Mac 1.14.0 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.14.0/EasyCut-1.14.0.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.7.0/EasyCut_0.7.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.8.0/EasyCut_0.8.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+
+**macOS 1.14.0·Windows 0.8.0:** 오른쪽 **기본 / 효과 / 배치**에서 설치 글꼴과 효과를 고르고 시간·강도를 조절해 바로 재생하세요. 주요 도구는 이름과 아이콘으로, 추가 도구는 **더 보기**로 정리했습니다.
 
 만든 곳: [주식회사 오늘배움](https://learntoday.kr/services) — 주이즈·JooShow 등 오늘배움이 만든 다른 서비스도 이 페이지에서 볼 수 있습니다.
 
@@ -24,7 +26,7 @@ https://github.com/user-attachments/assets/c82c022a-1c3b-4895-94b8-a49f6609b6f9
 
 **M1 이상 Apple Silicon Mac, macOS 14 이상**이 필요합니다.
 
-1. [Releases](https://github.com/contenjoo/easycut/releases/latest)에서 `EasyCut-x.y.z.dmg`를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
+1. [EasyCut-1.14.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.14.0/EasyCut-1.14.0.dmg)를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
 2. 처음 열 때 한 번: 서명·공증되지 않은 앱이라 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
 3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
 
@@ -33,7 +35,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 
 ### Windows
 
-**Windows 10/11 64비트**에서 [EasyCut_0.7.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.7.0/EasyCut_0.7.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
+**Windows 10/11 64비트**에서 [EasyCut_0.8.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.8.0/EasyCut_0.8.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
 
 ## 소스에서 빌드
 
@@ -59,6 +61,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 | 군더더기 제거 | '음', '어' 같은 말을 대본에서 찾아 한 번에 삭제 |
 | 자막 | 대본으로 자동 생성, 직접 추가/수정, 타임라인에서 끌어 조정, 스타일(글꼴·색·배경·외곽선·위치), SRT 가져오기/내보내기, 영상에 입히기 |
 | 텍스트(제목) | 화면 위 텍스트 클립, 위치·크기·색 조절 |
+| 효과·글꼴 선택 (Mac·Windows) | 전환 18종, 텍스트 등장 15종, 영상·사진 색감 필터 9종. 기본·효과·배치 탭에서 카드로 선택하고 시간·강도 조절 후 바로 재생. 설치된 전체 글꼴 검색·한글 별칭·샘플 제공. 미리보기와 내보내기에 반영하며 운영체제에 따라 세부 표현은 다를 수 있음 |
 | 화면 배치 | 크기·위치·불투명도, PIP(화면 속 화면), 페이드 인/아웃, 모양(원·둥근 사각형), 인물 배경 흐리게·지우기, 녹화 때 마우스 클릭 강조 |
 | 자막으로 컷 편집 | 자막 한 줄을 지우면 그 구간 영상도 삭제, 자막 목록에서 끌어 순서를 바꾸면 영상도 함께 이동, 트랙 1 클립은 끌어서 끼워 넣기(⌥+끌기 = 자유 이동) |
 | AI 편집 | "무음 다 잘라줘", "3분~5분 2배속" 처럼 말로 편집 (Claude Pro/Max 또는 ChatGPT Plus/Pro 원클릭 로그인, 또는 API 키). 모델(Fable 5.1·Opus 5.5·Opus 5·Sonnet 5·Haiku 4.5)·추론 강도·생각 과정 보기 선택 |

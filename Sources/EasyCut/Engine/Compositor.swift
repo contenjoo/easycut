@@ -20,6 +20,10 @@ struct RenderLayer {
     var offsetY: Double
     var fadeIn: Double
     var fadeOut: Double
+    var transitionIn: TransitionSettings? = nil
+    var transitionOut: TransitionSettings? = nil
+    var visualFilter: VisualFilter? = nil
+    var filterIntensity: Double? = nil
     var sourceIn: Double = 0
     var speed: Double = 1
     var shape: ClipShape = .none
@@ -98,12 +102,14 @@ enum RenderCache {
         return img
     }
 
-    static func text(_ text: String, style: TextStyle, unit: CGFloat, maxWidth: CGFloat, scale: Double) -> CIImage? {
-        let key = "\(text)|\(style.hashValue)|\(unit)|\(maxWidth)|\(scale)"
+    static func text(_ text: String, style: TextStyle, unit: CGFloat, maxWidth: CGFloat, scale: Double,
+                     visibleCharacters: Int? = nil) -> CIImage? {
+        let key = "\(text)|\(style.hashValue)|\(unit)|\(maxWidth)|\(scale)|\(visibleCharacters.map(String.init) ?? "all")"
         lock.lock()
         if let img = texts[key] { lock.unlock(); return img }
         lock.unlock()
-        guard let cg = TextRenderer.render(text: text, style: style, unit: unit * scale, maxWidth: maxWidth) else { return nil }
+        guard let cg = TextRenderer.render(text: text, style: style, unit: unit * scale, maxWidth: maxWidth,
+                                           visibleCharacters: visibleCharacters) else { return nil }
         let img = CIImage(cgImage: cg)
         lock.lock()
         if texts.count > 400 { texts.removeAll() }
@@ -118,19 +124,36 @@ enum RenderCache {
 }
 
 enum TextRenderer {
-    static func render(text: String, style: TextStyle, unit: CGFloat, maxWidth: CGFloat) -> CGImage? {
+    /// 글꼴 목록에서 고른 가족은 유지하면서 굵게를 켜거나 끈다. 해당 굵기가 없으면 원래 글꼴을 쓴다.
+    static func resolvedFont(style: TextStyle, size: CGFloat) -> NSFont {
+        guard !style.fontName.isEmpty, let named = NSFont(name: style.fontName, size: size) else {
+            return .systemFont(ofSize: size, weight: style.bold ? .bold : .regular)
+        }
+        let manager = NSFontManager.shared
+        return style.bold ? manager.convert(named, toHaveTrait: .boldFontMask)
+            : manager.convert(named, toNotHaveTrait: .boldFontMask)
+    }
+
+    static func render(text: String, style: TextStyle, unit: CGFloat, maxWidth: CGFloat,
+                       visibleCharacters: Int? = nil) -> CGImage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let size = max(6, CGFloat(style.fontSize) * unit)
-        var font: NSFont = .systemFont(ofSize: size, weight: style.bold ? .bold : .regular)
-        if !style.fontName.isEmpty, let f = NSFont(name: style.fontName, size: size) { font = f }
+        let font = resolvedFont(style: style, size: size)
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byWordWrapping
         para.lineSpacing = size * 0.08
         let padX = size * 0.45, padY = size * 0.2
         let base: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: para, .foregroundColor: style.textColor.nsColor]
-        let str = NSAttributedString(string: trimmed, attributes: base)
+        let str = NSMutableAttributedString(string: trimmed, attributes: base)
+        // 전체 문장으로 줄바꿈과 박스 크기를 정하고 뒤 글자만 숨긴다. 한글·이모지는 Character 단위로 나타난다.
+        let hidden: NSRange? = visibleCharacters.flatMap { count in
+            let boundary = trimmed.prefix(max(0, count)).utf16.count
+            let length = trimmed.utf16.count - boundary
+            return length > 0 ? NSRange(location: boundary, length: length) : nil
+        }
+        if let hidden { str.addAttribute(.foregroundColor, value: NSColor.clear, range: hidden) }
         let textRect = str.boundingRect(with: CGSize(width: max(50, maxWidth - 2 * padX), height: .greatestFiniteMagnitude),
                                         options: [.usesLineFragmentOrigin, .usesFontLeading])
         let w = Int(ceil(textRect.width + 2 * padX)), h = Int(ceil(textRect.height + 2 * padY))
@@ -149,7 +172,9 @@ enum TextRenderer {
             var o = base
             o[.strokeColor] = style.outlineColor.nsColor
             o[.strokeWidth] = 14.0
-            NSAttributedString(string: trimmed, attributes: o).draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+            let outlined = NSMutableAttributedString(string: trimmed, attributes: o)
+            if let hidden { outlined.addAttributes([.foregroundColor: NSColor.clear, .strokeColor: NSColor.clear], range: hidden) }
+            outlined.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
         }
         str.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
         NSGraphicsContext.current = prev
@@ -223,7 +248,10 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
                 guard let img = RenderCache.image(path) else { continue }
                 src = img
             case .text(let text, let style):
-                guard let img = RenderCache.text(text, style: style, unit: unit, maxWidth: size.width * 0.9, scale: layer.scale) else { continue }
+                let progress = MotionEffects.textProgress(style: style, elapsed: t - layer.start, duration: layer.end - layer.start)
+                let visible = style.animation == .typewriter ? MotionEffects.visibleCharacters(text: text, progress: progress) : nil
+                guard let img = RenderCache.text(text, style: style, unit: unit, maxWidth: size.width * 0.9,
+                                                scale: layer.scale, visibleCharacters: visible) else { continue }
                 src = img
                 isText = true
             }
@@ -236,6 +264,10 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
                 if layer.shape != .none {
                     src = Effects.shape(src, layer.shape)
                     src = src.transformed(by: CGAffineTransform(translationX: -src.extent.minX, y: -src.extent.minY))
+                }
+                // 원본 개인정보를 먼저 가린 뒤 색감을 바꾼다. 필터 혼합에도 가려진 이미지만 쓴다.
+                if let filter = layer.visualFilter {
+                    src = MotionEffects.filter(src, kind: filter, intensity: layer.filterIntensity)
                 }
             }
             let w = src.extent.width, h = src.extent.height
@@ -252,19 +284,38 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
                 y = (size.height - h * fit) / 2 - CGFloat(layer.offsetY) * size.height
             }
             src = src.transformed(by: CGAffineTransform(translationX: x, y: y))
+            if case .text(_, let style) = layer.content {
+                src = MotionEffects.text(src, style: style, elapsed: t - layer.start,
+                                         duration: layer.end - layer.start, canvas: canvas)
+            }
+            if let transition = layer.transitionIn {
+                src = MotionEffects.transition(src, settings: transition, elapsed: t - layer.start,
+                                               duration: layer.end - layer.start, entering: true, canvas: canvas)
+            }
+            if let transition = layer.transitionOut {
+                src = MotionEffects.transition(src, settings: transition, elapsed: layer.end - t,
+                                               duration: layer.end - layer.start, entering: false, canvas: canvas)
+            }
             if alpha < 0.999 {
                 src = src.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(alpha))])
             }
             result = src.composited(over: result)
         }
 
-        if scene.showCaptions, let cap = scene.caption(at: t),
-           let img = RenderCache.text(cap.text, style: scene.captionStyle, unit: unit, maxWidth: size.width * 0.86, scale: 1) {
-            let w = img.extent.width, h = img.extent.height
-            let x = (size.width - w) / 2
-            var y = size.height - CGFloat(scene.captionStyle.positionY) * size.height - h / 2
-            y = min(max(y, 4), size.height - h - 4)
-            result = img.transformed(by: CGAffineTransform(translationX: x, y: y)).composited(over: result)
+        if scene.showCaptions, let cap = scene.caption(at: t) {
+            let style = scene.captionStyle
+            let progress = MotionEffects.textProgress(style: style, elapsed: t - cap.start, duration: cap.end - cap.start)
+            let visible = style.animation == .typewriter ? MotionEffects.visibleCharacters(text: cap.text, progress: progress) : nil
+            if let img = RenderCache.text(cap.text, style: style, unit: unit, maxWidth: size.width * 0.86,
+                                          scale: 1, visibleCharacters: visible) {
+                let w = img.extent.width, h = img.extent.height
+                let x = (size.width - w) / 2
+                var y = size.height - CGFloat(scene.captionStyle.positionY) * size.height - h / 2
+                y = min(max(y, 4), size.height - h - 4)
+                let positioned = img.transformed(by: CGAffineTransform(translationX: x, y: y))
+                result = MotionEffects.text(positioned, style: style, elapsed: t - cap.start,
+                                            duration: cap.end - cap.start, canvas: canvas).composited(over: result)
+            }
         }
         return result.cropped(to: canvas)
     }

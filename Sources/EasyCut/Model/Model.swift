@@ -119,6 +119,9 @@ struct TextStyle: Codable, Hashable {
     /// 텍스트 박스 중심의 세로 위치 (0 = 위, 1 = 아래)
     var positionY: Double = 0.88
     var fontName: String = ""
+    /// 텍스트가 나타나는 효과. nil은 기존 프로젝트의 효과 없음과 같다.
+    var animation: TextAnimation?
+    var animationDuration: Double?
 
     static let caption = TextStyle()
     static let title = TextStyle(fontSize: 96, bold: true, textColor: .white,
@@ -150,6 +153,12 @@ struct Clip: Codable, Identifiable, Hashable {
     var offsetY: Double = 0
     var fadeIn: Double = 0
     var fadeOut: Double = 0
+    /// 화면 시작·끝 전환 (소리 페이드와 별개). nil은 효과 없음.
+    var transitionIn: TransitionSettings?
+    var transitionOut: TransitionSettings?
+    /// 영상·이미지 색감. nil은 원본, 강도 nil은 100%다.
+    var visualFilter: VisualFilter?
+    var filterIntensity: Double?
     /// 같은 값의 클립끼리 한 묶음(그룹)으로 선택·이동된다
     var groupID: UUID?
     /// 화면 모양 (nil = 기본)

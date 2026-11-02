@@ -45,6 +45,15 @@ struct PreviewPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Label("미리보기", systemImage: "play.rectangle")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(Int(store.project.canvasWidth)) × \(Int(store.project.canvasHeight))")
+                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(Theme.panelBG)
             ZStack {
                 Color.black
                 PlayerLayerView(player: player.player)
@@ -52,15 +61,18 @@ struct PreviewPane: View {
                     .overlay { BlurOverlay(store: store, player: player) }
                 if store.project.duration == 0 {
                     VStack(spacing: 12) {
-                        Image(systemName: "film.stack")
-                            .font(.system(size: 44))
-                        Text("영상, 오디오, 사진을 여기로 끌어다 놓으세요")
-                            .font(.title3.weight(.semibold))
-                        Text("또는 ⌘I 로 가져오기")
-                            .foregroundStyle(.secondary)
-                        Button("미디어 가져오기…") { store.importPanel() }
-                            .controlSize(.large)
-                            .keyboardShortcut(.defaultAction)
+                        Image(systemName: "plus.rectangle.on.rectangle")
+                            .font(.system(size: 34, weight: .light)).foregroundStyle(.secondary)
+                        Text("첫 장면을 추가하세요").font(.title3.weight(.semibold))
+                        Text("영상·사진·오디오를 끌어 놓으세요")
+                            .font(.callout).foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            Button("파일 가져오기") { store.importPanel() }
+                                .buttonStyle(.borderedProminent)
+                            Button("영상 만들기") { store.showVideoGeneration = true }
+                                .buttonStyle(.bordered)
+                        }
+                        .controlSize(.large).padding(.top, 6)
                     }
                     .foregroundStyle(.white.opacity(0.85))
                 }
@@ -242,48 +254,80 @@ struct TransportBar: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 SpeedControl(player: player)
-                Spacer(minLength: 2)
-                iconButton("backward.end.fill", "처음으로 (Home)") { store.seek(0) }
-                iconButton("gobackward.5", "5초 뒤로 (⇧←)") { store.seek(player.time - 5) }
-                iconButton("chevron.left", "이전 프레임 (,)") { player.step(frames: -1, fps: store.project.fps) }
-                Button { player.toggle() } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 34, height: 24)
+                Spacer(minLength: 4)
+                ViewThatFits(in: .horizontal) {
+                    playbackControls(extended: true)
+                    playbackControls(extended: false)
                 }
-                .buttonStyle(.borderedProminent)
-                .help("재생/일시정지 (Space)")
-                iconButton("chevron.right", "다음 프레임 (.)") { player.step(frames: 1, fps: store.project.fps) }
-                iconButton("goforward.5", "5초 앞으로 (⇧→)") { store.seek(player.time + 5) }
-                iconButton("forward.end.fill", "끝으로 (End)") { store.seek(player.duration) }
                 Spacer(minLength: 2)
                 Toggle(isOn: Binding(get: { store.project.showCaptions }, set: { v in store.updateProject(key: "cc") { $0.showCaptions = v } })) {
                     Image(systemName: "captions.bubble")
                 }
                 .toggleStyle(.button)
                 .help("미리보기 자막 표시")
-                Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .foregroundStyle(.secondary)
-                    .help("미리보기 볼륨")
+                PreviewVolumeControl(player: player)
                 LevelMeter(level: player.level)
                     .help("재생 중인 소리 크기 — 막대가 움직이는데 안 들리면 Mac 출력 장치/음량을 확인하세요")
-                EZSlider(value: Binding(get: { Double(player.volume) }, set: { player.volume = Float($0) }), in: 0...1)
-                    .frame(width: 60)
-                    .controlSize(.small)
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(.vertical, 12)
+        .background(Theme.panelBG)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    func playbackControls(extended: Bool) -> some View {
+        HStack(spacing: 7) {
+            iconButton("backward.end.fill", "처음으로 (Home)") { store.seek(0) }
+            if extended { iconButton("gobackward.5", "5초 뒤로 (⇧←)") { store.seek(player.time - 5) } }
+            iconButton("chevron.left", "이전 프레임 (,)") { player.step(frames: -1, fps: store.project.fps) }
+            Button { player.toggle() } label: {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 15, weight: .bold)).frame(width: 32, height: 26)
+            }
+            .buttonStyle(.borderedProminent).help("재생/일시정지 (Space)")
+            .accessibilityIdentifier("preview-play")
+            iconButton("chevron.right", "다음 프레임 (.)") { player.step(frames: 1, fps: store.project.fps) }
+            if extended { iconButton("goforward.5", "5초 앞으로 (⇧→)") { store.seek(player.time + 5) } }
+            iconButton("forward.end.fill", "끝으로 (End)") { store.seek(player.duration) }
+        }
+        .fixedSize()
     }
 
     func iconButton(_ name: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: name).frame(width: 20, height: 20) }
             .buttonStyle(.borderless)
             .help(L(help))
+    }
+}
+
+struct PreviewVolumeControl: View {
+    @ObservedObject var player: PlayerController
+    @State private var showing = false
+    var body: some View {
+        Button { showing.toggle() } label: {
+            Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.borderless).help("미리보기 볼륨")
+        .accessibilityLabel(L("미리보기 볼륨"))
+        .popover(isPresented: $showing) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("미리보기 볼륨").font(.caption.weight(.semibold))
+                HStack {
+                    Button { player.volume = player.volume > 0 ? 0 : 1 } label: {
+                        Image(systemName: player.volume == 0 ? "speaker.slash" : "speaker.wave.2")
+                    }
+                    .help(L(player.volume == 0 ? "소리 켜기" : "음소거"))
+                    EZSlider(value: Binding(get: { Double(player.volume) }, set: { player.volume = Float($0) }), in: 0...1)
+                        .frame(width: 130)
+                    Text("\(Int(player.volume * 100))%").font(.caption.monospacedDigit()).frame(width: 34)
+                }
+            }
+            .padding(16)
+        }
     }
 }
 
@@ -310,7 +354,6 @@ struct SpeedControl: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "hare.fill").foregroundStyle(player.speed > 1 ? Theme.accentColor : .secondary)
             Menu {
                 ForEach(PlayerController.speeds, id: \.self) { s in
                     Button {
@@ -327,14 +370,6 @@ struct SpeedControl: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("재생 속도 (최대 20배속) — [ 느리게, ] 빠르게, \\ 1배속")
-            EZSlider(value: Binding(get: { log(player.speed) }, set: { v in
-                let s = exp(v)
-                // 보기 좋은 값에 맞춘다
-                let snapped = PlayerController.speeds.min { abs($0 - s) < abs($1 - s) } ?? s
-                player.setSpeed(abs(snapped - s) / s < 0.08 ? snapped : (s * 10).rounded() / 10)
-            }), in: log(0.25)...log(20))
-            .frame(width: 80)
-            .controlSize(.small)
         }
     }
 }

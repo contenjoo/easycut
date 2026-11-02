@@ -432,6 +432,15 @@ final class TimelineNSView: NSView {
                         px += 2
                     }
                 }
+                // 전환 효과 구간을 클립 아래쪽에 표시한다.
+                for (settings, entrance) in [(c.transitionIn, true), (c.transitionOut, false)] {
+                    guard let settings else { continue }
+                    let width = min(r.width / 2, CGFloat(settings.clampedDuration(for: c.duration)) * zoom)
+                    guard width > 0.5 else { continue }
+                    NSColor.systemPurple.withAlphaComponent(0.8).setFill()
+                    let fx = entrance ? r.minX : r.maxX - width
+                    NSRect(x: fx, y: r.maxY - 8, width: width, height: 5).fill()
+                }
                 // 제목 띠
                 NSColor.black.withAlphaComponent(0.28).setFill()
                 NSRect(x: r.minX, y: r.minY, width: r.width, height: 16).fill()
@@ -439,6 +448,7 @@ final class TimelineNSView: NSView {
                 if abs(c.speed - 1) > 0.001 { label = "⏩\(Self.speedLabel(c.speed))  " + label }
                 if asset?.words != nil { label = "💬 " + label }
                 if c.groupID != nil { label = "🔗 " + label }
+                if c.kind == .text, (c.textStyle.animation ?? TextAnimation.none) != .none { label = "✦ " + label }
                 let labelX = max(r.minX + 5, min(visibleRect.minX + headerW + 5, r.maxX - 60))
                 (label as NSString).draw(with: NSRect(x: labelX, y: r.minY + 1, width: max(0, r.maxX - labelX - 4), height: 14),
                                          options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: nameAttrs)

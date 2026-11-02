@@ -26,18 +26,27 @@ struct MediaBinPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button { store.importPanel() } label: { Label("가져오기", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent)
-                    .help("영상·오디오·사진 가져오기 (⌘I)")
-                Button { store.showLinkSheet = true } label: { Label("링크", systemImage: "link") }
-                    .help("유튜브 등 영상 링크로 가져오기 (⇧⌘I)")
-                Button { store.recording.open() } label: { Label("녹화", systemImage: "record.circle") }
-                    .help("화면·얼굴 녹화 (⌥⌘R)")
-                Spacer()
-                Text("\(store.project.assets.count)개").font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 9) {
+                HStack {
+                    Text("미디어").font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text("\(store.project.assets.count)개").font(.caption).foregroundStyle(.secondary)
+                }
+                Button { store.importPanel() } label: {
+                    Label("파일 가져오기", systemImage: "plus").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.regular)
+                .help("영상·오디오·사진 가져오기 (⌘I)")
+                HStack {
+                    Button { store.showLinkSheet = true } label: { Label("링크로 가져오기", systemImage: "link") }
+                        .help("유튜브 등 영상 링크로 가져오기 (⇧⌘I)")
+                    Spacer(minLength: 5)
+                    Button { store.recording.open() } label: { Label("녹화", systemImage: "record.circle") }
+                        .help("화면·얼굴 녹화 (⌥⌘R)")
+                }
+                .font(.caption).buttonStyle(.borderless).controlSize(.small)
             }
-            .padding(10)
+            .padding(12)
             ForEach(store.converting.keys.sorted(), id: \.self) { name in
                 if let job = store.converting[name] {
                     VStack(alignment: .leading, spacing: 3) {
@@ -236,103 +245,191 @@ struct CaptionRow: View {
 
 struct CaptionStyleEditor: View {
     @ObservedObject var store: EditorStore
-    @State private var expanded = true
+    @State private var expanded = false
 
     var body: some View {
-        DisclosureGroup("자막 스타일", isExpanded: $expanded) {
-            TextStyleControls(style: Binding(
-                get: { store.project.captionStyle },
-                set: { v in store.updateProject(key: "capstyle") { $0.captionStyle = v } }
-            ), showPosition: true)
+        DisclosureGroup(isExpanded: $expanded) {
+            ScrollView {
+                TextStyleControls(style: Binding<TextStyle>(
+                    get: { store.project.captionStyle },
+                    set: { v in store.updateProject(key: "capstyle") { $0.captionStyle = v } }
+                ), showPosition: true, preview: { store.previewSelectedEffect(captionsOnly: true) })
+                .padding(.top, 12)
+            }
+            .frame(maxHeight: 440)
+        } label: {
+            HStack {
+                Text("자막 스타일").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text(FontList.displayName(for: store.project.captionStyle.fontName))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
-        .padding(10)
+        .padding(12)
     }
 }
 
 struct TextStyleControls: View {
     @Binding var style: TextStyle
     var showPosition: Bool
+    var showEffects = true
+    var preview: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("크기").frame(width: 44, alignment: .leading)
-                EZSlider(value: $style.fontSize, in: 16...200)
-                Text("\(Int(style.fontSize))").monospacedDigit().frame(width: 32)
+        VStack(alignment: .leading, spacing: 14) {
+            FontFamilyPicker(fontName: $style.fontName)
+            ValueSlider(title: "글자 크기", value: $style.fontSize, range: 16...200) { "\(Int($0))" }
+            HStack(spacing: 8) {
+                Toggle(isOn: $style.bold) { Label("굵게", systemImage: "bold") }
+                Toggle(isOn: $style.outline) { Label("외곽선", systemImage: "character.textbox") }
             }
-            HStack {
-                Text("글꼴").frame(width: 44, alignment: .leading)
-                Picker("", selection: $style.fontName) {
-                    Text("시스템 (애플 SD 산돌고딕)").tag("")
-                    ForEach(FontList.korean, id: \.self) { Text($0).tag($0) }
-                }
-                .labelsHidden()
-            }
-            HStack(spacing: 12) {
-                Toggle("굵게", isOn: $style.bold)
-                Toggle("외곽선", isOn: $style.outline)
-            }
+            .toggleStyle(.button).controlSize(.small)
+            Divider()
+            SectionTitle(text: "색상")
             HStack(spacing: 12) {
                 ColorPicker("글자", selection: colorBinding(\.textColor))
                 ColorPicker("배경", selection: colorBinding(\.backgroundColor))
-                if style.outline { ColorPicker("외곽선", selection: colorBinding(\.outlineColor)) }
+            }
+            if style.outline { ColorPicker("외곽선", selection: colorBinding(\.outlineColor)) }
+            HStack(spacing: 6) {
+                ForEach(Array(Self.swatches.enumerated()), id: \.offset) { index, color in
+                    Button { style.textColor = color } label: {
+                        Circle().fill(Color(nsColor: color.nsColor))
+                            .frame(width: 24, height: 24)
+                            .overlay { Circle().strokeBorder(Theme.inspectorBorder, lineWidth: 1) }
+                            .padding(3)
+                            .overlay { Circle().strokeBorder(style.textColor == color ? Theme.accentColor : .clear, lineWidth: 1.5) }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L(Self.swatchNames[index]))
+                }
+                Spacer(minLength: 0)
+            }
+            SectionTitle(text: "빠른 스타일")
+            HStack(spacing: 7) {
+                styleCard("자막", sample: "가나다", text: .white, background: .captionBG, index: 0)
+                styleCard("제목", sample: "가나다", text: .white, background: .clear, index: 1)
+                styleCard("강조", sample: "가나다", text: .yellow, background: .clear, index: 2)
             }
             if showPosition {
-                HStack {
-                    Text("위치").frame(width: 44, alignment: .leading)
-                    EZSlider(value: $style.positionY, in: 0.05...0.95)
-                    Text(L(style.positionY > 0.66 ? "아래" : (style.positionY < 0.33 ? "위" : "가운데"))).frame(width: 44)
-                }
+                Divider()
+                ValueSlider(title: "세로 위치", value: $style.positionY, range: 0.05...0.95) { "\(Int($0 * 100))%" }
             }
-            HStack(spacing: 6) {
-                Text("빠른 스타일").font(.caption).foregroundStyle(.secondary)
-                Button("기본") { style.textColor = .white; style.backgroundColor = .captionBG; style.outline = false }
-                Button("노랑") { style.textColor = .yellow; style.backgroundColor = .clear; style.outline = true; style.outlineColor = .black }
-                Button("흰+외곽") { style.textColor = .white; style.backgroundColor = .clear; style.outline = true; style.outlineColor = .black }
+            if showEffects {
+                Divider()
+                TextEffectGallery(style: $style, preview: preview)
             }
-            .controlSize(.small)
         }
         .font(.callout)
     }
 
-    func colorBinding(_ kp: WritableKeyPath<TextStyle, RGBA>) -> Binding<Color> {
-        Binding(get: { Color(nsColor: style[keyPath: kp].nsColor) },
-                set: { style[keyPath: kp] = RGBA(NSColor($0)) })
-    }
-}
+    private static let swatches: [RGBA] = [.white, .black, .yellow,
+        RGBA(r: 0.4, g: 0.9, b: 0.7, a: 1), RGBA(r: 0.35, g: 0.7, b: 1, a: 1), RGBA(r: 1, g: 0.5, b: 0.45, a: 1)]
+    private static let swatchNames = ["흰색", "검정", "노랑", "민트", "하늘색", "코랄"]
 
-enum FontList {
-    static let korean: [String] = {
-        let wanted = ["AppleSDGothicNeo-Bold", "AppleSDGothicNeo-Regular", "AppleMyungjo", "NanumGothic", "NanumGothicBold",
-                      "NanumMyeongjo", "NanumBarunGothic", "NanumSquareRoundB", "BMJUAOTF", "BMHANNAProOTF",
-                      "Pretendard-Bold", "Pretendard-Regular", "SpoqaHanSansNeo-Bold", "GmarketSansBold",
-                      "Helvetica-Bold", "Avenir-Heavy", "Futura-Bold", "Menlo-Regular"]
-        let available = Set(NSFontManager.shared.availableFonts)
-        return wanted.filter { available.contains($0) }
-    }()
+    private func styleCard(_ label: String, sample: String, text: RGBA, background: RGBA, index: Int) -> some View {
+        Button {
+            style.textColor = text
+            style.backgroundColor = background
+            style.outline = index != 0
+            style.outlineColor = .black
+            style.fontSize = index == 1 ? 96 : (index == 2 ? 64 : 54)
+        } label: {
+            VStack(spacing: 6) {
+                Text(sample).font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color(nsColor: text.nsColor))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Color(nsColor: background.nsColor), in: RoundedRectangle(cornerRadius: 4))
+                    .shadow(color: index == 0 ? .clear : .black.opacity(0.85), radius: 1)
+                    .frame(maxWidth: .infinity, minHeight: 35)
+                    .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6))
+                Text(L(label)).font(.system(size: 10, weight: .medium))
+            }
+            .frame(maxWidth: .infinity).padding(7)
+            .background(Theme.inspectorCard, in: RoundedRectangle(cornerRadius: 8))
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.inspectorBorder, lineWidth: 0.7) }
+        }.buttonStyle(.plain)
+    }
+
+    func colorBinding(_ kp: WritableKeyPath<TextStyle, RGBA>) -> Binding<Color> {
+        Binding<Color>(get: { Color(nsColor: style[keyPath: kp].nsColor) },
+                       set: { style[keyPath: kp] = RGBA(NSColor($0)) })
+    }
 }
 
 // MARK: 속성(인스펙터)
 
 struct InspectorPanel: View {
     @ObservedObject var store: EditorStore
+    @State private var section: InspectorSection = .basic
+
+    private var selectedClip: Clip? {
+        guard store.selection.count == 1, let id = store.selection.first else { return nil }
+        return store.project.clip(id)
+    }
+    private var selectedCaption: Caption? {
+        guard store.selection.isEmpty, let id = store.selectedCaption else { return nil }
+        return store.project.captions.first { $0.id == id }
+    }
+    private var contextID: String {
+        selectedClip?.id.uuidString ?? selectedCaption?.id.uuidString ?? (store.selection.count > 1 ? "multiple" : "project")
+    }
+    private var contextTitle: String {
+        if let clip = selectedClip { return clip.kind == .text ? L("텍스트") : (store.project.asset(clip.assetID)?.name ?? L("클립")) }
+        if selectedCaption != nil { return L("자막") }
+        return store.selection.count > 1 ? L("여러 클립") : L("프로젝트")
+    }
+    private var contextSymbol: String {
+        if let clip = selectedClip {
+            if clip.kind == .text { return "textformat" }
+            switch store.project.asset(clip.assetID)?.kind { case .audio: return "waveform"; case .image: return "photo"; default: return "film" }
+        }
+        return selectedCaption != nil ? "captions.bubble" : "slider.horizontal.3"
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if let id = store.selection.first, store.selection.count == 1, let clip = store.project.clip(id) {
-                    ClipInspector(store: store, clip: clip)
-                } else if store.selection.count > 1 {
-                    MultiInspector(store: store)
-                } else if let cid = store.selectedCaption, let cap = store.project.captions.first(where: { $0.id == cid }) {
-                    CaptionInspector(store: store, caption: cap)
-                        .id(cid)
-                } else {
-                    ProjectInspector(store: store)
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(spacing: 10) {
+                    Image(systemName: contextSymbol).font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.secondary).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(contextTitle).font(.system(size: 14, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                        if let clip = selectedClip {
+                            Text("시작 \(TimeFormat.clock(clip.start)) · 길이 \(TimeFormat.clock(clip.duration))")
+                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        } else if let caption = selectedCaption {
+                            Text("\(TimeFormat.clock(caption.start)) – \(TimeFormat.clock(caption.end))")
+                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        } else {
+                            Text("편집 속성").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
+                if selectedClip != nil || selectedCaption != nil { InspectorTabBar(selection: $section) }
             }
             .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("inspector-context-header")
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let clip = selectedClip {
+                        ClipInspector(store: store, clip: clip, section: section).id(clip.id)
+                    } else if store.selection.count > 1 {
+                        MultiInspector(store: store)
+                    } else if let caption = selectedCaption {
+                        CaptionInspector(store: store, caption: caption, section: section).id(caption.id)
+                    } else {
+                        ProjectInspector(store: store)
+                    }
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onChange(of: contextID, initial: true) { _, _ in
+            if let clip = selectedClip, clip.kind != .text, store.project.asset(clip.assetID)?.kind != .audio { section = .effects }
+            else { section = .basic }
         }
     }
 }
@@ -360,54 +457,64 @@ struct ValueSlider: View {
 struct ClipInspector: View {
     @ObservedObject var store: EditorStore
     let clip: Clip
+    var section: InspectorSection = .basic
+    @State private var showingTextTransitions = false
+    @State private var showingFilters = false
 
     var asset: MediaAsset? { store.project.asset(clip.assetID) }
+    private var isText: Bool { clip.kind == .text }
+    private var isAudio: Bool { !isText && asset?.kind == .audio }
+    private var textStyle: Binding<TextStyle> {
+        Binding<TextStyle>(get: { clip.textStyle }, set: { v in store.updateClip(clip.id, key: "tstyle") { $0.textStyle = v } })
+    }
 
     func bind(_ kp: WritableKeyPath<Clip, Double>, key: String) -> Binding<Double> {
-        Binding(get: { clip[keyPath: kp] }, set: { v in store.updateClip(clip.id, key: key) { $0[keyPath: kp] = v } })
+        Binding<Double>(get: { clip[keyPath: kp] }, set: { v in store.updateClip(clip.id, key: key) { $0[keyPath: kp] = v } })
     }
 
     var body: some View {
-        let isText = clip.kind == .text
-        let kind = asset?.kind
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: isText ? "textformat" : (kind == .video ? "film" : kind == .audio ? "waveform" : "photo"))
-                Text(L(isText ? "텍스트" : (asset?.name ?? "클립"))).font(.headline).lineLimit(2)
+        VStack(alignment: .leading, spacing: 16) {
+            switch section {
+            case .basic: basicControls
+            case .effects: effectControls
+            case .layout: layoutControls
             }
-            Text("시작 \(TimeFormat.clock(clip.start)) · 길이 \(TimeFormat.clock(clip.duration))")
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-
-            if isText {
-                SectionTitle(text: "내용")
-                TextEditor(text: Binding(get: { clip.text }, set: { v in store.updateClip(clip.id, key: "text") { $0.text = v } }))
-                    .font(.body)
-                    .frame(height: 70)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
-                TextStyleControls(style: Binding(get: { clip.textStyle }, set: { v in store.updateClip(clip.id, key: "tstyle") { $0.textStyle = v } }),
-                                  showPosition: true)
+            Divider()
+            HStack(spacing: 10) {
+                Button { store.splitAtPlayhead() } label: { Label("분할", systemImage: "scissors") }
+                Button { store.duplicateSelection() } label: { Label("복제", systemImage: "plus.square.on.square") }
+                Spacer(minLength: 0)
+                Button(role: .destructive) { store.deleteSelection(ripple: true) } label: { Label("삭제", systemImage: "trash") }
             }
+            .buttonStyle(.borderless).controlSize(.small).font(.caption)
+        }
+        .font(.callout)
+    }
 
-            if kind == .video || kind == .audio {
+    @ViewBuilder private var basicControls: some View {
+        if isText {
+            SectionTitle(text: "내용")
+            TextEditor(text: Binding<String>(get: { clip.text }, set: { v in store.updateClip(clip.id, key: "text") { $0.text = v } }))
+                .font(.body).scrollContentBackground(.hidden).padding(7).frame(height: 80)
+                .background(Theme.inspectorInset, in: RoundedRectangle(cornerRadius: 8))
+                .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.inspectorBorder, lineWidth: 0.7) }
+            TextStyleControls(style: textStyle, showPosition: false, showEffects: false)
+        } else {
+            if asset?.kind == .video || asset?.kind == .audio {
                 SectionTitle(text: "속도 (최대 20배)")
                 HStack {
-                    EZSlider(value: Binding(get: { log(clip.speed) }, set: { v in
-                        let s = (exp(v) * 100).rounded() / 100
-                        store.setSpeed(s, for: [clip.id])
+                    EZSlider(value: Binding<Double>(get: { log(clip.speed) }, set: { v in
+                        store.setSpeed((exp(v) * 100).rounded() / 100, for: [clip.id])
                     }), in: log(0.1)...log(20))
                     Text(TimelineNSView.speedLabel(clip.speed)).monospacedDigit().frame(width: 46)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5), spacing: 4) {
                     ForEach([0.5, 1, 1.5, 2, 3, 4, 8, 10, 16, 20], id: \.self) { s in
                         Button(TimelineNSView.speedLabel(s)) { store.setSpeed(s, for: [clip.id]) }
-                            .buttonStyle(.bordered)
-                            .tint(abs(clip.speed - s) < 0.001 ? .accentColor : nil)
+                            .buttonStyle(.bordered).tint(abs(clip.speed - s) < 0.001 ? .accentColor : nil)
                     }
-                }
-                .controlSize(.small)
-            }
-
-            if kind == .video || kind == .audio {
+                }.controlSize(.small)
+                Divider()
                 SectionTitle(text: "오디오")
                 ValueSlider(title: "볼륨", value: bind(\.volume, key: "vol"), range: 0...2) { "\(Int($0 * 100))%" }
                 HStack {
@@ -415,66 +522,108 @@ struct ClipInspector: View {
                     if let a = asset, a.hasAudio {
                         Button(L(a.words == nil ? "음성 인식" : "다시 인식")) { store.transcribe(a.id) }
                     }
-                }
-                .controlSize(.small)
+                }.controlSize(.small)
+            } else {
+                SectionTitle(text: "이미지")
+                Text(asset?.name ?? L("클립")).font(.callout).foregroundStyle(.secondary)
+                if let asset { Text("\(Int(asset.width)) × \(Int(asset.height))").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
             }
+        }
+    }
 
-            if kind != .audio {
-                SectionTitle(text: "화면")
-                ValueSlider(title: "크기", value: bind(\.scale, key: "scale"), range: 0.1...4) { "\(Int($0 * 100))%" }
-                ValueSlider(title: "가로 위치", value: bind(\.offsetX, key: "ox"), range: -1...1) { String(format: "%.2f", $0) }
-                ValueSlider(title: "세로 위치", value: bind(\.offsetY, key: "oy"), range: -1...1) { String(format: "%.2f", $0) }
-                ValueSlider(title: "불투명도", value: bind(\.opacity, key: "op"), range: 0...1) { "\(Int($0 * 100))%" }
-                HStack {
-                    Text("모양").font(.caption).frame(width: 58, alignment: .leading)
-                    Picker("", selection: Binding(get: { clip.shape ?? .none },
-                                                  set: { v in store.updateClip(clip.id, key: "shape") { $0.shape = v == .none ? nil : v } })) {
-                        ForEach(ClipShape.allCases) { Text(L($0.label)).tag($0) }
-                    }
-                    .pickerStyle(.segmented).labelsHidden()
-                }
-                if kind == .video || kind == .image {
-                    HStack {
-                        Text("인물 배경").font(.caption).frame(width: 58, alignment: .leading)
-                        Picker("", selection: Binding(get: { clip.backgroundEffect ?? .none },
-                                                      set: { v in store.updateClip(clip.id, key: "bgfx") { $0.backgroundEffect = v == .none ? nil : v } })) {
-                            ForEach(BackgroundEffect.allCases) { Text(L($0.label)).tag($0) }
-                        }
-                        .pickerStyle(.segmented).labelsHidden()
-                    }
-                    .help("사람만 남기고 뒤 배경을 흐리게 하거나 지웁니다 (얼굴 카메라에 알맞음)")
-                }
-                if let marks = asset?.clicks, !marks.isEmpty {
-                    Toggle("마우스 클릭 강조 (\(marks.count)번)", isOn: Binding(get: { clip.showClicks == true },
-                                                                  set: { v in store.updateClip(clip.id, key: "clicks") { $0.showClicks = v ? true : nil } }))
-                        .font(.caption)
-                }
-                HStack {
-                    Text("화면 배치").font(.caption).foregroundStyle(.secondary)
-                    Button("전체") { store.updateClip(clip.id, key: "layout") { $0.scale = 1; $0.offsetX = 0; $0.offsetY = 0 } }
-                    Button("PIP ↘") { store.updateClip(clip.id, key: "layout") { $0.scale = 0.3; $0.offsetX = 0.33; $0.offsetY = 0.32 } }
-                    Button("PIP ↙") { store.updateClip(clip.id, key: "layout") { $0.scale = 0.3; $0.offsetX = -0.33; $0.offsetY = 0.32 } }
-                }
-                .controlSize(.small)
+    @ViewBuilder private var effectControls: some View {
+        if isAudio {
+            fadeControls
+        } else {
+            if isText {
+                Picker("효과 종류", selection: $showingTextTransitions) {
+                    Text("텍스트").tag(false)
+                    Text("전환").tag(true)
+                }.pickerStyle(.segmented).accessibilityIdentifier("effect-kind-picker")
+                if showingTextTransitions { transitionGallery }
+                else { TextEffectGallery(style: textStyle, preview: { store.previewSelectedEffect() }) }
+            } else {
+                Picker("효과 종류", selection: $showingFilters) {
+                    Text("전환").tag(false)
+                    Text("필터").tag(true)
+                }.pickerStyle(.segmented).accessibilityIdentifier("effect-kind-picker")
+                if showingFilters {
+                    VisualFilterGallery(filter: Binding<VisualFilter?>(
+                        get: { clip.visualFilter }, set: { v in store.updateClip(clip.id, key: "filter") { $0.visualFilter = v } }
+                    ), intensity: Binding<Double?>(
+                        get: { clip.filterIntensity }, set: { v in store.updateClip(clip.id, key: "filter-intensity") { $0.filterIntensity = v } }
+                    ), preview: { store.previewSelectedEffect() })
+                } else { transitionGallery }
             }
+            Divider()
+            DisclosureGroup("페이드 세부 설정") { fadeControls.padding(.top, 10) }
+        }
+    }
 
-            if !isText && (kind == .video || kind == .image) {
-                PrivacySection(store: store, clip: clip, isImage: kind == .image)
+    private var transitionGallery: some View {
+        ClipTransitionGallery(entrance: Binding<TransitionSettings?>(
+            get: { clip.transitionIn }, set: { v in store.updateClip(clip.id, key: "transition-in") { $0.transitionIn = v } }
+        ), exit: Binding<TransitionSettings?>(
+            get: { clip.transitionOut }, set: { v in store.updateClip(clip.id, key: "transition-out") { $0.transitionOut = v } }
+        ), preview: { fromEnd in store.previewSelectedEffect(fromEnd: fromEnd) })
+    }
+
+    private var fadeControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(text: isAudio ? "소리 페이드" : "화면·소리 페이드")
+            ValueSlider(title: "페이드 인", value: bind(\.fadeIn, key: "fi"), range: 0...3) { String(format: L("%.1f초"), $0) }
+            ValueSlider(title: "페이드 아웃", value: bind(\.fadeOut, key: "fo"), range: 0...3) { String(format: L("%.1f초"), $0) }
+        }
+    }
+
+    @ViewBuilder private var layoutControls: some View {
+        if isAudio {
+            Text("오디오 클립에는 화면 배치가 없습니다.").font(.callout).foregroundStyle(.secondary)
+        } else {
+            SectionTitle(text: "화면 배치")
+            HStack(spacing: 7) {
+                Button("전체") { store.updateClip(clip.id, key: "layout") { $0.scale = 1; $0.offsetX = 0; $0.offsetY = 0 } }
+                Button("PIP ↘") { store.updateClip(clip.id, key: "layout") { $0.scale = 0.3; $0.offsetX = 0.33; $0.offsetY = 0.32 } }
+                Button("PIP ↙") { store.updateClip(clip.id, key: "layout") { $0.scale = 0.3; $0.offsetX = -0.33; $0.offsetY = 0.32 } }
+            }.controlSize(.small)
+            ValueSlider(title: "크기", value: bind(\.scale, key: "scale"), range: 0.1...4) { "\(Int($0 * 100))%" }
+            ValueSlider(title: "가로 위치", value: bind(\.offsetX, key: "ox"), range: -1...1) { String(format: "%.2f", $0) }
+            ValueSlider(title: "세로 위치", value: bind(\.offsetY, key: "oy"), range: -1...1) { String(format: "%.2f", $0) }
+            if isText {
+                ValueSlider(title: "텍스트 위치", value: Binding<Double>(
+                    get: { clip.textStyle.positionY }, set: { v in store.updateClip(clip.id, key: "tstyle-position") { $0.textStyle.positionY = v } }
+                ), range: 0.05...0.95) { "\(Int($0 * 100))%" }
             }
-
-            SectionTitle(text: "전환 (페이드)")
-            ValueSlider(title: "페이드 인", value: bind(\.fadeIn, key: "fi"), range: 0...3) { String(format: "%.1f초", $0) }
-            ValueSlider(title: "페이드 아웃", value: bind(\.fadeOut, key: "fo"), range: 0...3) { String(format: "%.1f초", $0) }
-
+            ValueSlider(title: "불투명도", value: bind(\.opacity, key: "op"), range: 0...1) { "\(Int($0 * 100))%" }
             Divider()
             HStack {
-                Button { store.splitAtPlayhead() } label: { Label("분할", systemImage: "scissors") }
-                Button { store.duplicateSelection() } label: { Label("복제", systemImage: "plus.square.on.square") }
-                Button(role: .destructive) { store.deleteSelection(ripple: true) } label: { Label("삭제", systemImage: "trash") }
+                Text("모양").font(.caption).frame(width: 58, alignment: .leading)
+                Picker("모양", selection: Binding<ClipShape>(get: { clip.shape ?? ClipShape.none },
+                    set: { v in store.updateClip(clip.id, key: "shape") { $0.shape = v == ClipShape.none ? nil : v } })) {
+                    ForEach(ClipShape.allCases) { Text(L($0.label)).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden()
             }
-            .controlSize(.small)
+            if asset?.kind == .video || asset?.kind == .image {
+                HStack {
+                    Text("인물 배경").font(.caption).frame(width: 58, alignment: .leading)
+                    Picker("인물 배경", selection: Binding<BackgroundEffect>(get: { clip.backgroundEffect ?? BackgroundEffect.none },
+                        set: { v in store.updateClip(clip.id, key: "bgfx") { $0.backgroundEffect = v == BackgroundEffect.none ? nil : v } })) {
+                        ForEach(BackgroundEffect.allCases) { Text(L($0.label)).tag($0) }
+                    }.pickerStyle(.segmented).labelsHidden()
+                }
+                .help("사람만 남기고 뒤 배경을 흐리게 하거나 지웁니다 (얼굴 카메라에 알맞음)")
+            }
+            if let marks = asset?.clicks, !marks.isEmpty {
+                Toggle("마우스 클릭 강조 (\(marks.count)번)", isOn: Binding<Bool>(get: { clip.showClicks == true },
+                    set: { v in store.updateClip(clip.id, key: "clicks") { $0.showClicks = v ? true : nil } })).font(.caption)
+            }
+            if !isText && (asset?.kind == .video || asset?.kind == .image) {
+                Divider()
+                DisclosureGroup("개인정보 가리기") {
+                    PrivacySection(store: store, clip: clip, isImage: asset?.kind == .image).padding(.top, 10)
+                }
+            }
         }
-        .font(.callout)
     }
 }
 
@@ -635,26 +784,42 @@ struct MultiInspector: View {
 struct CaptionInspector: View {
     @ObservedObject var store: EditorStore
     let caption: Caption
+    var section: InspectorSection = .basic
+
+    private var style: Binding<TextStyle> {
+        Binding<TextStyle>(get: { store.project.captionStyle }, set: { v in store.updateProject(key: "capstyle") { $0.captionStyle = v } })
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("자막", systemImage: "captions.bubble").font(.headline)
-            CaptionTextEditor(text: store.captionTextBinding(caption.id))
-                .frame(height: 70)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(.separator))
-            ValueSlider(title: "시작", value: Binding(get: { caption.start }, set: { v in store.updateCaption(caption.id, key: "s") { $0.start = v } }),
-                        range: 0...max(caption.end, store.project.duration)) { TimeFormat.clock($0) }
-            ValueSlider(title: "끝", value: Binding(get: { caption.end }, set: { v in store.updateCaption(caption.id, key: "e") { $0.end = v } }),
-                        range: 0...max(caption.end + 10, store.project.duration)) { TimeFormat.clock($0) }
-            HStack {
-                Button("시작=재생헤드") { let t = store.time; store.updateCaption(caption.id, key: "s") { $0.start = t } }
-                Button("끝=재생헤드") { let t = store.time; store.updateCaption(caption.id, key: "e") { $0.end = t } }
+        VStack(alignment: .leading, spacing: 16) {
+            switch section {
+            case .basic:
+                SectionTitle(text: "내용")
+                CaptionTextEditor(text: store.captionTextBinding(caption.id))
+                    .frame(height: 76).padding(4)
+                    .background(Theme.inspectorInset, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.inspectorBorder, lineWidth: 0.7) }
+                SectionTitle(text: "전체 자막 스타일")
+                TextStyleControls(style: style, showPosition: false, showEffects: false)
+            case .effects:
+                TextEffectGallery(style: style, preview: { store.previewSelectedEffect(captionsOnly: true) })
+                Text("모든 자막에 같은 효과가 적용됩니다.").font(.caption2).foregroundStyle(.secondary)
+            case .layout:
+                SectionTitle(text: "표시 시간")
+                ValueSlider(title: "시작", value: Binding<Double>(get: { caption.start }, set: { v in store.updateCaption(caption.id, key: "s") { $0.start = v } }),
+                    range: 0...max(caption.end, store.project.duration)) { TimeFormat.clock($0) }
+                ValueSlider(title: "끝", value: Binding<Double>(get: { caption.end }, set: { v in store.updateCaption(caption.id, key: "e") { $0.end = v } }),
+                    range: 0...max(caption.end + 10, store.project.duration)) { TimeFormat.clock($0) }
+                HStack {
+                    Button("시작=재생헤드") { let t = store.time; store.updateCaption(caption.id, key: "s") { $0.start = t } }
+                    Button("끝=재생헤드") { let t = store.time; store.updateCaption(caption.id, key: "e") { $0.end = t } }
+                }.controlSize(.small)
+                Divider()
+                SectionTitle(text: "전체 자막 위치")
+                ValueSlider(title: "세로 위치", value: Binding<Double>(
+                    get: { store.project.captionStyle.positionY }, set: { v in store.updateProject(key: "capstyle-position") { $0.captionStyle.positionY = v } }
+                ), range: 0.05...0.95) { "\(Int($0 * 100))%" }
             }
-            .controlSize(.small)
-            Divider()
-            SectionTitle(text: "전체 자막 스타일")
-            TextStyleControls(style: Binding(get: { store.project.captionStyle },
-                                             set: { v in store.updateProject(key: "capstyle") { $0.captionStyle = v } }), showPosition: true)
         }
         .font(.callout)
     }
@@ -680,8 +845,7 @@ struct ProjectInspector: View {
     var body: some View {
         let p = store.project
         VStack(alignment: .leading, spacing: 12) {
-            Label("프로젝트", systemImage: "rectangle.on.rectangle").font(.headline)
-            Text("클립을 선택하면 속도·볼륨·크기를 조절할 수 있습니다.").font(.caption).foregroundStyle(.secondary)
+            Text("클립을 선택하면 글꼴·효과·배치를 바꿀 수 있습니다.").font(.caption).foregroundStyle(.secondary)
             SectionTitle(text: "화면 크기")
             Picker("", selection: Binding(get: { "\(Int(p.canvasWidth))x\(Int(p.canvasHeight))" }, set: { v in
                 if let pr = CanvasPreset.all.first(where: { "\(Int($0.w))x\(Int($0.h))" == v }) {
