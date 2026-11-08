@@ -42,6 +42,13 @@ enum Exporter {
 
     static func export(project: Project, format: ExportFormat, size: CGSize, burnCaptions: Bool,
                        to url: URL, cancel: Box, progress: @escaping (Double) -> Void) async throws {
+        // 소음 줄이기를 켰는데 아직 준비되지 않은 원본은 먼저 만든다
+        for asset in AudioPolish.pendingDenoise(project) {
+            try Task.checkCancellation()
+            try await AudioPolish.ensureDenoised(asset)
+        }
+        let loud = project.loudnessTarget
+        let share = loud == nil ? 1.0 : 0.92
         let built = try await CompositionBuilder.build(project: project, renderSize: size, captions: burnCaptions)
         guard built.duration > 0 else { throw MediaError.failed("타임라인이 비어 있습니다.") }
         guard let session = AVAssetExportSession(asset: built.composition, presetName: format.preset) else {
@@ -58,7 +65,7 @@ enum Exporter {
 
         let poll = Task.detached {
             while !Task.isCancelled {
-                progress(Double(session.progress))
+                progress(Double(session.progress) * share)
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
         }
@@ -68,6 +75,9 @@ enum Exporter {
         poll.cancel()
         switch session.status {
         case .completed:
+            if let loud {
+                try await AudioPolish.normalize(url, target: loud)
+            }
             progress(1)
         case .cancelled:
             try? FileManager.default.removeItem(at: url)

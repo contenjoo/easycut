@@ -741,6 +741,8 @@ fn update_project(app: AppHandle, st: State<AppState>, props: HashMap<String, Va
                         }
                     }
                     "showCaptions" => p.show_captions = v.as_bool().unwrap_or(p.show_captions),
+                    "loudnessTarget" => easycut_core::audio_polish::set_loudness_target(p, v.as_f64().filter(|t| t.is_finite()).map(|t| t.clamp(-35.0, -5.0))),
+                    "autoDuck" => easycut_core::audio_polish::set_auto_duck(p, v.as_bool() == Some(true)),
                     "captionStyle" => {
                         if let Some(style) = &caption_style { p.caption_style = style.clone(); }
                     }

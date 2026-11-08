@@ -47,6 +47,8 @@ struct RenderScene {
     var captionStyle: TextStyle
     var showCaptions: Bool
     var background: RGBA
+    /// 단어 강조 자막용 어절 시각 (자막 id → 어절)
+    var captionWords: [UUID: [CaptionToken]] = [:]
 
     func caption(at t: Double) -> Caption? {
         var lo = 0, hi = captions.count - 1
@@ -103,13 +105,13 @@ enum RenderCache {
     }
 
     static func text(_ text: String, style: TextStyle, unit: CGFloat, maxWidth: CGFloat, scale: Double,
-                     visibleCharacters: Int? = nil) -> CIImage? {
-        let key = "\(text)|\(style.hashValue)|\(unit)|\(maxWidth)|\(scale)|\(visibleCharacters.map(String.init) ?? "all")"
+                     visibleCharacters: Int? = nil, highlight: NSRange? = nil) -> CIImage? {
+        let key = "\(text)|\(style.hashValue)|\(unit)|\(maxWidth)|\(scale)|\(visibleCharacters.map(String.init) ?? "all")|\(highlight.map { "\($0.location),\($0.length)" } ?? "-")"
         lock.lock()
         if let img = texts[key] { lock.unlock(); return img }
         lock.unlock()
         guard let cg = TextRenderer.render(text: text, style: style, unit: unit * scale, maxWidth: maxWidth,
-                                           visibleCharacters: visibleCharacters) else { return nil }
+                                           visibleCharacters: visibleCharacters, highlight: highlight) else { return nil }
         let img = CIImage(cgImage: cg)
         lock.lock()
         if texts.count > 400 { texts.removeAll() }
@@ -135,7 +137,7 @@ enum TextRenderer {
     }
 
     static func render(text: String, style: TextStyle, unit: CGFloat, maxWidth: CGFloat,
-                       visibleCharacters: Int? = nil) -> CGImage? {
+                       visibleCharacters: Int? = nil, highlight: NSRange? = nil) -> CGImage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let size = max(6, CGFloat(style.fontSize) * unit)
@@ -152,6 +154,9 @@ enum TextRenderer {
             let boundary = trimmed.prefix(max(0, count)).utf16.count
             let length = trimmed.utf16.count - boundary
             return length > 0 ? NSRange(location: boundary, length: length) : nil
+        }
+        if let highlight, highlight.location + highlight.length <= str.length {
+            str.addAttribute(.foregroundColor, value: (style.highlightColor ?? CaptionWords.defaultHighlight).nsColor, range: highlight)
         }
         if let hidden { str.addAttribute(.foregroundColor, value: NSColor.clear, range: hidden) }
         let textRect = str.boundingRect(with: CGSize(width: max(50, maxWidth - 2 * padX), height: .greatestFiniteMagnitude),
@@ -306,8 +311,12 @@ final class EasyCompositor: NSObject, AVVideoCompositing {
             let style = scene.captionStyle
             let progress = MotionEffects.textProgress(style: style, elapsed: t - cap.start, duration: cap.end - cap.start)
             let visible = style.animation == .typewriter ? MotionEffects.visibleCharacters(text: cap.text, progress: progress) : nil
+            var highlight: NSRange?
+            if style.wordHighlight == true, let toks = scene.captionWords[cap.id], let i = CaptionWords.activeIndex(toks, at: t) {
+                highlight = NSRange(location: toks[i].location, length: toks[i].length)
+            }
             if let img = RenderCache.text(cap.text, style: style, unit: unit, maxWidth: size.width * 0.86,
-                                          scale: 1, visibleCharacters: visible) {
+                                          scale: 1, visibleCharacters: visible, highlight: highlight) {
                 let w = img.extent.width, h = img.extent.height
                 let x = (size.width - w) / 2
                 var y = size.height - CGFloat(scene.captionStyle.positionY) * size.height - h / 2

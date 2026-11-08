@@ -21,6 +21,8 @@ enum CompositionBuilder {
         var mixParams: [AVMutableAudioMixInputParameters] = []
         var missing: [String] = []
         var assetCache: [String: AVURLAsset] = [:]
+        var denoisedAssets: [String: AVURLAsset] = [:]
+        let speech = project.autoDuck == true ? AudioPolish.speechRanges(project) : []
 
         func avAsset(_ a: MediaAsset) -> AVURLAsset {
             if let c = assetCache[a.path] { return c }
@@ -111,7 +113,12 @@ enum CompositionBuilder {
                             layers.append(l)
                         }
                     }
-                    if !track.muted, clip.volume > 0.001, let sa = try await av.loadTracks(withMediaType: .audio).first {
+                    var audioSource = av
+                    if clip.denoise == true, let clean = AudioPolish.cachedDenoised(asset) {
+                        audioSource = denoisedAssets[clean.path] ?? AVURLAsset(url: clean, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+                        denoisedAssets[clean.path] = audioSource
+                    }
+                    if !track.muted, clip.volume > 0.001, let sa = try await audioSource.loadTracks(withMediaType: .audio).first {
                         if aTrack == nil {
                             aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
                             if let at = aTrack {
@@ -119,6 +126,14 @@ enum CompositionBuilder {
                             }
                         }
                         if let at = aTrack, let p = aParams, try await place(sa, into: at, clip: clip) {
+                            if !speech.isEmpty, AudioPolish.isMusic(asset) {
+                                let pts = AudioPolish.envelope(clip, speech: speech)
+                                for (a, b) in zip(pts, pts.dropFirst()) where b.t - a.t > 0.0005 {
+                                    p.setVolumeRamp(fromStartVolume: Float(a.v), toEndVolume: Float(b.v),
+                                                    timeRange: CMTimeRange(start: ct(a.t), end: ct(b.t)))
+                                }
+                                continue
+                            }
                             let v = Float(min(clip.volume, 4))
                             let fi = min(clip.fadeIn, clip.duration / 2), fo = min(clip.fadeOut, clip.duration / 2)
                             if fi > 0.01 {
@@ -143,7 +158,8 @@ enum CompositionBuilder {
                                 captions: project.captions.sorted { $0.start < $1.start },
                                 captionStyle: project.captionStyle,
                                 showCaptions: captions ?? project.showCaptions,
-                                background: project.background)
+                                background: project.background,
+                                captionWords: project.captionStyle.wordHighlight == true ? project.captionWordTimings() : [:])
         var vc: AVMutableVideoComposition?
         if comp.duration.seconds > 0 {
             let v = AVMutableVideoComposition()

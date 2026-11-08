@@ -67,6 +67,7 @@ pub fn prepare_clip(project: &Project, id: Id, props: &HashMap<String, Value>) -
             "fadeIn" => { if let Some(v) = number { clip.fade_in = v.max(0.0); } }
             "fadeOut" => { if let Some(v) = number { clip.fade_out = v.max(0.0); } }
             "text" => { clip.text = value.as_str().unwrap_or("").to_string(); }
+            "denoise" => easycut_core::audio_polish::set_denoise(&mut clip, value.as_bool() == Some(true)),
             "shape" | "backgroundEffect" | "showClicks" => {
                 if value.is_null() || value.as_str() == Some("none") || value.as_bool() == Some(false) { clip.extra.remove(key); }
                 else { clip.extra.insert(key.clone(), value.clone()); }

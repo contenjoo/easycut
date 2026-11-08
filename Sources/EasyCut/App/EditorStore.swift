@@ -588,6 +588,35 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    // MARK: 목소리 선명하게 · 음량
+
+    /// 클립 소음 줄이기를 켜고 끈다. 켤 때 소음 줄인 소리 파일을 미리 만들어 바로 들어 볼 수 있게 한다.
+    func setDenoise(_ on: Bool, for ids: [UUID]) {
+        apply("denoise") { p in
+            for id in ids { if let loc = p.locate(clip: id) { p.tracks[loc.track].clips[loc.index].denoise = on ? true : nil } }
+        }
+        guard on else { return }
+        let assets = AudioPolish.pendingDenoise(project)
+        guard !assets.isEmpty else { return }
+        showToast(L("목소리를 선명하게 다듬는 중…"))
+        Task {
+            var failed: String?
+            for a in assets {
+                do { try await AudioPolish.ensureDenoised(a) } catch { failed = error.localizedDescription }
+            }
+            if let failed { alert = failed } else { showToast(L("소음 줄이기 준비 완료")) }
+            scheduleRebuild(immediate: true)
+        }
+    }
+
+    func setLoudness(_ target: Double?) {
+        apply("loudness") { $0.loudnessTarget = target }
+    }
+
+    func setAutoDuck(_ on: Bool) {
+        apply("auto-duck") { $0.autoDuck = on ? true : nil }
+    }
+
     // MARK: 가리기 (개인정보)
 
     static let manualBlurLabel = "직접 지정"

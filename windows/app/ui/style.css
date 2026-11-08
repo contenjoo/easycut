@@ -69,7 +69,7 @@ h3 { font-size: 11px; text-transform: uppercase; color: var(--dim); margin: 14px
 #jobs { position: fixed; right: 12px; bottom: 300px; display: flex; flex-direction: column; gap: 6px; z-index: 20; }
 .job { background: rgba(40,42,48,.97); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 300px; }
 .job progress { width: 100%; }
-#modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 40; }
+#modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 400; }
 #modal.hidden { display: none; }
 #modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; width: 460px; max-width: 92vw; }
 #modal h2 { margin: 0 0 10px; font-size: 16px; }
@@ -381,6 +381,7 @@ h3 { text-transform:none; letter-spacing:0; font-size:11px; font-weight:650; mar
 .font-suggestion .font-sample { font-size:16px; margin-bottom:3px; }
 .font-suggestion small { font-size:9px; color:var(--dim); }
 .text-toggles { display:flex; gap:8px; margin-top:10px; }
+.text-toggles.stack { flex-direction:column; align-items:stretch; }
 .text-toggles label { display:flex; align-items:center; gap:4px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; font-size:11px; }
 .style-colors { display:flex; align-items:center; gap:11px; flex-wrap:wrap; }
 .style-colors label { display:flex; align-items:center; gap:6px; color:var(--dim); font-size:11px; }

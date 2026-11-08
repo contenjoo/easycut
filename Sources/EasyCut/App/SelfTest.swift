@@ -99,6 +99,7 @@ enum SelfTest {
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "natural" { testTimelineOps(); return }
         // EASYCUT_SELFTEST_ONLY=privacy : 개인정보 가리기 검사만
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "privacy" { try await testPrivacy(dir); return }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "audio-polish" { try await testAudioPolish(dir); return }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "review" { try await testReview(dir); return }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "slider" { await testSlider(dir); return }
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "sync" { try await testSync(dir); return }

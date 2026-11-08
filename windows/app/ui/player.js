@@ -1,6 +1,7 @@
 // 미리보기: 지금 시간에 걸린 클립마다 <video>/<audio>/<img>를 두고 한 시계에 맞춰 재생한다
 import { S, U, onTime } from "./app.js";
 import { BlurLayer } from "./privacy.js";
+import { previewDuck, previewHighlight, HIGHLIGHT } from "./audio-polish.js";
 import { transitionState, textMotionState, textProgress, revealTextParts, graphemes, visualFilterCSS, legacyFade, fontFamilyCSS } from "./effects.js";
 
 const src = (path) => window.__TAURI__.core.convertFileSrc(path);
@@ -253,7 +254,7 @@ export class Player {
       }
       if (el.tagName !== "IMG") {
         const want = c.sourceIn + (t - c.start) * c.speed;
-        const vol = c.volume * (S.volume ?? 1) * legacyFade(c, t, true);
+        const vol = c.volume * (S.volume ?? 1) * legacyFade(c, t, true) * previewDuck(p, a, t);
         el.muted = tr.muted || vol <= 0.001;
         el.volume = Math.max(0, Math.min(1, vol));
         const rate = Math.min(16, Math.max(0.0625, this.rate * c.speed));
@@ -279,7 +280,7 @@ export class Player {
         const d = this.textEl(cap.text, p.captionStyle, unit, p.captionStyle.positionY, 0);
         wrapper.appendChild(d);
         this.overlay.appendChild(wrapper);
-        this.reveal(d, cap.text, p.captionStyle, t - cap.start, cap.end - cap.start);
+        this.reveal(d, cap.text, p.captionStyle, t - cap.start, cap.end - cap.start, previewHighlight(p, cap, t));
         const rect = this.textRect(d, p.captionStyle.positionY, 0, true);
         this.motionStyle(wrapper, textMotionState(p.captionStyle, t - cap.start, cap.end - cap.start, rect, { w: this.cw, h: this.ch }), rect);
       }
@@ -378,10 +379,26 @@ export class Player {
     return d;
   }
 
-  reveal(d, text, style, elapsed, duration) {
+  reveal(d, text, style, elapsed, duration, highlight = null) {
+    const typing = style.animation === "typewriter" && textProgress(style, elapsed, duration) < 1;
     const parts = style.animation === "typewriter" ? revealTextParts(text, textProgress(style, elapsed, duration))
       : { visible: String(text ?? "").trim(), hidden: "" };
-    if (d._visible.textContent !== parts.visible) d._visible.textContent = parts.visible;
+    if (highlight && !typing) {
+      // 말하는 어절만 강조색 (글자 배치는 그대로)
+      const key = `${highlight.s}:${highlight.l}`;
+      if (d._hlKey !== key || d._hlText !== parts.visible) {
+        const chars = Array.from(parts.visible);
+        const mark = document.createElement("span");
+        mark.style.color = this.color(style.highlightColor || HIGHLIGHT);
+        mark.textContent = chars.slice(highlight.s, highlight.s + highlight.l).join("");
+        d._visible.replaceChildren(chars.slice(0, highlight.s).join(""), mark, chars.slice(highlight.s + highlight.l).join(""));
+        d._hlKey = key; d._hlText = parts.visible;
+      }
+      if (d._hidden.textContent) d._hidden.textContent = "";
+      return;
+    }
+    d._hlKey = null;
+    if (d._visible.textContent !== parts.visible || d._visible.children.length) d._visible.textContent = parts.visible;
     if (d._hidden.textContent !== parts.hidden) d._hidden.textContent = parts.hidden;
   }
 

@@ -76,6 +76,7 @@ function installFixtureBackend({ project: initial, fonts, failFonts }) {
           case 'generation_state': return {};
           case 'generation_capabilities': return { providers: {}, skills: [], runtime: {} };
           case 'startup_files': return [];
+          case 'export_size': return [1280, 720];
           case 'recovery_check': case 'check_update': return null;
           case 'ui_state': case 'set_pref': return null;
           default: throw new Error('Unsupported offline fixture command: ' + command);
@@ -253,6 +254,33 @@ async function visibleWithin(page, selector, parent = '#right') {
     await page.waitForFunction(async () => { const { S } = await import('/app.js'); return S.time >= 0.25 && S.time < 1; });
     await page.locator('#playBtn').click();
     manifest.checks.push('caption IME node retention, deferred commit and shared caption animation preview');
+
+    // 단어 강조 자막: 글자 수 비율 2:2:1 → 1.5초에는 둘째 어절 '조합'만 강조색
+    await page.locator('details.capstyle > summary').click();
+    const highlightBox = page.locator('#c-style [data-s="wordHighlight"]');
+    await highlightBox.check();
+    await page.waitForFunction(() => window.__studioMock.snapshot().project.captionStyle.wordHighlight === true);
+    await page.locator('#c-style [data-c="highlightColor"]').waitFor();
+    await setRange(page.locator('#scrub-bar'), 0.5);
+    await page.waitForFunction(() => [...document.querySelectorAll('#overlay span span, .overlay span span, span > span')].some((el) => el.textContent === '조합' && getComputedStyle(el).color === 'rgb(255, 214, 26)'));
+    await saveScreenshot('caption-word-highlight.png');
+    manifest.checks.push('word-highlight caption toggle and spoken-word preview color');
+
+    // 클립 소음 줄이기와 내보내기 소리 설정은 맥과 같은 키로 저장
+    await page.evaluate(async () => { const { S } = await import('/app.js'); S.project.assets[0].hasAudio = true; });
+    await selectFixtureClip(page, IMAGE_ID);
+    await page.locator('[data-cmd="export"]').click();
+    await page.locator('#e-loud').check();
+    await page.waitForFunction(() => window.__studioMock.snapshot().project.loudnessTarget === -14);
+    await page.locator('#e-lufs').selectOption('-16');
+    await page.waitForFunction(() => window.__studioMock.snapshot().project.loudnessTarget === -16);
+    await page.locator('#e-duck').check();
+    await page.waitForFunction(() => window.__studioMock.snapshot().project.autoDuck === true);
+    await saveScreenshot('export-sound-options.png');
+    await page.locator('#e-loud').uncheck();
+    await page.waitForFunction(() => window.__studioMock.snapshot().project.loudnessTarget == null);
+    await page.locator('#e-cancel').click();
+    manifest.checks.push('export loudness target and auto-duck options');
 
     const failed = await newFixturePage(true);
     await selectFixtureClip(failed.page, TEXT_ID);

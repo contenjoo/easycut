@@ -80,7 +80,14 @@ enum AITools {
               "background_opacity": num("0~1 (0이면 배경 없음)"), "outline": ["type": "boolean"], "outline_color": str("외곽선 색 #RRGGBB"),
               "bold": ["type": "boolean"], "font_name": str("글꼴 PostScript 이름 (예: AppleSDGothicNeo-Bold), 빈 문자열이면 기본"),
               "position_y": num("0(위)~1(아래)"), "visible": ["type": "boolean", "description": "자막 표시 여부"],
-              "text_animation": textAnimationSchema, "animation_duration": num("자막마다 등장 효과 길이(초), 기본 0.6")]),
+              "text_animation": textAnimationSchema, "animation_duration": num("자막마다 등장 효과 길이(초), 기본 0.6"),
+              "word_highlight": ["type": "boolean", "description": "말하는 단어만 강조색으로 바꾸는 쇼츠 스타일 자막"],
+              "highlight_color": str("강조 단어 색 #RRGGBB (기본 노랑)")]),
+        tool("set_audio_polish", "소리 다듬기: 클립 목소리 선명하게(배경 소음 줄이기), 내보낼 때 음량 자동 맞추기(LUFS), 말할 때 배경음악(대본 없는 오디오 파일) 자동 줄이기.",
+             ["denoise": ["type": "boolean", "description": "소음 줄이기 켜기/끄기"],
+              "clip_ids": ["type": "array", "items": ["type": "string"], "description": "소음 줄이기 대상 클립 id, 생략하면 소리 있는 모든 영상·오디오 클립"] as [String: Any],
+              "loudness_target": num("목표 음량 LUFS (-14 유튜브, -16 강의, -23 방송). 0이면 끔"),
+              "auto_duck": ["type": "boolean", "description": "말할 때 배경음악 자동 줄이기"]]),
         tool("set_canvas", "화면 크기/비율 변경.", ["width": num, "height": num], required: ["width", "height"]),
         tool("set_playhead", "재생헤드를 옮긴다.", ["time": num("초")], required: ["time"]),
         tool("set_playback_speed", "미리보기 재생 속도(0.25~20배)를 바꾸고 선택적으로 재생한다.",
@@ -456,8 +463,37 @@ enum AITools {
                 if let v = b("bold") { p.captionStyle.bold = v }
                 if let v = d("position_y") { p.captionStyle.positionY = min(0.97, max(0.03, v)) }
                 if let v = b("visible") { p.showCaptions = v }
+                if let v = b("word_highlight") { p.captionStyle.wordHighlight = v ? true : nil }
+                if let c = s("highlight_color").flatMap(hexColor) { p.captionStyle.highlightColor = c }
             }
             return ("자막 스타일 변경", false)
+
+        case "set_audio_polish":
+            var done: [String] = []
+            if let on = b("denoise") {
+                var ids: [UUID]
+                if let raw = input["clip_ids"] as? [String], !raw.isEmpty {
+                    ids = raw.compactMap { findClip($0, store.project) }
+                    guard !ids.isEmpty else { return ("클립을 찾지 못했습니다", true) }
+                } else {
+                    ids = store.project.tracks.flatMap(\.clips).filter { c in
+                        c.kind == .media && store.project.asset(c.assetID)?.hasAudio == true
+                    }.map(\.id)
+                }
+                store.setDenoise(on, for: ids)
+                done.append("\(ids.count)개 클립 소음 줄이기 \(on ? "켬" : "끔")")
+            }
+            if let t = d("loudness_target") {
+                let target: Double? = t == 0 ? nil : min(-5, max(-35, t))
+                store.setLoudness(target)
+                done.append(target.map { "음량 \(Int($0)) LUFS" } ?? "음량 맞추기 끔")
+            }
+            if let v = b("auto_duck") {
+                store.setAutoDuck(v)
+                done.append("배경음악 자동 줄이기 \(v ? "켬" : "끔")")
+            }
+            guard !done.isEmpty else { return ("denoise, loudness_target, auto_duck 중 하나가 필요합니다", true) }
+            return changed(done.joined(separator: ", "))
 
         case "set_canvas":
             guard let w = d("width"), let h = d("height"), w >= 16, h >= 16 else { return ("width, height가 필요합니다", true) }
@@ -592,6 +628,7 @@ enum AITools {
                 if let fx = c.transitionIn, fx.effect != .none { o.append("      시작 전환 \(fx.effect.rawValue) \(fx.duration)초") }
                 if let fx = c.transitionOut, fx.effect != .none { o.append("      끝 전환 \(fx.effect.rawValue) \(fx.duration)초") }
                 if let filter = c.visualFilter, filter != .none { o.append("      색감 \(filter.rawValue) 강도 \(c.filterIntensity ?? 1)") }
+                if c.denoise == true { o.append("      목소리 선명하게(소음 줄이기) 켬") }
                 if c.kind == .text, let fx = c.textStyle.animation, fx != .none {
                     o.append("      글자 등장 \(fx.rawValue) \(c.textStyle.animationDuration ?? 0.6)초")
                 }
@@ -603,6 +640,8 @@ enum AITools {
         }
         o.append("자막 \(p.captions.count)개 (표시 \(p.showCaptions ? "켬" : "끔"), 크기 \(Int(p.captionStyle.fontSize)), 위치 \(String(format: "%.2f", p.captionStyle.positionY)))")
         if let fx = p.captionStyle.animation, fx != .none { o.append("자막 등장 \(fx.rawValue) \(p.captionStyle.animationDuration ?? 0.6)초") }
+        if p.captionStyle.wordHighlight == true { o.append("자막 단어 강조 켬") }
+        o.append("소리: 음량 맞추기 \(p.loudnessTarget.map { "\(Int($0)) LUFS" } ?? "끔"), 배경음악 자동 줄이기 \(p.autoDuck == true ? "켬" : "끔")")
         for (n, c) in p.captions.prefix(20).enumerated() {
             o.append(String(format: "  [%d] %.2f~%.2f %@", n, c.start, c.end, c.text))
         }

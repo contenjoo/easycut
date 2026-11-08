@@ -111,6 +111,23 @@ fn alpha_tag(channel:u8,opacity:f64,color_alpha:f64)->String{
 
 /// 고정된 전체 문장의 글자 배치를 유지한다. ASS override는 글자 폭을 바꾸지 않으며 숨긴 뒤 글자의 외곽선도 함께 숨긴다.
 pub fn ass_events(name:&str,st:&TextStyle,text:&str,start:f64,end:f64,x:f64,y:f64,w:i64,h:i64,fps:f64,layer:usize,opacity:f64,fade_in:f64,fade_out:f64)->String{
+    ass_events_with(name,st,text,start,end,x,y,w,h,fps,layer,opacity,fade_in,fade_out,None)
+}
+
+fn ass_rgb(c:&easycut_core::Rgba)->String{
+    let (r,g,b)=((c.r*255.0).round()as u8,(c.g*255.0).round()as u8,(c.b*255.0).round()as u8);
+    format!("&H{b:02X}{g:02X}{r:02X}&")
+}
+
+/// 단어 강조: 말하는 어절만 강조색 (맥 `CaptionWords`와 같은 시각)
+fn highlighted(text:&str,tok:&easycut_core::audio_polish::CaptionToken,st:&TextStyle)->String{
+    let chars:Vec<char>=text.trim().chars().collect();
+    let a=tok.char_start.min(chars.len());let b=(tok.char_start+tok.char_len).min(chars.len());
+    let part=|r:&[char]|super::ass_text(&r.iter().collect::<String>());
+    format!("{}{{\\1c{}}}{}{{\\1c{}}}{}",part(&chars[..a]),ass_rgb(&easycut_core::audio_polish::highlight_color(st)),part(&chars[a..b]),ass_rgb(&st.text_color),part(&chars[b..]))
+}
+
+pub fn ass_events_with(name:&str,st:&TextStyle,text:&str,start:f64,end:f64,x:f64,y:f64,w:i64,h:i64,fps:f64,layer:usize,opacity:f64,fade_in:f64,fade_out:f64,words:Option<&[easycut_core::audio_polish::CaptionToken]>)->String{
     let duration=(end-start).max(0.0);
     if duration<=0.0{return String::new();}
     let animation=st.animation.as_deref().unwrap_or("none");
@@ -122,6 +139,7 @@ pub fn ass_events(name:&str,st:&TextStyle,text:&str,start:f64,end:f64,x:f64,y:f6
     for (a,b) in [(0.0,first),(last,duration)]{
         if b>a{let count=((b-a)*fps).ceil()as usize;for i in 0..=count{boundaries.push((a+i as f64/fps).min(b));}}
     }
+    if let Some(toks)=words{for tok in toks{let t=tok.start-start;if t>0.0&&t<duration{boundaries.push(t);}}}
     boundaries.sort_by(f64::total_cmp);boundaries.dedup_by(|a,b|(*a-*b).abs()<0.0001);
     let glyphs:Vec<&str>=text.graphemes(true).collect();
     let size=st.font_size*w.min(h)as f64/1080.0;
@@ -153,6 +171,8 @@ pub fn ass_events(name:&str,st:&TextStyle,text:&str,start:f64,end:f64,x:f64,y:f6
         let content=if animation=="typewriter"&&p<1.0{
             let count=((glyphs.len()as f64*p).floor()as usize).min(glyphs.len());
             format!("{}{{\\alpha&HFF&}}{}",super::ass_text(&glyphs[..count].concat()),super::ass_text(&glyphs[count..].concat()))
+        }else if let Some(i)=words.and_then(|toks|easycut_core::audio_polish::active_index(toks,start+t)){
+            highlighted(text,&words.unwrap()[i],st)
         }else{super::ass_text(text)};
         let tags=format!("\\an5\\pos({px:.3},{py:.3})\\fscx{sx:.3}\\fscy{sy:.3}\\frz{angle:.3}\\blur{blur:.3}{clip}{}{}{}",alpha_tag(1,alpha,st.text_color.a),alpha_tag(3,alpha,if st.background_color.a>0.01{st.background_color.a}else{st.outline_color.a}),alpha_tag(4,alpha,0.0));
         let _=writeln!(events,"Dialogue: {layer},{},{},{name},,0,0,0,,{{{tags}}}{content}",super::ass_time(start+t),super::ass_time(start+pair[1]));

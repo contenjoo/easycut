@@ -452,7 +452,7 @@ function renderInspector() {
     const fades = `<h3>${L(kind === "audio" ? "소리 페이드" : "화면·소리 페이드")}</h3>${slider("fadeIn", "페이드 인", 0, 3, 0.1, c.fadeIn, fmts.fadeIn)}${slider("fadeOut", "페이드 아웃", 0, 3, 0.1, c.fadeOut, fmts.fadeOut)}`;
     if (section === "basic") {
       el.innerHTML = isText ? `<h3>${L("내용")}</h3><textarea id="i-text" rows="3" class="inspector-text"></textarea><div id="i-tstyle"></div>` :
-        `${kind === "video" || kind === "audio" ? `<h3>${L("속도 (최대 20배)")}</h3><label class="style-slider"><input type="range" id="i-speed" min="${Math.log(0.1)}" max="${Math.log(20)}" step="0.01" value="${Math.log(c.speed || 1)}"/><output id="i-speed-v">${c.speed}x</output></label>${speedGrid(c.speed)}<h3>${L("오디오")}</h3>${slider("volume", "볼륨", 0, 2, 0.01, c.volume, pct)}<div class="row"><button class="mini" id="i-mute">${L(c.volume === 0 ? "소리 켜기" : "음소거")}</button>${a?.hasAudio ? `<button class="mini" id="i-stt">${L(a.words ? "다시 인식" : "음성 인식")}</button>` : ""}</div>` : `<h3>${L("이미지")}</h3><p class="hint">${esc(a?.name || L("클립"))}</p><p class="hint">${a?.width || 0} × ${a?.height || 0}</p>`}`;
+        `${kind === "video" || kind === "audio" ? `<h3>${L("속도 (최대 20배)")}</h3><label class="style-slider"><input type="range" id="i-speed" min="${Math.log(0.1)}" max="${Math.log(20)}" step="0.01" value="${Math.log(c.speed || 1)}"/><output id="i-speed-v">${c.speed}x</output></label>${speedGrid(c.speed)}<h3>${L("오디오")}</h3>${slider("volume", "볼륨", 0, 2, 0.01, c.volume, pct)}<div class="row"><button class="mini" id="i-mute">${L(c.volume === 0 ? "소리 켜기" : "음소거")}</button>${a?.hasAudio ? `<button class="mini" id="i-stt">${L(a.words ? "다시 인식" : "음성 인식")}</button>` : ""}</div>${a?.hasAudio ? `<label class="hint" style="width:auto" title="${L("에어컨·웅웅거림 같은 배경 소음을 줄입니다. 내보낸 영상에 적용되며 미리보기에는 원래 소리가 납니다.")}"><input type="checkbox" id="i-denoise" ${c.denoise ? "checked" : ""}/> ${L("목소리 선명하게 (소음 줄이기)")}</label>` : ""}` : `<h3>${L("이미지")}</h3><p class="hint">${esc(a?.name || L("클립"))}</p><p class="hint">${a?.width || 0} × ${a?.height || 0}</p>`}`;
     } else if (section === "effects") {
       el.innerHTML = kind === "audio" ? fades : `<div id="i-effects"></div><details class="advanced-controls"><summary>${L("페이드 세부 설정")}</summary>${fades}</details>`;
       if (kind !== "audio") renderClipEffects(el.querySelector("#i-effects"), { clip: c, kind, onClip: update, preview: (fromEnd) => previewSelectedEffect({ clip: c, fromEnd }) });
@@ -465,6 +465,7 @@ function renderInspector() {
     if (q("#i-speed")) { q("#i-speed").oninput = (e) => { q("#i-speed-v").textContent = (Math.round(Math.exp(+e.target.value) * 100) / 100) + "x"; }; q("#i-speed").onchange = (e) => run("set_speed", { ids: [c.id], speed: Math.round(Math.exp(+e.target.value) * 100) / 100 }); wireSpeeds([c.id]); }
     if (q("#i-mute")) q("#i-mute").onclick = () => update({ volume: c.volume === 0 ? 1 : 0 });
     if (q("#i-stt")) q("#i-stt").onclick = () => transcribeAsset(a.id);
+    if (q("#i-denoise")) q("#i-denoise").onchange = (e) => update({ denoise: e.target.checked });
     el.querySelectorAll("[data-shape]").forEach((b) => { b.onclick = () => update({ shape: b.dataset.shape }); });
     el.querySelectorAll("[data-layout]").forEach((b) => { b.onclick = () => update({ full: { scale: 1, offsetX: 0, offsetY: 0 }, br: { scale: 0.3, offsetX: 0.33, offsetY: 0.32 }, bl: { scale: 0.3, offsetX: -0.33, offsetY: 0.32 } }[b.dataset.layout]); });
     if (q("#i-privacy")) wirePrivacy(q("#i-privacy"), c, a, player);
@@ -581,8 +582,9 @@ async function exportDialog() {
   const pref = (k, d) => { try { const v = localStorage.getItem("export." + k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } };
   const setPref = (k, v) => { try { localStorage.setItem("export." + k, JSON.stringify(v)); } catch (_) {} };
   const o = { format: pref("format", "mp4"), res: pref("res", 1080), burn: pref("burn", true), srt: pref("srt", false) };
-  const p = S.project;
+  let p = S.project;
   const draw = async () => {
+    p = S.project;
     const [w, h] = await invoke("export_size", { height: o.res });
     const audio = o.format === "m4a";
     box.innerHTML = `<h2>${L("내보내기")}</h2>
@@ -592,6 +594,10 @@ async function exportDialog() {
         ${[[2160, "2160p (4K)"], [1080, "1080p (FHD)"], [720, "720p (HD)"], [480, "480p"]].map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></div>
         <div class="row"><label></label><label class="hint" style="width:auto"><input type="checkbox" id="e-cap" ${o.burn ? "checked" : ""}/> ${L("자막을 영상에 입히기")}</label></div>`}
       <div class="row"><label></label><label class="hint" style="width:auto"><input type="checkbox" id="e-srt" ${o.srt ? "checked" : ""} ${p.captions.length ? "" : "disabled"}/> ${L("SRT 자막 파일도 함께 저장")}</label></div>
+      <h3>${L("소리")}</h3>
+      <div class="row"><label></label><label class="hint" style="width:auto"><input type="checkbox" id="e-loud" ${p.loudnessTarget != null ? "checked" : ""}/> ${L("음량 자동 맞추기")}</label></div>
+      ${p.loudnessTarget != null ? `<div class="row"><label>${L("목표 음량")}</label><select id="e-lufs">${[[-14, "유튜브·쇼츠 (-14 LUFS)"], [-16, "강의·팟캐스트 (-16 LUFS)"], [-23, "방송 (-23 LUFS)"]].map(([v, t]) => `<option value="${v}" ${Math.round(p.loudnessTarget) === v ? "selected" : ""}>${L(t)}</option>`).join("")}</select></div>` : ""}
+      <div class="row"><label></label><label class="hint" style="width:auto"><input type="checkbox" id="e-duck" ${p.autoDuck ? "checked" : ""}/> ${L("말할 때 배경음악 자동으로 줄이기")}</label></div>
       <p class="hint">${audio ? L("길이 {}", U.fmt(U.duration())) : L("출력 {}×{} · 길이 {}", w, h, U.fmt(U.duration()))}</p>
       <div class="btns"><button id="e-cancel">${L("취소")}</button><button class="primary" id="e-go">${L("내보내기…")}</button></div>`;
     const q = (s) => box.querySelector(s);
@@ -600,6 +606,10 @@ async function exportDialog() {
     if (q("#e-res")) q("#e-res").onchange = (e) => { o.res = +e.target.value; setPref("res", o.res); draw(); };
     if (q("#e-cap")) q("#e-cap").onchange = (e) => { o.burn = e.target.checked; setPref("burn", o.burn); };
     q("#e-srt").onchange = (e) => { o.srt = e.target.checked; setPref("srt", o.srt); };
+    const projectProp = async (props) => { await run("update_project", { props }); draw(); };
+    q("#e-loud").onchange = (e) => projectProp({ loudnessTarget: e.target.checked ? -14 : null });
+    if (q("#e-lufs")) q("#e-lufs").onchange = (e) => projectProp({ loudnessTarget: +e.target.value });
+    q("#e-duck").onchange = (e) => projectProp({ autoDuck: e.target.checked });
     q("#e-cancel").onclick = () => $("#modal").classList.add("hidden");
     q("#e-go").onclick = go;
   };

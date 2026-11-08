@@ -122,6 +122,10 @@ struct TextStyle: Codable, Hashable {
     /// 텍스트가 나타나는 효과. nil은 기존 프로젝트의 효과 없음과 같다.
     var animation: TextAnimation?
     var animationDuration: Double?
+    /// 말하는 단어만 강조색으로 바꾸는 자막 (쇼츠 스타일). nil은 끔.
+    var wordHighlight: Bool?
+    /// 강조 단어 색 (nil = 노랑)
+    var highlightColor: RGBA?
 
     static let caption = TextStyle()
     static let title = TextStyle(fontSize: 96, bold: true, textColor: .white,
@@ -169,6 +173,8 @@ struct Clip: Codable, Identifiable, Hashable {
     var showClicks: Bool?
     /// 화면 일부 가리기 (nil = 없음)
     var blurs: [BlurRegion]?
+    /// 목소리 선명하게 (배경 소음 줄이기). nil은 끔.
+    var denoise: Bool?
 
     var duration: Double { max(0, (sourceOut - sourceIn) / speed) }
     var end: Double { start + duration }
@@ -206,6 +212,10 @@ struct Project: Codable, Hashable {
     var canvasHeight: Double = 1080
     var fps: Double = 30
     var background: RGBA = .black
+    /// 내보낼 때 맞출 음량 (LUFS, 예: -14). nil은 그대로.
+    var loudnessTarget: Double?
+    /// 말소리가 나올 때 배경음악을 자동으로 줄인다. nil은 끔.
+    var autoDuck: Bool?
 
     var canvasSize: CGSize { CGSize(width: canvasWidth, height: canvasHeight) }
 

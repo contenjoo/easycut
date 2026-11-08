@@ -1,5 +1,6 @@
 //! AI(앱 안 대화, 외부 Claude/Codex의 MCP)가 호출하는 편집 도구. 맥 AITools.swift와 이름·입력이 같다.
 //! 모든 변경은 Editor::apply를 거치므로 Ctrl+Z로 되돌릴 수 있다.
+use easycut_core::audio_polish;
 use crate::{emit_state, job, silence_blocking, transcribe_blocking, AppState};
 use easycut_core::silence::SilenceSettings;
 use easycut_core::timeline_ops::TimeRange;
@@ -74,7 +75,14 @@ pub fn definitions() -> Vec<Value> {
                      "background_opacity": num("0~1 (0이면 배경 없음)"), "outline": { "type": "boolean" }, "outline_color": string("외곽선 색 #RRGGBB"),
                      "bold": { "type": "boolean" }, "font_name": string("글꼴 이름 (예: Malgun Gothic), 빈 문자열이면 기본"),
                      "position_y": num("0(위)~1(아래)"), "visible": { "type": "boolean", "description": "자막 표시 여부" },
-                     "text_animation":text_animation,"animation_duration":num("자막 등장 효과 길이(초), 기본 0.6") }), &[]),
+                     "text_animation":text_animation,"animation_duration":num("자막 등장 효과 길이(초), 기본 0.6"),
+                     "word_highlight": { "type": "boolean", "description": "말하는 단어만 강조색으로 바꾸는 쇼츠 스타일 자막" },
+                     "highlight_color": string("강조 단어 색 #RRGGBB (기본 노랑)") }), &[]),
+        tool("set_audio_polish", "소리 다듬기: 클립 목소리 선명하게(배경 소음 줄이기), 내보낼 때 음량 자동 맞추기(LUFS), 말할 때 배경음악(대본 없는 오디오 파일) 자동 줄이기.",
+             json!({ "denoise": { "type": "boolean", "description": "소음 줄이기 켜기/끄기" },
+                     "clip_ids": { "type": "array", "items": { "type": "string" }, "description": "소음 줄이기 대상 클립 id, 생략하면 소리 있는 모든 영상·오디오 클립" },
+                     "loudness_target": num("목표 음량 LUFS (-14 유튜브, -16 강의, -23 방송). 0이면 끔"),
+                     "auto_duck": { "type": "boolean", "description": "말할 때 배경음악 자동 줄이기" } }), &[]),
         tool("set_canvas", "화면 크기/비율 변경.", json!({ "width": n, "height": n }), &["width", "height"]),
         tool("set_playhead", "재생헤드를 옮긴다.", json!({ "time": num("초") }), &["time"]),
         tool("set_playback_speed", "미리보기 재생 속도(0.25~16배)를 바꾸고 선택적으로 재생한다.",
@@ -122,6 +130,7 @@ pub fn label(name: &str) -> String {
         "cut_captions" => "자막째 삭제",
         "move_caption" => "자막 순서 바꾸기",
         "set_caption_style" => "자막 스타일",
+        "set_audio_polish" => "소리 다듬기",
         "set_canvas" => "화면 크기",
         "set_playhead" => "재생헤드 이동",
         "set_playback_speed" => "재생 속도",
@@ -543,8 +552,59 @@ pub fn execute(app: &AppHandle, name: &str, input: &Value) -> (String, bool) {
                 if let Some(v) = b(input, "bold") { cs.bold = v }
                 if let Some(v) = d(input, "position_y") { cs.position_y = v.clamp(0.03, 0.97) }
                 if let Some(v) = b(input, "visible") { p.show_captions = v }
+                if let Some(v) = b(input, "word_highlight") { audio_polish::set_word_highlight(&mut p.caption_style, v) }
+                if let Some(c) = s(input, "highlight_color").and_then(hex_color) { audio_polish::set_highlight_color(&mut p.caption_style, c) }
             });
             ("자막 스타일 변경".into(), false)
+        }
+
+        "set_audio_polish" => {
+            let p = project(app);
+            let mut done: Vec<String> = vec![];
+            let mut ids: Vec<Id> = vec![];
+            let denoise = b(input, "denoise");
+            if denoise.is_some() {
+                if let Some(raw) = input.get("clip_ids").and_then(Value::as_array).filter(|a| !a.is_empty()) {
+                    ids = raw.iter().filter_map(Value::as_str).filter_map(|k| find_clip(k, &p)).collect();
+                    if ids.is_empty() {
+                        return err("클립을 찾지 못했습니다");
+                    }
+                } else {
+                    ids = p.tracks.iter().flat_map(|t| &t.clips)
+                        .filter(|c| c.kind == ClipKind::Media && p.asset(c.asset_id).is_some_and(|a| a.has_audio))
+                        .map(|c| c.id).collect();
+                }
+            }
+            let loud = d(input, "loudness_target");
+            let duck = b(input, "auto_duck");
+            if denoise.is_none() && loud.is_none() && duck.is_none() {
+                return err("denoise, loudness_target, auto_duck 중 하나가 필요합니다");
+            }
+            edit(app, |p| {
+                if let Some(on) = denoise {
+                    for t in &mut p.tracks {
+                        for c in t.clips.iter_mut().filter(|c| ids.contains(&c.id)) {
+                            audio_polish::set_denoise(c, on);
+                        }
+                    }
+                }
+                if let Some(t) = loud {
+                    audio_polish::set_loudness_target(p, if t == 0.0 { None } else { Some(t.clamp(-35.0, -5.0)) });
+                }
+                if let Some(v) = duck {
+                    audio_polish::set_auto_duck(p, v);
+                }
+            });
+            if let Some(on) = denoise {
+                done.push(format!("{}개 클립 소음 줄이기 {}", ids.len(), if on { "켬" } else { "끔" }));
+            }
+            if let Some(t) = loud {
+                done.push(if t == 0.0 { "음량 맞추기 끔".into() } else { format!("음량 {} LUFS", t.clamp(-35.0, -5.0).round()) });
+            }
+            if let Some(v) = duck {
+                done.push(format!("배경음악 자동 줄이기 {}", if v { "켬" } else { "끔" }));
+            }
+            changed(done.join(", "))
         }
 
         "set_canvas" => {
@@ -789,6 +849,7 @@ fn project_state(app: &AppHandle) -> String {
             if let Some(fx) = &c.transition_in { o.push(format!("      시작 전환 {} {}초", fx.effect, fx.duration)); }
             if let Some(fx) = &c.transition_out { o.push(format!("      끝 전환 {} {}초", fx.effect, fx.duration)); }
             if let Some(filter) = &c.visual_filter { o.push(format!("      색감 {filter} 강도 {}", c.filter_intensity.unwrap_or(1.0))); }
+            if audio_polish::denoise(c) { o.push("      목소리 선명하게(소음 줄이기) 켬".into()); }
             if c.kind == ClipKind::Text { if let Some(animation) = &c.text_style.animation {
                 o.push(format!("      글자 등장 {animation} {}초", c.text_style.animation_duration.unwrap_or(0.6)));
             } }
@@ -799,6 +860,10 @@ fn project_state(app: &AppHandle) -> String {
         }
     }
     o.push(format!("자막 {}개 (표시 {}, 크기 {}, 위치 {:.2})", p.captions.len(), if p.show_captions { "켬" } else { "끔" }, p.caption_style.font_size as i64, p.caption_style.position_y));
+    if audio_polish::word_highlight(&p.caption_style) { o.push("자막 단어 강조 켬".into()); }
+    o.push(format!("소리: 음량 맞추기 {}, 배경음악 자동 줄이기 {}",
+        audio_polish::loudness_target(&p).map_or("끔".to_string(), |t| format!("{} LUFS", t.round())),
+        if audio_polish::auto_duck(&p) { "켬" } else { "끔" }));
     for (n, c) in p.captions.iter().take(20).enumerate() {
         o.push(format!("  [{n}] {:.2}~{:.2} {}", c.start, c.end, c.text));
     }

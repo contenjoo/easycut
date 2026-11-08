@@ -313,6 +313,14 @@ struct TextStyleControls: View {
             }
             if showPosition {
                 Divider()
+                Toggle("말하는 단어 강조 (쇼츠 스타일)", isOn: Binding(get: { style.wordHighlight == true },
+                                                             set: { style.wordHighlight = $0 ? true : nil }))
+                    .help(L("말하는 단어만 강조색으로 바뀝니다. 대본이 있으면 단어 시각에 맞추고, 없으면 글자 수로 나눕니다."))
+                if style.wordHighlight == true {
+                    ColorPicker("강조 색", selection: Binding<Color>(
+                        get: { Color(nsColor: (style.highlightColor ?? CaptionWords.defaultHighlight).nsColor) },
+                        set: { style.highlightColor = RGBA(NSColor($0)) }))
+                }
                 ValueSlider(title: "세로 위치", value: $style.positionY, range: 0.05...0.95) { "\(Int($0 * 100))%" }
             }
             if showEffects {
@@ -523,6 +531,12 @@ struct ClipInspector: View {
                         Button(L(a.words == nil ? "음성 인식" : "다시 인식")) { store.transcribe(a.id) }
                     }
                 }.controlSize(.small)
+                if asset?.hasAudio == true {
+                    Toggle("목소리 선명하게 (소음 줄이기)", isOn: Binding(get: { clip.denoise == true },
+                                                                set: { store.setDenoise($0, for: [clip.id]) }))
+                        .controlSize(.small)
+                        .help(L("에어컨·웅웅거림 같은 배경 소음을 줄입니다. 처음 켤 때 잠시 준비합니다."))
+                }
             } else {
                 SectionTitle(text: "이미지")
                 Text(asset?.name ?? L("클립")).font(.callout).foregroundStyle(.secondary)

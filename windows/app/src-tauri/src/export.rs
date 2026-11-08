@@ -1,6 +1,6 @@
 //! 타임라인 → ffmpeg 필터 그래프로 내보내기
 use crate::tools;
-use easycut_core::{ClipKind, MediaKind, Project, Rgba, TextStyle};
+use easycut_core::{audio_polish, ClipKind, MediaKind, Project, Rgba, TextStyle};
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
@@ -9,6 +9,9 @@ mod effects;
 #[cfg(test)]
 #[path = "export_effect_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "export_audio_tests.rs"]
+mod audio_tests;
 
 pub struct Options {
     pub path: String,
@@ -107,9 +110,11 @@ fn build_ass(p: &Project, w: i64, h: i64, captions: bool) -> Option<String> {
     let styles = vec![style_line("Cap", &p.caption_style, unit)];
     let mut n = 0;
     if captions && p.show_captions {
-        for c in &p.captions {
+        let words = if audio_polish::word_highlight(&p.caption_style) { audio_polish::caption_word_timings(p) } else { vec![] };
+        for (ci, c) in p.captions.iter().enumerate() {
             let y = p.caption_style.position_y * h as f64;
-            events.push_str(&effects::ass_events("Cap",&p.caption_style,&c.text,c.start,c.end,w as f64/2.0,y,w,h,p.fps,0,1.0,0.0,0.0));
+            let toks = words.get(ci).map(|v| v.as_slice());
+            events.push_str(&effects::ass_events_with("Cap",&p.caption_style,&c.text,c.start,c.end,w as f64/2.0,y,w,h,p.fps,0,1.0,0.0,0.0,toks));
             n += 1;
         }
     }
@@ -197,7 +202,10 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     if opts.format != "m4a" && (has_text || (opts.burn_captions && p.show_captions && !p.captions.is_empty())) && !has_subtitles_filter(&ffmpeg) {
         return Err("텍스트·자막을 내보내려면 subtitles(libass)를 지원하는 ffmpeg가 필요합니다.".into());
     }
-    let work = tools::temp_dir().join(format!("export-{}", std::process::id()));
+    // 동시에 두 번 내보내도(AI 검토 내보내기 등) 작업 폴더가 겹치지 않게 한다
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let work = tools::temp_dir().join(format!("export-{}-{seq}", std::process::id()));
     let _ = std::fs::create_dir_all(&work);
 
     let mut args: Vec<String> = vec!["-y".into(), "-nostdin".into(), "-hide_banner".into(), "-v".into(), "error".into()];
@@ -211,6 +219,7 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
     ) };
     let mut last = "base0".to_string();
     let mut audio_labels = vec![];
+    let speech = if audio_polish::auto_duck(p) { audio_polish::speech_ranges(p) } else { vec![] };
     let mut input = 0usize;
     let mut k = 0usize;
 
@@ -318,11 +327,19 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
             }
             if audible {
                 let mut chain = format!("[{i}:a]asetpts=PTS-STARTPTS");
+                if audio_polish::denoise(c) {
+                    let _ = write!(chain, ",{}", audio_polish::DENOISE_FILTER);
+                }
                 let tempo = atempo_chain(c.speed);
                 if !tempo.is_empty() {
-                    let _ = write!(chain, ",{tempo}");
+                    let _ = write!(chain, ",{tempo},asetpts=N/SR/TB");
                 }
                 let _ = write!(chain, ",volume={:.3}", c.volume.min(4.0));
+                if audio_polish::is_music(a) {
+                    if let Some(expr) = audio_polish::duck_expression(c, &speech) {
+                        let _ = write!(chain, ",volume='{expr}':eval=frame");
+                    }
+                }
                 if c.fade_in > 0.01 {
                     let _ = write!(chain, ",afade=t=in:st=0:d={:.3}", c.fade_in.min(dur / 2.0));
                 }
@@ -405,6 +422,64 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(format!("내보내기 실패: {}", err.lines().rev().take(3).collect::<Vec<_>>().join(" / ")));
     }
+    if let Some(target) = audio_polish::loudness_target(p).filter(|_| opts.format != "png") {
+        normalize_loudness(&ffmpeg, &opts.path, target)?;
+    }
     progress(1.0);
     Ok(())
+}
+
+fn parse_loudnorm(log: &str) -> Option<[f64; 5]> {
+    let a = log.rfind('{')?;
+    let b = log.rfind('}')?;
+    let v: serde_json::Value = serde_json::from_str(log.get(a..=b)?).ok()?;
+    let f = |k: &str| v.get(k)?.as_str()?.parse::<f64>().ok();
+    let i = f("input_i")?;
+    if !i.is_finite() {
+        return None;
+    }
+    Some([i, f("input_tp")?, f("input_lra")?, f("input_thresh")?, f("target_offset")?])
+}
+
+/// 파일의 통합 음량 (LUFS)
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn measure_loudness(ffmpeg: &std::path::Path, path: &str) -> Option<f64> {
+    let out = tools::command(ffmpeg)
+        .args(["-nostdin", "-hide_banner", "-nostats", "-i", path, "-vn", "-af", "loudnorm=print_format=json", "-f", "null", "-"])
+        .output()
+        .ok()?;
+    parse_loudnorm(&String::from_utf8_lossy(&out.stderr)).map(|m| m[0])
+}
+
+/// 내보낸 파일의 소리를 목표 LUFS로 맞춘다 (2단계 loudnorm, 영상은 그대로 복사). 맥과 같은 설정.
+pub fn normalize_loudness(ffmpeg: &std::path::Path, path: &str, target: f64) -> Result<(), String> {
+    let base = format!("I={target}:TP=-1.5:LRA=11");
+    let out = tools::command(ffmpeg)
+        .args(["-nostdin", "-hide_banner", "-nostats", "-i", path, "-vn", "-af", &format!("loudnorm={base}:print_format=json"), "-f", "null", "-"])
+        .output()
+        .map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
+    let m = parse_loudnorm(&String::from_utf8_lossy(&out.stderr)).ok_or("음량을 재지 못했습니다.")?;
+    // 소리가 거의 없으면 키우지 않는다
+    if m[0] <= -70.0 {
+        return Ok(());
+    }
+    let src = std::path::Path::new(path);
+    let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("mp4").to_lowercase();
+    let tmp = src.with_file_name(format!(".{}-loud.{ext}", src.file_stem().and_then(|s| s.to_str()).unwrap_or("out")));
+    let filter = format!(
+        "loudnorm={base}:measured_I={}:measured_TP={}:measured_LRA={}:measured_thresh={}:offset={}:linear=true,aresample=48000",
+        m[0], m[1], m[2], m[3], m[4]
+    );
+    let codec: &[&str] = if ext == "mov" { &["-c:a", "pcm_s16le"] } else { &["-c:a", "aac", "-b:a", "192k"] };
+    let tmp_s = tmp.to_string_lossy().to_string();
+    let mut args: Vec<&str> = vec!["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-map", "0", "-c", "copy", "-af", &filter];
+    args.extend_from_slice(codec);
+    args.extend_from_slice(&["-movflags", "+faststart", &tmp_s]);
+    let out = tools::command(ffmpeg).args(&args).output().map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
+    if !out.status.success() || !tmp.exists() {
+        let _ = std::fs::remove_file(&tmp);
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("음량 맞추기 실패: {}", err.lines().rev().take(2).collect::<Vec<_>>().join(" / ")));
+    }
+    std::fs::rename(&tmp, src).map_err(|e| e.to_string())
 }

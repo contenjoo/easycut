@@ -11,6 +11,7 @@ export const hex = (c) => "#" + [c.r, c.g, c.b].map((v) => Math.round(v * 255).t
 export const rgba = (h, a = 1) => ({ r: parseInt(h.slice(1, 3), 16) / 255, g: parseInt(h.slice(3, 5), 16) / 255, b: parseInt(h.slice(5, 7), 16) / 255, a });
 const WHITE = { r: 1, g: 1, b: 1, a: 1 }, BLACK = { r: 0, g: 0, b: 0, a: 1 }, YELLOW = { r: 1, g: 0.84, b: 0.04, a: 1 };
 const CAPTION_BG = { r: 0, g: 0, b: 0, a: 0.6 }, CLEAR = { r: 0, g: 0, b: 0, a: 0 };
+export const HIGHLIGHT = { r: 1, g: 0.84, b: 0.1, a: 1 };
 
 let X; // { S, U, run, invoke, seek, toast, switchTab }
 
@@ -55,6 +56,7 @@ export function styleControls(el, style, onChange, showPosition, options = {}) {
     <label class="style-slider"><span>${L("배경 투명도")}</span><input type="range" data-s="bgAlpha" min="0" max="1" step="0.05" value="${style.backgroundColor.a}"/><output data-v="bgAlpha">${Math.round(style.backgroundColor.a * 100)}%</output></label>
     <div class="text-swatches">${swatches.map(([name, color]) => `<button type="button" data-swatch="${color}" title="${L(name)}" aria-label="${L(name)}" style="--swatch:${color}"></button>`).join("")}</div>
     <h3>${L("빠른 스타일")}</h3><div class="text-presets">${[["basic", "자막"], ["white", "제목"], ["yellow", "강조"]].map(([id, label]) => `<button type="button" data-q="${id}" class="style-preset ${id}"><span>가나다</span><small>${L(label)}</small></button>`).join("")}</div>
+    ${showPosition ? `<div class="text-toggles stack"><label title="${L("말하는 단어만 강조색으로 바뀝니다. 대본이 있으면 단어 시각에 맞추고, 없으면 글자 수로 나눕니다.")}"><input type="checkbox" data-s="wordHighlight" ${style.wordHighlight ? "checked" : ""}/> ${L("말하는 단어 강조 (쇼츠 스타일)")}</label>${style.wordHighlight ? `<label>${L("강조 색")} <input type="color" data-c="highlightColor" value="${hex(style.highlightColor || HIGHLIGHT)}"/></label>` : ""}</div>` : ""}
     ${showPosition ? `<label class="style-slider"><span>${L("세로 위치")}</span><input type="range" data-s="positionY" min="0.05" max="0.95" step="0.01" value="${style.positionY}"/><output data-v="positionY">${Math.round(style.positionY * 100)}%</output></label>` : ""}
     ${options.showEffects ? `<details class="advanced-controls"><summary>${L("텍스트 효과")}</summary><div class="shared-text-effects"></div></details>` : ""}</div>`;
   const commit = (patch) => onChange({ ...style, ...patch });

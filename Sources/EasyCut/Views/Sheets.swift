@@ -75,6 +75,19 @@ struct ExportSheet: View {
                     }
                     Toggle("SRT 자막 파일도 함께 저장", isOn: $alsoSRT)
                         .disabled(store.project.captions.isEmpty)
+                    Section("소리") {
+                        Toggle("음량 자동 맞추기", isOn: Binding(get: { store.project.loudnessTarget != nil },
+                                                          set: { store.setLoudness($0 ? AudioPolish.defaultLoudness : nil) }))
+                        if let t = store.project.loudnessTarget {
+                            Picker("목표 음량", selection: Binding(get: { t }, set: { store.setLoudness($0) })) {
+                                Text("유튜브·쇼츠 (-14 LUFS)").tag(-14.0)
+                                Text("강의·팟캐스트 (-16 LUFS)").tag(-16.0)
+                                Text("방송 (-23 LUFS)").tag(-23.0)
+                            }
+                        }
+                        Toggle("말할 때 배경음악 자동으로 줄이기", isOn: Binding(get: { store.project.autoDuck == true },
+                                                                   set: { store.setAutoDuck($0) }))
+                    }
                 }
                 .formStyle(.grouped)
                 Text(L(format == .m4a ? "길이 \(TimeFormat.clock(store.project.duration))"
