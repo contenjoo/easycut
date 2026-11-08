@@ -1,3 +1,23 @@
+EasyCut for Windows 0.9.0
+
+[새 기능] 소리 다듬기
+• 목소리 선명하게: 클립 속성 [오디오]에서 켜면 에어컨·웅웅거림 같은 배경 소음을 줄입니다. 내보낸 영상에 적용되며 미리보기에는 원래 소리가 납니다.
+• 음량 자동 맞추기: 내보내기 창 [소리]에서 유튜브·쇼츠(-14 LUFS), 강의·팟캐스트(-16), 방송(-23) 중 고르면 내보낸 파일의 소리 크기를 맞춥니다. 화면은 다시 인코딩하지 않습니다.
+• 배경음악 자동 줄이기: 대본이 있는 말소리가 나오는 동안 대본 없는 오디오(배경음악)를 약 12 dB 낮춥니다. 미리보기와 내보내기 모두 적용됩니다.
+
+[새 기능] 말하는 단어 강조 자막
+• 자막 스타일에서 [말하는 단어 강조]를 켜면 쇼츠처럼 지금 말하는 단어만 강조색으로 바뀝니다. 대본 단어 시각에 맞추고, 대본이 없으면 글자 수로 나눕니다.
+• AI 편집에서도 "소음 줄이고 음량 맞춰줘", "단어 강조 자막으로" 처럼 말로 켤 수 있습니다.
+• Mac 1.15.0과 같은 설정이 프로젝트에 저장됩니다.
+
+[New] Sound polish and word-highlight captions
+• Clearer voice: reduce background noise per clip (applied on export; the preview plays the original sound).
+• Normalize loudness on export to -14, -16 or -23 LUFS without re-encoding the picture.
+• Auto-duck: background music without a transcript drops about 12 dB while transcribed speech plays.
+• Word-highlight captions: only the spoken word changes to the highlight color, Shorts style.
+
+---- Previous release: EasyCut for Windows 0.8.0 ----
+
 EasyCut for Windows 0.8.0
 
 [새 기능] 폰트·효과·전환 선택

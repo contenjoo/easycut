@@ -378,7 +378,9 @@
 "가져오기" = "Import";
 "각 텍스트와 자막이 시작할 때 적용됩니다. 짧은 구간에서는 효과 시간이 자동으로 줄어듭니다." = "Applies when each text clip or caption starts. The animation duration is shortened for short clips or captions.";
 "강도" = "Intensity";
+"강의·팟캐스트 (-16 LUFS)" = "Lectures · Podcasts (-16 LUFS)";
 "강조" = "Emphasis";
+"강조 색" = "Highlight color";
 "개인정보 가리기" = "Hide personal info";
 "검색 지우기" = "Clear search";
 "검색한 글꼴이 없습니다" = "No matching fonts";
@@ -598,6 +600,9 @@
 "말로 편집하려면 Claude API 키가 필요합니다." = "Editing by voice/text needs a Claude API key.";
 "말이 없는 구간을 한 번에 삭제" = "Delete all parts with no talking at once";
 "말이 없는 부분을 찾아 한 번에 잘라냅니다. 잘릴 곳은 타임라인에 빨간색으로 표시됩니다." = "Finds the parts with no talking and cuts them at once. What will be cut is shown in red on the timeline.";
+"말하는 단어 강조 (쇼츠 스타일)" = "Highlight the spoken word (Shorts style)";
+"말하는 단어만 강조색으로 바뀝니다. 대본이 있으면 단어 시각에 맞추고, 없으면 글자 수로 나눕니다." = "Only the word being spoken changes to the highlight color. Uses transcript word timing when available, otherwise splits by character count.";
+"말할 때 배경음악 자동으로 줄이기" = "Lower background music while someone speaks";
 "매우 높음" = "Very high";
 "멀어지기" = "Zoom out";
 "모델" = "Model";
@@ -615,6 +620,9 @@
 "모션그래픽 (Remotion)" = "Motion graphics (Remotion)";
 "모양" = "Shape";
 "모자이크" = "Mosaic";
+"목소리 선명하게 (소음 줄이기)" = "Clearer voice (reduce noise)";
+"목소리를 선명하게 다듬는 중…" = "Cleaning up the voice…";
+"목표 음량" = "Target loudness";
 "무엇을 편집할까요? (Enter로 보내기)" = "What should I edit? (Enter to send)";
 "무음" = "Silence";
 "무음 %d곳 삭제 (%.1f초 단축)" = "Deleted %d silences (%.1fs shorter)";
@@ -654,6 +662,7 @@
 "받는 중: %lld" = "Downloading: %lld";
 "받은 파일에 Codex가 없습니다." = "The download does not contain Codex.";
 "받은 파일이 올바른 EasyCut 새 버전이 아닙니다." = "The downloaded file isn't a valid new version of EasyCut.";
+"방송 (-23 LUFS)" = "Broadcast (-23 LUFS)";
 "방식" = "Style";
 "방식 모두 바꾸기" = "Change all styles";
 "배경" = "Background";
@@ -754,12 +763,16 @@
 "설치하기" = "Install";
 "세로 위치" = "Vertical";
 "세피아" = "Sepia";
+"소리" = "Sound";
 "소리 분석 중…" = "Analyzing audio…";
 "소리 켜기" = "Unmute";
 "소리 크기로 (음성 인식 불필요)" = "By loudness (no transcription needed)";
 "소리 페이드" = "Audio fades";
 "소리 확인" = "Listen to range";
+"소리가 있는 원본 파일이 필요합니다." = "Needs a source file with sound.";
 "소리만 (M4A)" = "Audio only (M4A)";
+"소음 줄이기 준비 완료" = "Noise reduction ready";
+"소음 줄이기에는 FFmpeg가 필요합니다." = "Noise reduction needs FFmpeg.";
 "속도" = "Speed";
 "속도 (최대 20배)" = "Speed (up to 20×)";
 "속도 변경" = "Change speed";
@@ -868,6 +881,7 @@
 "업데이트를 확인하지 못했습니다. 인터넷 연결을 확인하세요." = "Couldn't check for updates. Check your internet connection.";
 "업로더가 올린 자막도 받기 (한국어·영어)" = "Also download the uploader's captions (Korean · English)";
 "없음" = "None";
+"에어컨·웅웅거림 같은 배경 소음을 줄입니다. 처음 켤 때 잠시 준비합니다." = "Reduces background noise such as air conditioning or hum. Takes a moment the first time you turn it on.";
 "엔진" = "Engine";
 "엔진 %@ · %.1f초 · 단어 %d개 · 중간 표시 %d회" = "Engine %@ · %.1fs · %d words · %d live updates";
 "여권번호" = "Passport number";
@@ -965,6 +979,10 @@
 "유튜브 도구(yt-dlp)가 필요합니다" = "The YouTube tool (yt-dlp) is needed";
 "유튜브 등 영상 링크로 가져오기 (⇧⌘I)" = "Import from a video link like YouTube (⇧⌘I)";
 "유튜브 등 영상 페이지 주소를 붙여 넣으세요. 받은 파일은 ‘동영상 › EasyCut 다운로드’ 폴더에 저장됩니다." = "Paste the address of a video page such as YouTube. Downloads are saved to the 'Movies › EasyCut 다운로드' folder.";
+"유튜브·쇼츠 (-14 LUFS)" = "YouTube · Shorts (-14 LUFS)";
+"음량 맞추기에는 FFmpeg가 필요합니다." = "Loudness normalization needs FFmpeg.";
+"음량 자동 맞추기" = "Normalize loudness";
+"음량을 재지 못했습니다." = "Could not measure loudness.";
 "음성 → 텍스트 (⇧⌘R)" = "Speech → text (⇧⌘R)";
 "음성 다시 인식" = "Transcribe Again";
 "음성 인식" = "Transcribe";
