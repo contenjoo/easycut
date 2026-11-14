@@ -60,11 +60,18 @@ const assert = require('node:assert/strict');
     const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')?'video/webm;codecs=vp8,opus':'video/webm';
     await invoke('rec_begin',{kinds:[['screen','webm']]});
     const recorder=new MediaRecorder(stream,{mimeType:mime}); const chunks=[];
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
     const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=reject;});
     recorder.start(250); source.start();
     await new Promise(resolve=>source.onended=resolve);
-    recorder.stop(); await stopped; clearInterval(timer);
+    // WebView2 can occasionally skip periodic chunk delivery under CI load.
+    // Flush once before stop and wait a beat so a chunk is actually emitted.
+    recorder.requestData();
+    await wait(200);
+    recorder.stop(); await stopped;
+    await wait(200);
+    clearInterval(timer);
     for(const blob of chunks) await invoke('rec_chunk',new Uint8Array(await blob.arrayBuffer()),{headers:{'x-kind':'screen'}});
     stream.getTracks().forEach(t=>t.stop());await context.close();
     const result=await invoke('rec_finish',{cameraCircle:false,clicks:[],showClicks:false,area:null});
