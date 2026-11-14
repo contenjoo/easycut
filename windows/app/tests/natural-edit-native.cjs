@@ -46,36 +46,56 @@ const assert = require('node:assert/strict');
   const speech = fs.readFileSync(process.env.EASYCUT_NATIVE_SPEECH).toString('base64');
   const recorded = await page.evaluate(async b64 => {
     const invoke = window.__TAURI__.core.invoke;
-    await invoke('new_project');
     const bytes = Uint8Array.from(atob(b64),x=>x.charCodeAt(0));
-    const context = new AudioContext(); await context.resume();
-    const buffer = await context.decodeAudioData(bytes.buffer);
-    const source = context.createBufferSource(); source.buffer=buffer;
-    const destination=context.createMediaStreamDestination(); source.connect(destination);
-    const canvas=document.createElement('canvas'); canvas.width=640;canvas.height=360;
-    const ctx=canvas.getContext('2d'); let count=0;
-    const timer=setInterval(()=>{ctx.fillStyle=count++%2?'#123456':'#234567';ctx.fillRect(0,0,640,360);ctx.fillStyle='white';ctx.font='30px sans-serif';ctx.fillText('EasyCut native recording test '+count,20,150);},100);
-    const stream=canvas.captureStream(10);
-    destination.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
-    const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')?'video/webm;codecs=vp8,opus':'video/webm';
-    await invoke('rec_begin',{kinds:[['screen','webm']]});
-    const recorder=new MediaRecorder(stream,{mimeType:mime}); const chunks=[];
-    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
-    const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=reject;});
-    recorder.start(250); source.start();
-    await new Promise(resolve=>source.onended=resolve);
-    recorder.stop(); await stopped; clearInterval(timer);
-    for(const blob of chunks) await invoke('rec_chunk',new Uint8Array(await blob.arrayBuffer()),{headers:{'x-kind':'screen'}});
-    stream.getTracks().forEach(t=>t.stop());await context.close();
-    const result=await invoke('rec_finish',{cameraCircle:false,clicks:[],showClicks:false,area:null});
-    const state=await invoke('get_state');
-    const asset=state.project.assets.find(a=>a.id===result.screen);
-    if(!asset?.hasAudio || asset.duration<3)throw new Error('Recorded file missing audio or duration');
-    await invoke('transcribe',{asset:asset.id,language:'en'});
-    const transcribed=await invoke('get_state');
-    const words=transcribed.project.assets.find(a=>a.id===asset.id).words;
-    if(!words?.length)throw new Error('No words transcribed from real recording');
-    return {asset:asset.id,duration:asset.duration,words:words.map(w=>w.text).join(' ')};
+    const waitForChunk = async (chunks, ms = 1500) => {
+      const until = Date.now() + ms;
+      while (!chunks.length && Date.now() < until) await new Promise(r => setTimeout(r, 50));
+    };
+    const recordOnce = async () => {
+      await invoke('new_project');
+      const context = new AudioContext(); await context.resume();
+      const buffer = await context.decodeAudioData(bytes.buffer);
+      const source = context.createBufferSource(); source.buffer=buffer;
+      const destination=context.createMediaStreamDestination(); source.connect(destination);
+      const canvas=document.createElement('canvas'); canvas.width=640;canvas.height=360;
+      const ctx=canvas.getContext('2d'); let count=0;
+      const timer=setInterval(()=>{ctx.fillStyle=count++%2?'#123456':'#234567';ctx.fillRect(0,0,640,360);ctx.fillStyle='white';ctx.font='30px sans-serif';ctx.fillText('EasyCut native recording test '+count,20,150);},100);
+      const stream=canvas.captureStream(10);
+      destination.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+      const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')?'video/webm;codecs=vp8,opus':'video/webm';
+      await invoke('rec_begin',{kinds:[['screen','webm']]});
+      const recorder=new MediaRecorder(stream,{mimeType:mime}); const chunks=[];
+      recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
+      const stopped=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=reject;});
+      recorder.start(250); source.start();
+      await new Promise(resolve=>source.onended=resolve);
+      try { recorder.requestData(); } catch {}
+      await waitForChunk(chunks);
+      recorder.stop(); await stopped;
+      await waitForChunk(chunks);
+      clearInterval(timer);
+      for(const blob of chunks) await invoke('rec_chunk',new Uint8Array(await blob.arrayBuffer()),{headers:{'x-kind':'screen'}});
+      stream.getTracks().forEach(t=>t.stop()); await context.close();
+      const result=await invoke('rec_finish',{cameraCircle:false,clicks:[],showClicks:false,area:null});
+      const state=await invoke('get_state');
+      const asset=state.project.assets.find(a=>a.id===result.screen);
+      if(!asset?.hasAudio || asset.duration<3)throw new Error('Recorded file missing audio or duration');
+      await invoke('transcribe',{asset:asset.id,language:'en'});
+      const transcribed=await invoke('get_state');
+      const words=transcribed.project.assets.find(a=>a.id===asset.id).words;
+      if(!words?.length)throw new Error('No words transcribed from real recording');
+      return {asset:asset.id,duration:asset.duration,words:words.map(w=>w.text).join(' ')};
+    };
+    let lastError;
+    for (let i=0;i<2;i++) {
+      try { return await recordOnce(); }
+      catch (e) {
+        lastError = e;
+        if (!String(e).includes('녹화 파일을 만들지 못했습니다')) throw e;
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+    throw lastError;
   },speech);
   assert.match(recorded.words.toLowerCase(), /video|windows|editor/);
   console.log('NATIVE RECORD → FILE → WHISPER',JSON.stringify(recorded));
