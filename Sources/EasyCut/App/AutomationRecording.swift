@@ -162,7 +162,7 @@ final class AutomationRecording {
 
     private func showIndicator() {
         let panel = NSPanel(contentRect: NSRect(x: 60, y: 60, width: 240, height: 90), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = "EasyCut MCP 녹화"
+        panel.title = "오케이컷 MCP 녹화"
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: VStack {

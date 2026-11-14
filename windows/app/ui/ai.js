@@ -155,15 +155,15 @@ function geminiSetup() {
       <ol class="hint" style="padding-left:20px;line-height:1.7">
         <li>${L("위 버튼으로 Google AI Studio를 열고 Google 계정으로 로그인하세요.")}</li>
         <li>${L("처음이라면 약관을 확인하세요. 기본 프로젝트와 키가 이미 만들어져 있으면 그 키를 쓰면 됩니다.")}</li>
-        <li>${L("키가 없으면 ‘API 키 만들기(Create API key)’를 누르고 프로젝트를 선택하거나 새로 만드세요. 키 이름은 ‘EasyCut’처럼 알아보기 쉽게 적으세요.")}</li>
+        <li>${L("키가 없으면 ‘API 키 만들기(Create API key)’를 누르고 프로젝트를 선택하거나 새로 만드세요. 키 이름은 ‘오케이컷’처럼 알아보기 쉽게 적으세요.")}</li>
         <li>${L("무료로 시작하려면 프로젝트의 요금제가 ‘Free Tier’인지 확인하세요. ‘결제 설정(Set up billing)’이나 카드 등록은 필요하지 않습니다.")}</li>
-        <li>${L("키의 복사 버튼을 누르고 EasyCut으로 돌아와 아래 입력칸에 붙여 넣은 뒤 ‘키 저장 후 연결 확인’을 누르세요.")}</li>
+        <li>${L("키의 복사 버튼을 누르고 오케이컷으로 돌아와 아래 입력칸에 붙여 넣은 뒤 ‘키 저장 후 연결 확인’을 누르세요.")}</li>
       </ol>
       <p class="hint">${L("프로젝트가 목록에 없으면 AI Studio의 Dashboard › Projects › Import projects에서 가져올 수 있습니다. 학교·기관 계정에서 발급이 막히면 관리자에게 접근 권한을 확인해 주세요.")}</p>
       <p class="hint">${L("API 키는 비밀번호처럼 보관하세요. 채팅·사진·공개 게시물에 올리지 마세요. Gemini 유료 구독은 필요하지 않으며, 무료 한도는 계정과 모델에 따라 다릅니다.")}</p>
       <button id="gemini-key-docs">${L("Google 공식 키 발급 도움말 ↗")}</button>
     </details>
-    <p class="hint">${L("무료 이용은 Google의 계정·모델별 한도 내에서 가능합니다. 결제가 연결된 프로젝트는 요금이 발생할 수 있습니다. EasyCut은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다.")}</p>
+    <p class="hint">${L("무료 이용은 Google의 계정·모델별 한도 내에서 가능합니다. 결제가 연결된 프로젝트는 요금이 발생할 수 있습니다. 오케이컷은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다.")}</p>
     <p class="hint">${L("대본·파일 이름·화면에서 읽은 글자 등 편집 정보가 Google에 전송될 수 있습니다. 무료 서비스 입력은 제품 개선에 쓰일 수 있으니 개인정보가 있는 자료는 주의해 주세요. 원본 영상 전체는 업로드하지 않습니다.")}</p>
     <input type="password" id="gemini-key" placeholder="${L("Gemini API 키 붙여넣기")}" autocomplete="off" style="width:100%"/>
     <div class="row"><button class="primary" id="gemini-save" ${A.geminiChecking ? "disabled" : ""}>${L("키 저장 후 연결 확인")}</button>
@@ -322,9 +322,9 @@ export async function connectDialog() {
           <div class="row"><input type="password" id="oa-key" placeholder="sk-…" style="flex:1"/><button id="oa-go">${L("로그인")}</button></div></details>
         <div class="row"><span class="hint">${L("지금 쓰는 연결:")}</span><select id="cn-backend">${BACKENDS.map(([v, t]) => `<option value="${v}" ${A.settings.backend === v ? "selected" : ""}>${L(t)}</option>`).join("")}</select></div>
       </fieldset>
-      <fieldset><legend>${L("다른 AI 앱에서 EasyCut 조작 (선택)")}</legend>
+      <fieldset><legend>${L("다른 AI 앱에서 오케이컷 조작 (선택)")}</legend>
         ${step("desktop", "Claude 데스크톱 앱")}${step("code", "Claude Code (터미널)")}${step("codex", "Codex (터미널)")}
-        <p class="hint">${L("EasyCut을 켜 둔 상태에서 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 PC 안에서만 이뤄집니다.")}</p>
+        <p class="hint">${L("오케이컷을 켜 둔 상태에서 \"오케이컷에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 PC 안에서만 이뤄집니다.")}</p>
       </fieldset>
       ${msg ? `<p class="note">${esc(L(msg))}</p>` : ""}
       <div class="btns"><button class="primary" id="cn-close">${L("닫기")}</button></div>`;
@@ -343,9 +343,9 @@ export async function connectDialog() {
       try {
         links = await invoke("ai_link", { target: b.dataset.link });
         msg = {
-          desktop: "Claude 데스크톱을 완전히 종료한 뒤 다시 열면 EasyCut 도구가 보입니다.",
-          code: "Claude Code에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다.",
-          codex: "Codex에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다.",
+          desktop: "Claude 데스크톱을 완전히 종료한 뒤 다시 열면 오케이컷 도구가 보입니다.",
+          code: "Claude Code에 연결했습니다. 새 대화에서 오케이컷 도구를 쓸 수 있습니다.",
+          codex: "Codex에 연결했습니다. 새 대화에서 오케이컷 도구를 쓸 수 있습니다.",
         }[b.dataset.link];
       } catch (e) { msg = String(e); }
       draw();

@@ -117,7 +117,7 @@ enum LanguageSwitch {
         guard c != Loc.choice else { return }
         Loc.choice = c
         let a = NSAlert()
-        a.messageText = "언어를 바꾸려면 EasyCut을 다시 시작해야 합니다.\nRestart EasyCut to change the language."
+        a.messageText = "언어를 바꾸려면 오케이컷을 다시 시작해야 합니다.\nRestart OK Cut to change the language."
         a.informativeText = "작업 중인 프로젝트는 저장됩니다. / Your project will be saved."
         a.addButton(withTitle: "지금 다시 시작 / Restart Now")
         a.addButton(withTitle: "나중에 / Later")

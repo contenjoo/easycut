@@ -175,7 +175,7 @@ enum Transcriber {
                                 progress: @escaping (Double, String) -> Void) async throws -> [Word] {
         let auth = await requestAuthorization()
         guard auth == .authorized else {
-            throw MediaError.failed("음성 인식 권한이 없습니다. 시스템 설정 › 개인정보 보호 및 보안 › 음성 인식에서 EasyCut을 허용해 주세요.")
+            throw MediaError.failed("음성 인식 권한이 없습니다. 시스템 설정 › 개인정보 보호 및 보안 › 음성 인식에서 오케이컷을 허용해 주세요.")
         }
         guard let rec = SFSpeechRecognizer(locale: Locale(identifier: language.id)) else {
             throw MediaError.failed("\(language.name) 인식을 지원하지 않습니다.")

@@ -1,3 +1,16 @@
+OK Cut for Windows 0.10.0
+
+[이름 변경] EasyCut → 오케이컷(OK Cut)
+• 앱 이름이 오케이컷(OK Cut)으로 바뀌었습니다. 창 제목, 시작 메뉴·바탕화면 바로가기, '앱 및 기능' 목록, 아이콘이 새 이름으로 표시됩니다.
+• 쓰던 앱은 이 버전으로 업데이트하면 그대로 이어집니다. 설치 폴더, 프로젝트 파일(.easycut), 설정, AI 연결, 녹화·다운로드 폴더는 바꾸지 않았습니다.
+• Claude·Codex에 연결해 둔 MCP 도구 이름(easycut)도 그대로라 다시 연결할 필요가 없습니다.
+
+[Renamed] EasyCut is now OK Cut
+• The window title, Start menu and desktop shortcuts, Apps & features entry and icon now show OK Cut.
+• Updating keeps everything: install folder, .easycut projects, settings, AI connections and the MCP tool name (easycut).
+
+---- Previous release: EasyCut for Windows 0.9.0 ----
+
 EasyCut for Windows 0.9.0
 
 [새 기능] 소리 다듬기

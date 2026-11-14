@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EasyCut",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "identifier": "com.contenjoo.easycut.windows",
   "build": {
     "frontendDist": "../ui"
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "EasyCut",
+        "title": "OK Cut",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -51,7 +51,8 @@
           "Korean",
           "English"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "./installer-hooks.nsh"
       }
     },
     "fileAssociations": [

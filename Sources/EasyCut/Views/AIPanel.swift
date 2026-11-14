@@ -363,14 +363,14 @@ struct ConnectSheet: View {
                             do {
                                 try ClaudeLink.connectDesktop()
                                 desktopLinked = ClaudeLink.desktopConnected
-                                message = "Claude 데스크톱을 완전히 종료(⌘Q) 후 다시 열면 EasyCut 도구가 보입니다."
+                                message = "Claude 데스크톱을 완전히 종료(⌘Q) 후 다시 열면 오케이컷 도구가 보입니다."
                             } catch { message = error.localizedDescription }
                         }
                     }
                     step("Claude Code (터미널)", done: codeLinked) {
                         Button(L(codeLinked ? "다시 연결" : "연결하기")) {
                             Task {
-                                do { try await ClaudeLink.connectCode(); codeLinked = ClaudeLink.codeConnected; message = "Claude Code에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다." }
+                                do { try await ClaudeLink.connectCode(); codeLinked = ClaudeLink.codeConnected; message = "Claude Code에 연결했습니다. 새 대화에서 오케이컷 도구를 쓸 수 있습니다." }
                                 catch { message = error.localizedDescription }
                             }
                         }
@@ -379,17 +379,17 @@ struct ConnectSheet: View {
                     step("Codex (터미널)", done: codexLinked) {
                         Button(L(codexLinked ? "다시 연결" : "연결하기")) {
                             Task {
-                                do { try await ClaudeLink.connectCodex(); codexLinked = ClaudeLink.codexConnected; message = "Codex에 연결했습니다. 새 대화에서 EasyCut 도구를 쓸 수 있습니다." }
+                                do { try await ClaudeLink.connectCodex(); codexLinked = ClaudeLink.codexConnected; message = "Codex에 연결했습니다. 새 대화에서 오케이컷 도구를 쓸 수 있습니다." }
                                 catch { message = error.localizedDescription }
                             }
                         }
                         .disabled(AgentLink.codexBinary == nil)
                     }
-                    Text("EasyCut을 켜 둔 상태에서 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다.")
+                    Text("오케이컷을 켜 둔 상태에서 \"오케이컷에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(6)
-            } label: { Text("다른 AI 앱에서 EasyCut 조작 (선택)").font(.headline) }
+            } label: { Text("다른 AI 앱에서 오케이컷 조작 (선택)").font(.headline) }
 
             if !message.isEmpty { Text(L(message)).font(.callout).foregroundStyle(.blue) }
             HStack {
@@ -429,9 +429,9 @@ struct GeminiSetup: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("1. 위 버튼으로 Google AI Studio를 열고 Google 계정으로 로그인하세요.")
                     Text("2. 처음이라면 약관을 확인하세요. 기본 프로젝트와 키가 이미 만들어져 있으면 그 키를 쓰면 됩니다.")
-                    Text("3. 키가 없으면 ‘API 키 만들기(Create API key)’를 누르고 프로젝트를 선택하거나 새로 만드세요. 키 이름은 ‘EasyCut’처럼 알아보기 쉽게 적으세요.")
+                    Text("3. 키가 없으면 ‘API 키 만들기(Create API key)’를 누르고 프로젝트를 선택하거나 새로 만드세요. 키 이름은 ‘오케이컷’처럼 알아보기 쉽게 적으세요.")
                     Text("4. 무료로 시작하려면 프로젝트의 요금제가 ‘Free Tier’인지 확인하세요. ‘결제 설정(Set up billing)’이나 카드 등록은 필요하지 않습니다.")
-                    Text("5. 키의 복사 버튼을 누르고 EasyCut으로 돌아와 아래 입력칸에 붙여 넣은 뒤 ‘키 저장 후 연결 확인’을 누르세요.")
+                    Text("5. 키의 복사 버튼을 누르고 오케이컷으로 돌아와 아래 입력칸에 붙여 넣은 뒤 ‘키 저장 후 연결 확인’을 누르세요.")
                     Text("프로젝트가 목록에 없으면 AI Studio의 Dashboard › Projects › Import projects에서 가져올 수 있습니다. 학교·기관 계정에서 발급이 막히면 관리자에게 접근 권한을 확인해 주세요.")
                         .foregroundStyle(.secondary)
                     Text("API 키는 비밀번호처럼 보관하세요. 채팅·사진·공개 게시물에 올리지 마세요. Gemini 유료 구독은 필요하지 않으며, 무료 한도는 계정과 모델에 따라 다릅니다.")
@@ -443,7 +443,7 @@ struct GeminiSetup: View {
                 .textSelection(.enabled)
             }
             .font(.callout)
-            Text("무료 사용은 Google의 모델·계정별 한도 안에서 가능합니다. 결제를 연결한 프로젝트는 사용 요금이 발생할 수 있습니다. EasyCut은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다.")
+            Text("무료 사용은 Google의 모델·계정별 한도 안에서 가능합니다. 결제를 연결한 프로젝트는 사용 요금이 발생할 수 있습니다. 오케이컷은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다.")
                 .font(.caption).foregroundStyle(.secondary)
             Text("대본·파일 이름·화면에서 읽은 글자 등 편집에 필요한 정보가 Google에 전송될 수 있습니다. 무료 서비스의 입력은 제품 개선에 쓰일 수 있으니 개인정보가 있는 자료는 주의해 주세요. 원본 영상 전체를 이 연결로 업로드하지는 않습니다.")
                 .font(.caption).foregroundStyle(.secondary)

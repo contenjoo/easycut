@@ -184,6 +184,13 @@ jobs:
           $t = Start-Process $exe.FullName -ArgumentList "--selftest", "$env:RUNNER_TEMP\selftest2" -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest2.txt
           Get-Content selftest2.txt | Select-Object -First 6
           if ($t.ExitCode -ne 0 -or -not (Select-String -Path selftest2.txt -Pattern "ALL PASSED" -Quiet)) { exit 1 }
+          # 보이는 이름은 OK Cut (설치 폴더·제거 정보 키는 예전 이름 EasyCut 그대로)
+          $programs = [Environment]::GetFolderPath("Programs")
+          Get-ChildItem $programs -Filter *.lnk | Select-Object Name | Format-Table -AutoSize
+          if (-not (Test-Path (Join-Path $programs "OK Cut.lnk"))) { Write-Error "Start menu shortcut 'OK Cut' missing"; exit 1 }
+          if (Test-Path (Join-Path $programs "EasyCut.lnk")) { Write-Error "old Start menu shortcut name left behind"; exit 1 }
+          $shown = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EasyCut").DisplayName
+          if ($shown -ne "OK Cut") { Write-Error "Apps & features name is '$shown', expected 'OK Cut'"; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -255,5 +262,7 @@ jobs:
           $tag = "win-v$version"
           if ($env:GITHUB_REF -like "refs/tags/*" -and $env:GITHUB_REF_NAME -ne $tag) { throw "Release tag and app version differ" }
           Get-FileHash $exe.FullName -Algorithm SHA256 | Format-List
-          gh release create $tag $exe.FullName --target $env:GITHUB_SHA --latest=false --title "EasyCut for Windows $version" --notes-file windows/RELEASE_NOTES.txt
+          $asset = Join-Path $env:RUNNER_TEMP "OKCut_${version}_x64-setup.exe"
+          Copy-Item $exe.FullName $asset
+          gh release create $tag $asset --target $env:GITHUB_SHA --latest=false --title "OK Cut for Windows $version" --notes-file windows/RELEASE_NOTES.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }

@@ -1,12 +1,14 @@
-# EasyCut — an easy video editor
+# OK Cut — an easy video editor
 
 [한국어](README.md) | **English**
 
-EasyCut is a Mac and Windows video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app. From macOS 1.13.0 and Windows 0.7.0, describe an animation, explainer or promo video, review its sample frames, then render it and continue editing on the timeline.
+OK Cut is a Mac and Windows video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app. From macOS 1.13.0 and Windows 0.7.0, describe an animation, explainer or promo video, review its sample frames, then render it and continue editing on the timeline.
 
-**[⬇︎ Download Mac 1.15.0](https://github.com/contenjoo/easycut/releases/download/v1.15.0/EasyCut-1.15.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
+**[⬇︎ Download Mac 1.16.0](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
 
-Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.9.0/EasyCut_0.9.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+Windows: [download OK Cut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+
+**New name (macOS 1.16.0 and Windows 0.10.0):** EasyCut is now **OK Cut** (오케이컷). Existing installs keep working through the normal update, and your projects (.easycut), settings and keys carry over. ([announcement](docs/announcements/macos-1.16.0.md))
 
 **macOS 1.15.0 and Windows 0.9.0:** New **Clearer voice** per clip, **Normalize loudness** and **auto-duck background music** on export, and **word-highlight captions**. ([announcement](docs/announcements/macos-1.15.0.md))
 
@@ -22,7 +24,7 @@ https://github.com/user-attachments/assets/7ccb22e8-b7db-4925-839e-431f966ce512
 |---|---|---|
 | ![Silence cut](docs/screenshots/silence.jpg) | ![Captions](docs/screenshots/captions.jpg) | ![AI editing](docs/screenshots/ai.jpg) |
 
-The Mac app follows your macOS language: English on English (and any non-Korean) systems, Korean on Korean systems. You can switch it in **EasyCut › Language** (applies after a restart).
+The Mac app follows your macOS language: English on English (and any non-Korean) systems, Korean on Korean systems. You can switch it in **OK Cut › Language** (applies after a restart).
 
 ## Install
 
@@ -30,18 +32,18 @@ The Mac app follows your macOS language: English on English (and any non-Korean)
 
 Requires an **Apple Silicon Mac (M1 or later) with macOS 14 or later**.
 
-1. Download [EasyCut-1.15.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.15.0/EasyCut-1.15.0.dmg), open it and drag EasyCut into the Applications folder.
+1. Download [OKCut-1.16.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg), open it and drag OK Cut into the Applications folder.
 2. The first time only: the app is not notarized, so if macOS warns you, go to System Settings › Privacy & Security and click **Open Anyway**.
 3. Download the Whisper model (574 MB) with **Turn On Whisper** in the Transcript tab, and the YouTube tool (yt-dlp) with **Install YouTube Tool** in the link window — once each.
 
 The Whisper speech engine and ffmpeg (for MKV etc.) are bundled for standard editing, with no Homebrew needed. Creating new videos additionally requires Node.js LTS, npm and Google Chrome.
 AI editing is optional. Click **Log in with Claude** or **Log in with ChatGPT** in the AI tab and the app installs what it needs and logs you in (uses your subscription, no API key). Your own Claude API key also works; it is stored only in the macOS Keychain.
 
-Updates are automatic from 1.3.0 on: when a new version is released, the app tells you at launch and installs it with one click (**EasyCut › Check for Updates…**).
+Updates are automatic from 1.3.0 on: when a new version is released, the app tells you at launch and installs it with one click (**OK Cut › Check for Updates…**).
 
 ### Windows
 
-Run [EasyCut_0.9.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.9.0/EasyCut_0.9.0_x64-setup.exe) on **Windows 10/11 64-bit**. Start a new video from **Create a Video** in the toolbar. Prepare Node.js LTS, npm and Chrome or Edge for video creation. Rendering packages are installed in the app's support folder on first use.
+Run [OKCut_0.10.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) on **Windows 10/11 64-bit**. Start a new video from **Create a Video** in the toolbar. Prepare Node.js LTS, npm and Chrome or Edge for video creation. Rendering packages are installed in the app's support folder on first use.
 
 ## Build from source
 
@@ -110,7 +112,7 @@ Shortcuts also work while a Korean input source is active (they use key position
 
 ## Import from a link (YouTube etc.)
 
-Click **Link** in the Media tab or File › Import from Link (⇧⌘I). Paste an address and EasyCut downloads an edit-friendly H.264 MP4 and puts it on the timeline (the first time, click Install YouTube Tool in the link window; if downloads get blocked, click Update YouTube Tool).
+Click **Link** in the Media tab or File › Import from Link (⇧⌘I). Paste an address and OK Cut downloads an edit-friendly H.264 MP4 and puts it on the timeline (the first time, click Install YouTube Tool in the link window; if downloads get blocked, click Update YouTube Tool).
 
 - Quality 720p/1080p/best/audio only, **download only part** (e.g. 1:30–5:00), and the uploader's Korean/English captions
 - Downloads are saved to `~/Movies/EasyCut 다운로드`
@@ -143,7 +145,7 @@ Click **Create Previews from Description** to generate four sample frames. Revie
 
 **Automatically Apply Production Skills** is enabled by default. The selected AI chooses up to three relevant sets from five reviewed production skills: product and brand motion, visual explanation, kinetic typography, data stories, or generative particles and patterns. Your style and exclusions take priority. The preview shows the selected guidance, the reason, and source links. You can turn automatic guidance off. This is a reviewed local catalog, not a live X search or an installer for arbitrary scripts. See the [sources and verification record](docs/VIDEO-SKILLS-2026-10-30.md).
 
-For video creation quality in EasyCut, we currently recommend **Claude Opus 5.5**. Claude supports a Claude Code subscription login or a Claude API key. GPT supports a ChatGPT subscription login or an OpenAI API key. Gemini currently uses an API key. Subscription connections use your account's limits. API keys are stored in your Mac Keychain or Windows Credential Manager, and API charges are separate from subscriptions. The API defaults are `claude-opus-5-5` (Claude), `gpt-6.1-sol` (GPT) and `gemini-3.8-flash` (Gemini); you can enter another supported model name. GPT and Gemini do not require a Claude login.
+For video creation quality in OK Cut, we currently recommend **Claude Opus 5.5**. Claude supports a Claude Code subscription login or a Claude API key. GPT supports a ChatGPT subscription login or an OpenAI API key. Gemini currently uses an API key. Subscription connections use your account's limits. API keys are stored in your Mac Keychain or Windows Credential Manager, and API charges are separate from subscriptions. The API defaults are `claude-opus-5-5` (Claude), `gpt-6.1-sol` (GPT) and `gemini-3.8-flash` (Gemini); you can enter another supported model name. GPT and Gemini do not require a Claude login.
 
 - **Canvas** draws each frame and can synthesize original music and effects, or make a silent video as requested.
 - **Remotion** creates React-based motion graphics. Its default output is silent; add audio on the timeline.
@@ -155,20 +157,20 @@ Supports 2–60 seconds per video and 24/30/60 fps. The canvas menu offers lands
 
 ### Edit existing videos with Gemini's free tier
 
-1. Choose **Gemini (free tier)** in EasyCut's AI tab and open [Google AI Studio's API keys page](https://aistudio.google.com/apikey).
+1. Choose **Gemini (free tier)** in OK Cut's AI tab and open [Google AI Studio's API keys page](https://aistudio.google.com/apikey).
 2. Sign in with Google and review the terms if prompted. New users may already have a default project and key.
-3. If no key is listed, click **Create API key**, name it `EasyCut`, and select or create a project.
+3. If no key is listed, click **Create API key**, name it `OK Cut`, and select or create a project.
 4. Check that the project uses **Free Tier**. You do not need to choose **Set up billing** or register a card to start on the free tier. Keys inherit their project's billing status; a key is not independently "free" or "paid".
-5. Copy the key, return to EasyCut, paste it, and choose **Save key and check connection**. Keys stay in macOS Keychain or Windows Credential Manager.
+5. Copy the key, return to OK Cut, paste it, and choose **Save key and check connection**. Keys stay in macOS Keychain or Windows Credential Manager.
 6. Ask for an edit, such as "remove silence" or "make captions". Undo with ⌘Z on Mac or Ctrl+Z on Windows.
 
 If an existing project is missing, import it via **Dashboard › Projects › Import projects** in AI Studio. Ask your organization administrator if a school/work account cannot create keys. Keep keys private; never post them in chats, screenshots, or source code. The app's expandable **How to get an API key** guide includes these steps. See Google's [key documentation](https://ai.google.dev/gemini-api/docs/api-key) and [billing guide](https://ai.google.dev/gemini-api/docs/billing).
 
-Free quotas vary by Google account/model; billing-enabled keys can incur charges. Editing text and metadata may be sent to Google, and free-tier input may be used to improve its products. EasyCut does not automatically enable billing or switch to a paid model.
+Free quotas vary by Google account/model; billing-enabled keys can incur charges. Editing text and metadata may be sent to Google, and free-tier input may be used to improve its products. OK Cut does not automatically enable billing or switch to a paid model.
 
 
 - **One-click login** (AI tab or Tools › Connect AI Accounts…): click **Log in with Claude** (Pro/Max) or **Log in with ChatGPT** (Plus/Pro · Codex) and finish logging in in your browser. If Claude Code / Codex is missing, the official release is installed automatically. No Terminal or other setup needed.
-- Then type something like "cut all the parts with no talking" in the **AI** tab and it edits using your subscription. (The app runs your logged-in Claude Code / Codex internally and lets it use only EasyCut's editing tools; your personal settings and plugins are not mixed in.)
+- Then type something like "cut all the parts with no talking" in the **AI** tab and it edits using your subscription. (The app runs your logged-in Claude Code / Codex internally and lets it use only OK Cut's editing tools; your personal settings and plugins are not mixed in.)
 - **API key**: AI tab ⚙︎ › Set Claude API Key… (stored in the Keychain). ChatGPT can also log in with an OpenAI API key in the Connect AI Accounts window.
 - **From other AI apps**: one Connect button each for Claude Desktop / Claude Code / Codex in the Connect AI Accounts window. To do it by hand:
 - **From Claude Code / Codex**: register once while the app is running

@@ -110,7 +110,7 @@ pub fn open_area_picker(app: &AppHandle) -> Result<(), String> {
     let pos = m.position().to_logical::<f64>(scale);
     let size = m.size().to_logical::<f64>(scale);
     let b = WebviewWindowBuilder::new(app, "recarea", WebviewUrl::App("area.html".into()))
-        .title("EasyCut 영역")
+        .title("오케이컷 영역")
         .position(pos.x, pos.y)
         .inner_size(size.width, size.height)
         .decorations(false)

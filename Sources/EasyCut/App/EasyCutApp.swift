@@ -127,7 +127,7 @@ struct EasyCutApp: App {
     @StateObject private var store = EditorStore()
 
     var body: some Scene {
-        Window("EasyCut", id: "main") {
+        Window("오케이컷", id: "main") {
             ContentView(store: store)
                 .onAppear { delegate.store = store }
                 // 앱이 꺼진 상태에서 파일로 실행될 때 SwiftUI가 넘겨주는 경로
@@ -281,7 +281,7 @@ enum IconMaker {
             let w = tinted.size.width, h = tinted.size.height
             tinted.draw(in: CGRect(x: (s - w) / 2, y: (s - h) / 2 + s * 0.03, width: w, height: h))
         }
-        let t = "EasyCut" as NSString
+        let t = "OK Cut" as NSString
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: s * 0.075, weight: .heavy), .foregroundColor: NSColor.white.withAlphaComponent(0.92)]
         let ts = t.size(withAttributes: attrs)
         t.draw(at: CGPoint(x: (s - ts.width) / 2, y: body.minY + s * 0.1), withAttributes: attrs)

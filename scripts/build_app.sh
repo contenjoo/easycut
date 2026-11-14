@@ -16,7 +16,7 @@ mkdir -p "$ROOT/.build" "$ROOT/dist"
 WORK=$(mktemp -d "$ROOT/.build/app-build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 APP="$WORK/EasyCut.app"
-VERSION="1.15.0"
+VERSION="1.16.0"
 
 # 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
 SIGN_ID="${EASYCUT_SIGN_ID:-EasyCut Self-Signed}"
@@ -45,14 +45,20 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # 언어: 한국어(원문) + 영어 (앱 문구는 LocTable, 권한 안내문은 InfoPlist.strings)
 mkdir -p "$APP/Contents/Resources/ko.lproj" "$APP/Contents/Resources/en.lproj"
-: > "$APP/Contents/Resources/ko.lproj/InfoPlist.strings"
+# 보이는 앱 이름: 파일은 EasyCut.app 그대로(업데이트·권한 유지), Finder·Dock·메뉴에는 언어별 이름
+cat > "$APP/Contents/Resources/ko.lproj/InfoPlist.strings" <<'STRINGS'
+"CFBundleName" = "오케이컷";
+"CFBundleDisplayName" = "오케이컷";
+STRINGS
 # 한국어는 원문 그대로(키 = 한국어), 영어 문구표는 scripts/gen_strings.py 로 만든다
-echo '"EasyCut" = "EasyCut";' > "$APP/Contents/Resources/ko.lproj/Localizable.strings"
+echo '"오케이컷" = "오케이컷";' > "$APP/Contents/Resources/ko.lproj/Localizable.strings"
 python3 "$ROOT/scripts/gen_strings.py" >/dev/null && cp "$ROOT/Resources/en.lproj/Localizable.strings" "$APP/Contents/Resources/en.lproj/"
 cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS'
-"NSCameraUsageDescription" = "EasyCut uses the camera to record your face along with the screen.";
-"NSMicrophoneUsageDescription" = "EasyCut uses the microphone to record your voice.";
-"NSSpeechRecognitionUsageDescription" = "EasyCut uses speech recognition to turn speech in your videos into text (transcripts and captions). Recognition runs on this Mac.";
+"CFBundleName" = "OK Cut";
+"CFBundleDisplayName" = "OK Cut";
+"NSCameraUsageDescription" = "OK Cut uses the camera to record your face along with the screen.";
+"NSMicrophoneUsageDescription" = "OK Cut uses the microphone to record your voice.";
+"NSSpeechRecognitionUsageDescription" = "OK Cut uses speech recognition to turn speech in your videos into text (transcripts and captions). Recognition runs on this Mac.";
 STRINGS
 cp "$BIN" "$APP/Contents/MacOS/EasyCut"
 cp "$ROOT/Resources/VideoSkillNotices.txt" "$APP/Contents/Resources/VideoSkillNotices.txt"
@@ -90,12 +96,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>EasyCut</string>
   <key>CFBundleDisplayName</key><string>EasyCut</string>
+  <key>LSHasLocalizedDisplayName</key><true/>
   <key>CFBundleIdentifier</key><string>com.contenjoo.easycut</string>
   <key>CFBundleExecutable</key><string>EasyCut</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>28</string>
+  <key>CFBundleVersion</key><string>30</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -155,9 +162,9 @@ if [ "$MAKE_DMG" = true ]; then
   ln -s /Applications "$STAGE/Applications"
   cp "$ROOT/scripts/설치 방법.txt" "$STAGE/설치 방법.txt"
   cp "$ROOT/scripts/How to Install.txt" "$STAGE/How to Install.txt"
-  rm -f "$ROOT/dist/EasyCut.dmg" "$ROOT/dist/EasyCut-$VERSION.dmg"
-  hdiutil create -volname "EasyCut $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/EasyCut-$VERSION.dmg" >/dev/null
-  echo "  → dist/EasyCut-$VERSION.dmg ($(du -h "$ROOT/dist/EasyCut-$VERSION.dmg" | cut -f1))"
+  rm -f "$ROOT/dist/OKCut-$VERSION.dmg"
+  hdiutil create -volname "OK Cut $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$ROOT/dist/OKCut-$VERSION.dmg" >/dev/null
+  echo "  → dist/OKCut-$VERSION.dmg ($(du -h "$ROOT/dist/OKCut-$VERSION.dmg" | cut -f1))"
 fi
 echo "▶ 앱 압축 보관"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$WORK/EasyCut.app.zip"

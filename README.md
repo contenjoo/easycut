@@ -1,12 +1,14 @@
-# EasyCut — 쉬운 영상 편집기
+# 오케이컷 (OK Cut) — 쉬운 영상 편집기
 
 **한국어** | [English](README.en.md)
 
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 Mac·Windows 설치형 영상 편집기입니다. macOS 1.13.0·Windows 0.7.0부터 원하는 내용을 설명해 애니메이션·설명·홍보 영상을 만들고 타임라인에서 편집할 수 있습니다.
 
-**[⬇︎ Mac 1.15.0 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.15.0/EasyCut-1.15.0.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
+**[⬇︎ Mac 1.16.0 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.9.0/EasyCut_0.9.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+윈도우 버전: [오케이컷 for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+
+**이름이 바뀌었습니다 (macOS 1.16.0·Windows 0.10.0):** EasyCut의 새 이름은 **오케이컷(OK Cut)**입니다. 쓰던 앱은 업데이트만 하면 그대로 이어지고, 프로젝트(.easycut)·설정·키도 그대로입니다. ([출시 소식](docs/announcements/macos-1.16.0.md))
 
 **macOS 1.15.0·Windows 0.9.0:** 클립 **오디오**의 **목소리 선명하게**, 내보내기의 **음량 자동 맞추기·배경음악 자동 줄이기**, 자막 스타일의 **말하는 단어 강조**가 새로 들어왔습니다. ([출시 소식](docs/announcements/macos-1.15.0.md))
 
@@ -28,7 +30,7 @@ https://github.com/user-attachments/assets/c82c022a-1c3b-4895-94b8-a49f6609b6f9
 
 **M1 이상 Apple Silicon Mac, macOS 14 이상**이 필요합니다.
 
-1. [EasyCut-1.15.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.15.0/EasyCut-1.15.0.dmg)를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
+1. [OKCut-1.16.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg)를 받아 열고 오케이컷을 응용 프로그램 폴더로 끌어 놓습니다.
 2. 처음 열 때 한 번: 서명·공증되지 않은 앱이라 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
 3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
 
@@ -37,7 +39,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 
 ### Windows
 
-**Windows 10/11 64비트**에서 [EasyCut_0.9.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.9.0/EasyCut_0.9.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
+**Windows 10/11 64비트**에서 [OKCut_0.10.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
 
 ## 소스에서 빌드
 
@@ -73,8 +75,8 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 | AI 앱 연결(MCP) | Claude Code / Claude 데스크톱 / Codex에서 앱을 직접 조작 |
 | 내보내기 | MP4(H.264/HEVC), MOV(ProRes), 오디오(M4A), 4K/1080p/720p/480p, SRT 동시 저장, 장면 PNG 저장 |
 | 프로젝트 | `.easycut` 파일 저장/열기, 무제한에 가까운 실행 취소(300단계), **실시간 자동 저장**(저장 전 새 프로젝트는 복구용으로 보관 → 다음 실행 때 복구) |
-| 영어 지원 | macOS 언어가 한국어가 아니면 영어로 표시. EasyCut › 언어 / Language에서 바꿀 수 있음(다시 시작하면 적용) |
-| 자동 업데이트 | 켤 때 GitHub에 새 버전이 있으면 알려 주고, [업데이트]를 누르면 받아서 바꾼 뒤 다시 실행 (EasyCut › 업데이트 확인…) |
+| 영어 지원 | macOS 언어가 한국어가 아니면 영어로 표시. 오케이컷 › 언어 / Language에서 바꿀 수 있음(다시 시작하면 적용) |
+| 자동 업데이트 | 켤 때 GitHub에 새 버전이 있으면 알려 주고, [업데이트]를 누르면 받아서 바꾼 뒤 다시 실행 (오케이컷 › 업데이트 확인…) |
 
 ## 단축키 (앱에서 ⌘/ 로도 볼 수 있음)
 
@@ -135,7 +137,7 @@ MKV·WebM·AVI 같은 파일은 가져올 때 자동으로 MP4로 바꿔서 씁�
 
 상단 도구 막대의 **영상 만들기**를 누릅니다. **파일 › 영상 만들기…** 또는 AI 탭의 **영상 만들기**에서도 열 수 있습니다. **Claude / GPT / Gemini**에서 사용할 AI를 선택하고 연결 방식을 정합니다. Claude와 GPT는 **구독 로그인 / API 키** 중 고를 수 있으며, GPT 구독은 ChatGPT 계정으로 로그인합니다. Gemini는 현재 API 키로 연결합니다. 원하는 영상 설명·화면비·길이를 정하고 **설명으로 미리보기 만들기**를 누르면 선택한 AI가 새 장면 코드를 작성하고 샘플 프레임 4장을 보여 줍니다. 샘플을 확인한 뒤 **확인하고 전체 렌더링**을 누르면 MP4를 만들며, **타임라인에 추가**로 편집을 이어 갑니다. 추가한 클립은 Mac에서 ⌘Z, Windows에서 Ctrl+Z로 되돌릴 수 있습니다.
 
-EasyCut의 현재 권장 모델은 **Claude Opus 5.5**입니다. Claude는 Claude Code 구독 로그인이나 Claude API 키로, GPT는 ChatGPT 구독 로그인이나 OpenAI API 키로 사용합니다. Gemini는 API 키로 연결합니다. API 키는 각 사용자의 Mac 키체인 또는 Windows 자격 증명 관리자에 저장합니다. 기본 API 모델은 Claude `claude-opus-5-5`, GPT `gpt-6.1-sol`, Gemini `gemini-3.8-flash`이며 모델명을 직접 바꿀 수 있습니다. 구독 연결에는 본인 계정의 사용 한도가 적용되며, API 사용료는 구독 요금과 별도입니다. 세 공급자 모두 같은 스킬 선택·코드 검증·미리보기·로컬 렌더 과정을 사용합니다.
+오케이컷의 현재 권장 모델은 **Claude Opus 5.5**입니다. Claude는 Claude Code 구독 로그인이나 Claude API 키로, GPT는 ChatGPT 구독 로그인이나 OpenAI API 키로 사용합니다. Gemini는 API 키로 연결합니다. API 키는 각 사용자의 Mac 키체인 또는 Windows 자격 증명 관리자에 저장합니다. 기본 API 모델은 Claude `claude-opus-5-5`, GPT `gpt-6.1-sol`, Gemini `gemini-3.8-flash`이며 모델명을 직접 바꿀 수 있습니다. 구독 연결에는 본인 계정의 사용 한도가 적용되며, API 사용료는 구독 요금과 별도입니다. 세 공급자 모두 같은 스킬 선택·코드 검증·미리보기·로컬 렌더 과정을 사용합니다.
 
 애니메이션·설명·홍보 영상의 주제·줄거리·스타일·색상·움직임·텍스트·소리는 사용자가 설명합니다. 예시 버튼은 설명만 채우며 화면 크기·길이·제작 방식을 바꾸지 않습니다. 특정 장소·팔레트·표현 방식은 고정되지 않습니다. Canvas에서는 무음·효과음만·음악 포함 요청도 구분해 반영합니다.
 
@@ -151,24 +153,24 @@ macOS **1.13.0**, Windows **0.7.0**부터 제공합니다. 한 번에 2~60초, 2
 
 ### 기존 영상 편집을 Gemini 무료 한도로 시작하기
 
-1. EasyCut의 AI 탭에서 **구독 없이 Gemini 무료 한도로 시작**을 누릅니다. 이미 연결했다면 연결 방식에서 **Gemini (무료 한도)**를 선택합니다.
+1. 오케이컷의 AI 탭에서 **구독 없이 Gemini 무료 한도로 시작**을 누릅니다. 이미 연결했다면 연결 방식에서 **Gemini (무료 한도)**를 선택합니다.
 2. **Google에서 무료 키 발급하기**를 누르거나 [Google AI Studio API 키 페이지](https://aistudio.google.com/apikey)를 엽니다.
 3. Google 계정으로 로그인하고, 처음이라면 약관을 확인합니다. 기본 프로젝트와 키가 이미 생성돼 있으면 그 키를 사용할 수 있습니다.
-4. 키가 없으면 **API 키 만들기(Create API key)**를 누릅니다. 키 이름을 `EasyCut`처럼 적고 프로젝트를 선택하거나 새로 만듭니다.
+4. 키가 없으면 **API 키 만들기(Create API key)**를 누릅니다. 키 이름을 `OK Cut`처럼 적고 프로젝트를 선택하거나 새로 만듭니다.
 5. 무료로 시작하려면 프로젝트의 요금제가 **Free Tier**인지 확인합니다. **결제 설정(Set up billing)**이나 카드 등록은 필요하지 않습니다. API 키 자체에 별도 무료·유료 구분이 있는 것이 아니라 프로젝트의 결제 상태가 적용됩니다.
-6. 키의 복사 버튼을 누르고 EasyCut으로 돌아와 입력칸에 붙여 넣은 뒤 **키 저장 후 연결 확인**을 누릅니다. 키는 Mac의 키체인 또는 Windows 자격 증명 관리자에 저장합니다.
+6. 키의 복사 버튼을 누르고 오케이컷으로 돌아와 입력칸에 붙여 넣은 뒤 **키 저장 후 연결 확인**을 누릅니다. 키는 Mac의 키체인 또는 Windows 자격 증명 관리자에 저장합니다.
 7. 연결되면 “말 없는 부분 잘라줘”, “자막 만들어줘”처럼 요청합니다. 변경은 Mac에서 ⌘Z, Windows에서 Ctrl+Z로 되돌립니다.
 
 프로젝트가 목록에 없으면 AI Studio의 **Dashboard › Projects › Import projects**에서 기존 프로젝트를 가져올 수 있습니다. 학교·기관 계정에서 발급이 막히면 관리자에게 접근 권한을 확인하세요. API 키는 비밀번호처럼 보관하고 채팅·스크린샷·공개 게시물에 올리지 마세요.
 
 화면의 **처음이신가요? API 키 발급 방법**을 펼치면 같은 순서를 볼 수 있습니다. Google 화면은 바뀔 수 있으므로 [공식 키 발급 도움말](https://ai.google.dev/gemini-api/docs/api-key?hl=ko)과 [무료·유료 요금제 안내](https://ai.google.dev/gemini-api/docs/billing?hl=ko)도 참고하세요.
 
-Gemini 2.5 Flash-Lite를 사용합니다. 무료 이용은 Google의 계정·모델별 한도 내에서 가능하며, 결제를 연결한 프로젝트의 키는 요금이 발생할 수 있습니다. EasyCut은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다. 한도 초과 시 안내 후 중단합니다.
+Gemini 2.5 Flash-Lite를 사용합니다. 무료 이용은 Google의 계정·모델별 한도 내에서 가능하며, 결제를 연결한 프로젝트의 키는 요금이 발생할 수 있습니다. 오케이컷은 결제를 연결하거나 유료 모델로 자동 전환하지 않습니다. 한도 초과 시 안내 후 중단합니다.
 대본·파일 이름·화면에서 읽은 글자 등 편집 정보가 Google에 전송될 수 있습니다. 원본 영상 전체는 이 연결로 업로드하지 않습니다. 무료 서비스 입력이 제품 개선에 사용될 수 있으므로 개인정보가 있는 자료는 주의해 주세요.
 
 
 - **원클릭 로그인** (AI 탭 또는 도구 › AI 계정 연결…): **[Claude로 로그인]**(Pro/Max) 또는 **[ChatGPT로 로그인]**(Plus/Pro · Codex)을 누르면 브라우저에서 로그인만 하면 끝입니다. Claude Code / Codex가 없으면 공식 배포본을 자동으로 설치합니다. 터미널이나 다른 설정은 필요 없습니다.
-- 로그인 후 왼쪽 **AI** 탭에서 "말 없는 부분 다 잘라줘"처럼 입력하면 구독 사용량으로 편집합니다. (앱이 로그인된 Claude Code / Codex를 내부적으로 실행해 EasyCut 편집 도구만 쓰게 합니다. 개인 설정·플러그인은 섞지 않습니다.)
+- 로그인 후 왼쪽 **AI** 탭에서 "말 없는 부분 다 잘라줘"처럼 입력하면 구독 사용량으로 편집합니다. (앱이 로그인된 Claude Code / Codex를 내부적으로 실행해 오케이컷 편집 도구만 쓰게 합니다. 개인 설정·플러그인은 섞지 않습니다.)
 - **API 키**: AI 탭 ⚙︎ › Claude API 키 설정… (키체인 저장). ChatGPT는 AI 계정 연결 창에서 OpenAI API 키로도 로그인할 수 있습니다.
 - **다른 AI 앱에서 조작**: AI 계정 연결 창에서 Claude 데스크톱 / Claude Code / Codex에 [연결하기] 버튼 한 번. 직접 하려면:
 - **Claude Code / Codex에서**: 앱을 켠 상태로 한 번만 등록

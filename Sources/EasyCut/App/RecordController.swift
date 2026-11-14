@@ -84,7 +84,7 @@ final class RecordController: ObservableObject {
             guard await refreshContent() else {
                 let a = NSAlert()
                 a.messageText = "화면 녹화 권한이 필요합니다"
-                a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › 화면 및 시스템 오디오 녹음에서 EasyCut을 켠 뒤, EasyCut을 다시 시작해 주세요."
+                a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › 화면 및 시스템 오디오 녹음에서 오케이컷을 켠 뒤, 오케이컷을 다시 시작해 주세요."
                 a.addButton(withTitle: "시스템 설정 열기")
                 a.addButton(withTitle: "닫기")
                 if a.localized().runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings("Privacy_ScreenCapture") }
@@ -295,7 +295,7 @@ final class RecordController: ObservableObject {
     private func permissionAlert(_ what: String, pane: String) {
         let a = NSAlert()
         a.messageText = "\(what) 권한이 필요합니다"
-        a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › \(what)에서 EasyCut을 켜 주세요. \(what) 없이 녹화하려면 녹화 설정에서 \(what)를 끄세요."
+        a.informativeText = "시스템 설정 › 개인정보 보호 및 보안 › \(what)에서 오케이컷을 켜 주세요. \(what) 없이 녹화하려면 녹화 설정에서 \(what)를 끄세요."
         a.addButton(withTitle: "시스템 설정 열기")
         a.addButton(withTitle: "닫기")
         if a.localized().runModal() == .alertFirstButtonReturn { CaptureDevices.openPrivacySettings(pane) }

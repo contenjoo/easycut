@@ -1478,7 +1478,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("EasyCut 실행 실패")
+        .expect("오케이컷 실행 실패")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
                 generation::cancel(app);

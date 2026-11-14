@@ -76,7 +76,7 @@ struct RecordSheet: View {
             }
             .formStyle(.grouped)
 
-            Text("시작하면 3초 뒤 녹화됩니다. 녹화 중에는 EasyCut 창이 숨고, 화면 오른쪽 아래 작은 창이나 단축키로 멈춥니다 (작은 창은 녹화에 찍히지 않음).\n⌥⌘P 일시정지·계속 · ⌥⌘. 정지 (다른 앱을 쓰는 중에도 동작)\n녹화 파일: 동영상 › EasyCut 녹화")
+            Text("시작하면 3초 뒤 녹화됩니다. 녹화 중에는 오케이컷 창이 숨고, 화면 오른쪽 아래 작은 창이나 단축키로 멈춥니다 (작은 창은 녹화에 찍히지 않음).\n⌥⌘P 일시정지·계속 · ⌥⌘. 정지 (다른 앱을 쓰는 중에도 동작)\n녹화 파일: 동영상 › EasyCut 녹화")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             HStack {
