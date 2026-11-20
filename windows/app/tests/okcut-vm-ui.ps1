@@ -1,4 +1,4 @@
-param([ValidateSet('Fixture','Pick','Save','Focus','Screenshot')][string]$Action, [string]$Value)
+param([ValidateSet('Fixture','Pick','Save','Focus','FocusApp','Screenshot')][string]$Action, [string]$Value)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing,UIAutomationClient,UIAutomationTypes
 $fixtureTitle = 'OK Cut QA Source Window'
@@ -75,6 +75,13 @@ if ($Action -eq 'Screenshot') { Screenshot $Value; exit }
 if ($Action -eq 'Focus') {
     $shell = New-Object -ComObject WScript.Shell
     if (!$shell.AppActivate($fixtureTitle)) { throw 'Fixture window cannot be activated' }
+    exit
+}
+if ($Action -eq 'FocusApp') {
+    $shell = New-Object -ComObject WScript.Shell
+    if (!$shell.AppActivate([int]$Value)) { throw 'Installed app window cannot be activated' }
+    Start-Sleep -Milliseconds 300
+    Write-Host "Foreground window: $((Foreground).Current.Name)"
     exit
 }
 $deadline = (Get-Date).AddSeconds(22)

@@ -81,6 +81,7 @@ async function playExport(output) {
   await delay(1800);
   const app = spawn(installed, [], { stdio: 'ignore' });
   let browser;
+  let page;
   try {
     browser = await until(async () => {
       assert.equal(app.exitCode, null, 'The public installed app exited before UI automation');
@@ -88,7 +89,11 @@ async function playExport(output) {
       catch { return null; }
     }, 'The installed WebView2 did not launch');
     const context = browser.contexts()[0];
-    const page = await until(() => context.pages().find(p => /tauri/.test(p.url())), 'App page missing');
+    page = await until(() => context.pages().find(p => /tauri/.test(p.url())), 'App page missing');
+    page.on('pageerror', error => console.error(`App error: ${error}`));
+    page.on('console', msg => { if (msg.type() === 'error') console.error(`App console: ${msg.text()}`); });
+    await page.waitForFunction(() => document.querySelector('#rec-btn')?.onclick && document.querySelector('#title')?.textContent.trim());
+    ui('FocusApp', String(app.pid));
     await page.locator('#rec-btn').click();
     await page.locator('#r-go').waitFor();
     if (await page.locator('#r-target').inputValue() !== 'window') {
@@ -142,6 +147,16 @@ async function playExport(output) {
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
     console.log('REAL WINDOWS RECORDING -> APP EXPORT -> EDGE PLAYBACK PASSED', JSON.stringify(result));
   } catch (error) {
+    if (page && !page.isClosed()) {
+      try {
+        console.error('App state:', JSON.stringify(await page.evaluate(() => ({
+          modalOpen: !document.querySelector('#modal')?.classList.contains('hidden'),
+          modal: document.querySelector('#modal-box')?.textContent,
+          toast: document.querySelector('#toast')?.textContent,
+          focused: document.hasFocus()
+        }))));
+      } catch {}
+    }
     try { ui('Screenshot', path.join(evidence, 'final-desktop.png')); } catch {}
     throw error;
   } finally {
