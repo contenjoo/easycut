@@ -191,6 +191,9 @@ jobs:
           if (Test-Path (Join-Path $programs "EasyCut.lnk")) { Write-Error "old Start menu shortcut name left behind"; exit 1 }
           $shown = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EasyCut").DisplayName
           if ($shown -ne "OK Cut") { Write-Error "Apps & features name is '$shown', expected 'OK Cut'"; exit 1 }
+          $testedHash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
+          "TESTED_INSTALLER_SHA256=$testedHash" >> $env:GITHUB_ENV
+          Write-Host "Tested installer SHA256: $testedHash"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -211,6 +214,19 @@ jobs:
             npx tauri build --no-bundle --features tauri/devtools --config $configPath
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally { Pop-Location }
+          # --no-bundle can leave the executable without its resources when the build is cached.
+          # Run the instrumented app with the exact resources from the installer tested above.
+          $installedResources = Join-Path $env:LOCALAPPDATA "EasyCut/resources"
+          $testResources = Join-Path (Resolve-Path "windows/target/release").Path "resources"
+          foreach ($tool in @("ffmpeg.exe", "ffprobe.exe", "whisper-cli.exe")) {
+            $relativePath = "bin/$tool"
+            Write-Host "Instrumented build has $tool before staging: $(Test-Path (Join-Path $testResources $relativePath))"
+            if (-not (Test-Path (Join-Path $installedResources $relativePath) -PathType Leaf)) {
+              throw "Missing tool in installed application: $tool"
+            }
+          }
+          New-Item -ItemType Directory -Force $testResources | Out-Null
+          Copy-Item -Path "$installedResources/*" -Destination $testResources -Recurse -Force
           npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
           $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
           # Avoid reusing a browser process started by an earlier app/install test.
@@ -261,7 +277,9 @@ jobs:
           $version = (Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $tag = "win-v$version"
           if ($env:GITHUB_REF -like "refs/tags/*" -and $env:GITHUB_REF_NAME -ne $tag) { throw "Release tag and app version differ" }
-          Get-FileHash $exe.FullName -Algorithm SHA256 | Format-List
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
+          if ($hash -ne $env:TESTED_INSTALLER_SHA256) { throw "Release installer differs from the tested installer" }
+          Write-Host "Release installer SHA256: $hash"
           $asset = Join-Path $env:RUNNER_TEMP "OKCut_${version}_x64-setup.exe"
           Copy-Item $exe.FullName $asset
           gh release create $tag $asset --target $env:GITHUB_SHA --latest=false --title "OK Cut for Windows $version" --notes-file windows/RELEASE_NOTES.txt

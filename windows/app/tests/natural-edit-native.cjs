@@ -43,6 +43,8 @@ const assert = require('node:assert/strict');
   await page.screenshot({path:process.env.EASYCUT_NATIVE_OUTPUT+'/gemini-setup.png'});
   await page.click('[data-tab="media"]');
   console.log('NATIVE GEMINI FREE-TIER ONBOARDING PASSED (no key or network call)');
+  const tools = await page.evaluate(() => window.__TAURI__.core.invoke('whisper_status'));
+  assert.deepEqual(tools, { engine: true, model: true, ffmpeg: true }, 'Native test app must resolve bundled tools and speech model');
   const speech = fs.readFileSync(process.env.EASYCUT_NATIVE_SPEECH).toString('base64');
   const recorded = await page.evaluate(async b64 => {
     const invoke = window.__TAURI__.core.invoke;
@@ -65,9 +67,19 @@ const assert = require('node:assert/strict');
     recorder.start(250); source.start();
     await new Promise(resolve=>source.onended=resolve);
     recorder.stop(); await stopped; clearInterval(timer);
+    const recordedBytes = chunks.reduce((total, blob) => total + blob.size, 0);
     for(const blob of chunks) await invoke('rec_chunk',new Uint8Array(await blob.arrayBuffer()),{headers:{'x-kind':'screen'}});
     stream.getTracks().forEach(t=>t.stop());await context.close();
-    const result=await invoke('rec_finish',{cameraCircle:false,clicks:[],showClicks:false,area:null});
+    if (!recordedBytes) {
+      await invoke('rec_discard');
+      throw new Error(`MediaRecorder produced no data (${mime})`);
+    }
+    let result;
+    try {
+      result = await invoke('rec_finish',{cameraCircle:false,clicks:[],showClicks:false,area:null});
+    } catch (error) {
+      throw new Error(`rec_finish failed after writing ${chunks.length} chunks (${recordedBytes} bytes, ${mime}): ${error}`);
+    }
     const state=await invoke('get_state');
     const asset=state.project.assets.find(a=>a.id===result.screen);
     if(!asset?.hasAudio || asset.duration<3)throw new Error('Recorded file missing audio or duration');
@@ -75,7 +87,7 @@ const assert = require('node:assert/strict');
     const transcribed=await invoke('get_state');
     const words=transcribed.project.assets.find(a=>a.id===asset.id).words;
     if(!words?.length)throw new Error('No words transcribed from real recording');
-    return {asset:asset.id,duration:asset.duration,words:words.map(w=>w.text).join(' ')};
+    return {asset:asset.id,duration:asset.duration,recordedBytes,chunks:chunks.length,words:words.map(w=>w.text).join(' ')};
   },speech);
   assert.match(recorded.words.toLowerCase(), /video|windows|editor/);
   console.log('NATIVE RECORD → FILE → WHISPER',JSON.stringify(recorded));
