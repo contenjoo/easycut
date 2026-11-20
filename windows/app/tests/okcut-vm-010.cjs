@@ -84,9 +84,16 @@ function measureInputs(filename) {
   return {mic:measureMarker(filename,micHz),system:measureMarker(filename,systemHz)};
 }
 
+let cableActionIndex=0;
 function cableAction(action) {
-  execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Sta','-File',loopbackHelper,'-Action',action],
-    {stdio:'inherit',timeout:35000});
+  const report=path.join(evidence,`cable-${++cableActionIndex}-${action}.json`);
+  try {
+    execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Sta','-File',loopbackHelper,'-Mode',action,'-EvidencePath',report],
+      {stdio:'inherit',timeout:35000});
+  } catch (error) {
+    if(action==='Restart' || !fs.existsSync(report) || error.status!==2) throw error;
+    console.log('Control-panel state was not confirmed; using the subsequent native audio measurement');
+  }
 }
 
 async function probeFreshLoopback(wav) {
