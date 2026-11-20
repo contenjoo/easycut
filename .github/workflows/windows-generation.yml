@@ -1,29 +1,79 @@
-name: Windows VM audio endpoint preflight
+name: OK Cut 0.10.0 Windows VM full screen and audio QA
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  audio-devices:
+  recording:
     runs-on: windows-2025-vs2026
-    timeout-minutes: 4
+    timeout-minutes: 12
     steps:
-      - name: Check the stock Windows VM audio input and output
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Download and install the public 0.10.0 release
         shell: pwsh
         run: |
-          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version | Format-List
-          Get-Service AudioEndpointBuilder, Audiosrv | Format-Table Name,Status,StartType
-          Start-Service AudioEndpointBuilder
-          Start-Service Audiosrv
-          Get-Service AudioEndpointBuilder, Audiosrv | Format-Table Name,Status,StartType
-          Get-CimInstance Win32_SoundDevice | Select-Object Name,Status,PNPDeviceID | Format-List
-          $devices = @(Get-PnpDevice -Class AudioEndpoint -PresentOnly -ErrorAction SilentlyContinue)
-          $devices | Select-Object Status,FriendlyName,InstanceId | Format-Table -AutoSize
-          Add-Type @'
-          using System.Runtime.InteropServices;
-          public static class WaveEndpoints {
-            [DllImport("winmm.dll")] public static extern uint waveOutGetNumDevs();
-            [DllImport("winmm.dll")] public static extern uint waveInGetNumDevs();
+          $installer = Join-Path $env:RUNNER_TEMP 'OKCut_0.10.0_x64-setup.exe'
+          $evidence = Join-Path $env:RUNNER_TEMP 'okcut-vm-evidence'
+          New-Item -Type Directory $evidence | Out-Null
+          curl.exe -fLsS --retry 2 https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe -o $installer
+          if ($LASTEXITCODE -ne 0) { throw "Download failed: $LASTEXITCODE" }
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '506c639f9045121f2a370b7b9233b8848320c8e5da86a011849e14b62d3af4ab') { throw 'Unexpected release installer SHA256' }
+          $result = Start-Process $installer -ArgumentList '/S' -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw "Installation failed: $($result.ExitCode)" }
+          $installed = Join-Path $env:LOCALAPPDATA 'EasyCut/easycut-windows.exe'
+          if (!(Test-Path $installed)) { throw 'Installed app is missing' }
+          $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EasyCut'
+          if ($reg.DisplayName -ne 'OK Cut' -or $reg.DisplayVersion -ne '0.10.0') { throw 'Unexpected installed version' }
+          @{
+            name=$reg.DisplayName; version=$reg.DisplayVersion; installerSha256=$hash;
+            installerBytes=(Get-Item $installer).Length; os=(Get-CimInstance Win32_OperatingSystem).Caption;
+            architecture=$env:PROCESSOR_ARCHITECTURE; runId=$env:GITHUB_RUN_ID
+          } | ConvertTo-Json | Set-Content "$evidence/installation.json"
+          "OKCUT_EXE=$installed" >> $env:GITHUB_ENV
+          "OKCUT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+      - name: Prepare signed audio fixture endpoints on the disposable VM
+        shell: pwsh
+        run: .\windows\app\tests\okcut-vm-native-audio.ps1
+      - name: Record the Windows screen, microphone and system audio and play the export
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/okcut-vm-tools" --no-save playwright-core
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to install test driver' }
+          $env:NODE_PATH = "$env:RUNNER_TEMP/okcut-vm-tools/node_modules"
+          # Elevated WebView2 hosts ignore environment overrides on this runner.
+          # Use the installed executable's own policy for loopback test control.
+          $name = [IO.Path]::GetFileName($env:OKCUT_EXE)
+          $settings = @{
+            AdditionalBrowserArguments = '--remote-debugging-port=9222'
+            UserDataFolder = "$env:RUNNER_TEMP/okcut-vm-webview"
           }
-          '@
-          @{ waveOut=[WaveEndpoints]::waveOutGetNumDevs(); waveIn=[WaveEndpoints]::waveInGetNumDevs(); pnp=$devices.Count } | ConvertTo-Json -Compress
+          $original = @{}
+          $result = 1
+          try {
+            foreach ($setting in $settings.GetEnumerator()) {
+              $key = "HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\$($setting.Key)"
+              $original[$key] = Get-ItemPropertyValue -Path $key -Name $name -ErrorAction SilentlyContinue
+              New-Item -Path $key -Force | Out-Null
+              New-ItemProperty -Path $key -Name $name -Value $setting.Value -PropertyType String -Force | Out-Null
+            }
+            node windows/app/tests/okcut-vm-010.cjs
+            $result = $LASTEXITCODE
+          } finally {
+            foreach ($key in $original.Keys) {
+              if ($null -eq $original[$key]) { Remove-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue }
+              else { Set-ItemProperty -Path $key -Name $name -Value $original[$key] }
+            }
+          }
+          exit $result
+      - name: Save test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: okcut-0.10.0-fullscreen-audio-evidence
+          path: ${{ runner.temp }}/okcut-vm-evidence
+          if-no-files-found: error
+          retention-days: 14

@@ -1,4 +1,4 @@
-param([ValidateSet('Fixture','Pick','Save','Focus','FocusApp','Screenshot')][string]$Action, [string]$Value)
+param([ValidateSet('Fixture','Sound','Pick','Save','Focus','FocusApp','Screenshot')][string]$Action, [string]$Value)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing,UIAutomationClient,UIAutomationTypes
 $fixtureTitle = 'OK Cut QA Source Window'
@@ -27,6 +27,13 @@ if ($Action -eq 'Fixture') {
     $form.Add_Shown({ $timer.Start() })
     [Windows.Forms.Application]::Run($form)
     exit
+}
+if ($Action -eq 'Sound') {
+    $speaker = New-Object System.Media.SoundPlayer $Value
+    $speaker.Load()
+    $speaker.PlayLooping()
+    Write-Host 'Playing test signal through Windows default audio output'
+    while ($true) { Start-Sleep -Seconds 1 }
 }
 Add-Type @'
 using System;
@@ -95,22 +102,28 @@ while ((Get-Date) -lt $deadline) {
         $share = $items | Where-Object { $_.Current.Name -match '^(Share|공유)$' -and $_.Current.ControlType -eq [Windows.Automation.ControlType]::Button } | Select-Object -First 1
         if ($share) {
             Screenshot (Join-Path $env:OKCUT_EVIDENCE 'screen-picker.png')
-            $windowTab = $items | Where-Object { $_.Current.Name -match '^(Window|창)$' -and $_.Current.ControlType -eq [Windows.Automation.ControlType]::TabItem } | Select-Object -First 1
-            $tile = $items | Where-Object { $_.Current.Name -like "*$fixtureTitle*" -and !$_.Current.IsOffscreen } | Select-Object -First 1
-            if (!$tile -and $windowTab) {
-                Click $windowTab
+            $screenTab = $items | Where-Object { $_.Current.Name -match '^(Entire Screen|전체 화면)$' -and $_.Current.ControlType -eq [Windows.Automation.ControlType]::TabItem } | Select-Object -First 1
+            if ($screenTab) {
+                Click $screenTab
                 Start-Sleep -Milliseconds 700
                 $items = @(Children $root)
-                $tile = $items | Where-Object { $_.Current.Name -like "*$fixtureTitle*" -and !$_.Current.IsOffscreen } | Select-Object -First 1
             }
+            $tile = $items | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and $_.Current.Name -match '^(Screen( \d+)?|Entire Screen|Display( \d+)?|화면( \d+)?|전체 화면)$' -and !$_.Current.IsOffscreen } | Select-Object -First 1
             Save-Tree $root (Join-Path $env:OKCUT_EVIDENCE 'screen-picker-tree.json')
             if ($tile) {
                 Click $tile
                 Start-Sleep -Milliseconds 300
+                $items = @(Children $root)
+                $audio = $items | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::CheckBox -and $_.Current.Name -match '(audio|sound|소리)' -and !$_.Current.IsOffscreen } | Select-Object -First 1
+                if (!$audio) { throw 'Entire Screen picker did not expose system audio sharing' }
+                $toggle = $audio.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+                if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { $toggle.Toggle() }
+                if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { throw 'System audio sharing was not enabled' }
                 if ($share.Current.IsEnabled) {
-                    Screenshot (Join-Path $env:OKCUT_EVIDENCE 'window-selected.png')
+                    Screenshot (Join-Path $env:OKCUT_EVIDENCE 'entire-screen-audio-selected.png')
+                    $tileName = $tile.Current.Name
                     Click $share
-                    Write-Host "Selected real capture source: $fixtureTitle"
+                    Write-Host "Selected the actual Windows monitor, with system audio sharing enabled: $tileName"
                     exit
                 }
             }
