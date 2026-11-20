@@ -91,7 +91,7 @@ foreach ($key in $microphoneKeys) {
 # Check the vendor's documented Options > Enable Loopback Streaming setting.
 $control = Join-Path $folder 'VBCABLE_ControlPanel.exe'
 $controlSignature = Get-AuthenticodeSignature $control
-if ($controlSignature.Status -eq 'Valid' -and $controlSignature.SignerCertificate.Subject -match '(Vincent Burel|VB-Audio)') {
+if ($controlSignature.Status -eq 'Valid' -and $controlSignature.SignerCertificate.Subject -match '(^CN=BUREL VINCENT Entrepreneur individuel,|Vincent Burel|VB-Audio)') {
     Add-Type @'
 using System;
 using System.Text;
