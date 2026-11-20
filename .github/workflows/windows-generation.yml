@@ -1,352 +1,55 @@
-name: Windows generation debug
-
+name: OK Cut 0.10.0 Windows VM screen recording QA
 on:
   workflow_dispatch:
-    inputs:
-      installerRunId:
-        description: Validate the exact installer artifact from a previous Windows build run
-        type: string
-        default: ""
-  workflow_call:
-    inputs:
-      installerRunId:
-        description: Validate the exact installer artifact from a previous Windows build run
-        type: string
-        default: ""
-
 permissions:
   contents: read
-  actions: read
-
 jobs:
-  build:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: pwsh
+  recording:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Verify installer source matches production code
-        if: inputs.installerRunId != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INSTALLER_RUN_ID: ${{ inputs.installerRunId }}
+      - name: Download and install the public 0.10.0 release
+        shell: pwsh
         run: |
-          $runId = $env:INSTALLER_RUN_ID
-          if ($runId -notmatch '^[0-9]+$') { throw "installerRunId must contain only digits" }
-          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$runId" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw "Could not read the source workflow run" }
-          if ($run.path -ne ".github/workflows/windows.yml") { throw "Installer must come from the Windows build workflow" }
-          $baseline = $run.head_sha
-          if ($baseline -notmatch '^[0-9a-f]{40}$') { throw "Invalid source commit" }
-          git fetch --no-tags --depth=1 origin $baseline
-          if ($LASTEXITCODE -ne 0) { throw "Could not fetch installer source commit" }
-          $productionPaths = @("windows/app/ui","windows/app/src-tauri","windows/crates","windows/Cargo*","windows/app/package*",":(exclude)windows/**/tests/**",":(exclude)windows/**/docs/**",":(exclude)windows/**/README*")
-          git diff --quiet $baseline HEAD -- $productionPaths
-          if ($LASTEXITCODE -ne 0) {
-            git diff --name-only $baseline HEAD -- $productionPaths
-            throw "Production code differs from the installer source; build a new installer"
-          }
-          $artifacts = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$runId/artifacts?per_page=100" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw "Could not read source installer artifacts" }
-          $installerArtifacts = @($artifacts.artifacts | Where-Object { $_.name -eq "EasyCut-Windows-setup" -and -not $_.expired })
-          if ($installerArtifacts.Count -ne 1) { throw "Expected one unexpired EasyCut-Windows-setup artifact" }
-          $artifact = $installerArtifacts[0]
-          $zip = "$env:RUNNER_TEMP/source-installer-artifact.zip"
-          Invoke-WebRequest $artifact.archive_download_url -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept="application/vnd.github+json"} -OutFile $zip
-          $archiveSha256 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          $recordedDigest = [string]$artifact.digest
-          if ($recordedDigest -and $recordedDigest -ne "sha256:$archiveSha256") { throw "Artifact ZIP digest differs from GitHub metadata" }
-          $evidence = @{
-            mode="exact-installed-artifact"; sourceRunId=$runId; sourceRunUrl=$run.html_url
-            sourceHeadSha=$baseline; verificationHeadSha=(git rev-parse HEAD)
-            productionPathsUnchanged=$true; artifactId=$artifact.id
-            archiveSha256=$archiveSha256; githubArtifactDigest=$recordedDigest
-          }
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/native-evidence" | Out-Null
-          $evidence | ConvertTo-Json -Depth 20 | Set-Content "$env:RUNNER_TEMP/native-evidence/installer-verification.json"
-          Write-Host "Source artifact ZIP SHA256: $archiveSha256"
-
-      - uses: actions/download-artifact@v4
-        if: inputs.installerRunId != ''
-        with:
-          name: EasyCut-Windows-setup
-          run-id: ${{ inputs.installerRunId }}
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/installer-under-test
-
-      - name: Install the exact artifact under test
-        if: inputs.installerRunId != ''
+          $installer = Join-Path $env:RUNNER_TEMP 'OKCut_0.10.0_x64-setup.exe'
+          $evidence = Join-Path $env:RUNNER_TEMP 'okcut-vm-evidence'
+          New-Item -Type Directory $evidence | Out-Null
+          curl.exe -fLsS --retry 2 https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe -o $installer
+          if ($LASTEXITCODE -ne 0) { throw "Download failed: $LASTEXITCODE" }
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '506c639f9045121f2a370b7b9233b8848320c8e5da86a011849e14b62d3af4ab') { throw 'Unexpected release installer SHA256' }
+          $result = Start-Process $installer -ArgumentList '/S' -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw "Installation failed: $($result.ExitCode)" }
+          $installed = Join-Path $env:LOCALAPPDATA 'EasyCut/easycut-windows.exe'
+          if (!(Test-Path $installed)) { throw 'Installed app is missing' }
+          $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EasyCut'
+          if ($reg.DisplayName -ne 'OK Cut' -or $reg.DisplayVersion -ne '0.10.0') { throw 'Unexpected installed version' }
+          @{
+            name=$reg.DisplayName; version=$reg.DisplayVersion; installerSha256=$hash;
+            installerBytes=(Get-Item $installer).Length; os=(Get-CimInstance Win32_OperatingSystem).Caption;
+            architecture=$env:PROCESSOR_ARCHITECTURE; runId=$env:GITHUB_RUN_ID
+          } | ConvertTo-Json | Set-Content "$evidence/installation.json"
+          "OKCUT_EXE=$installed" >> $env:GITHUB_ENV
+          "OKCUT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+      - name: Record a real Windows window, export it in the app and play the MP4
+        shell: pwsh
         run: |
-          $setups = @(Get-ChildItem "$env:RUNNER_TEMP/installer-under-test" -Filter "*setup.exe" -File -Recurse)
-          if ($setups.Count -ne 1) { throw "Expected one NSIS setup executable" }
-          $setup = $setups[0]
-          $setupSha256 = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $installation = Start-Process $setup.FullName -ArgumentList "/S" -Wait -PassThru
-          if ($installation.ExitCode -ne 0) { throw "NSIS installer failed: $($installation.ExitCode)" }
-          $installDir = Join-Path $env:LOCALAPPDATA "EasyCut"
-          $installed = Get-ChildItem $installDir -Filter "*.exe" -File | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
-          if (-not $installed) { throw "Installed application executable not found" }
-          foreach ($resource in @("bin/ffmpeg.exe","bin/ffprobe.exe","generation/worker.cjs","generation/canvas-render.cjs","generation/package.json","generation/skills.json","generation/VideoSkillNotices.txt")) {
-            if (-not (Test-Path (Join-Path $installDir "resources/$resource"))) { throw "Missing installed resource: $resource" }
-          }
-          $evidencePath = "$env:RUNNER_TEMP/native-evidence/installer-verification.json"
-          $evidence = Get-Content $evidencePath -Raw | ConvertFrom-Json -AsHashtable
-          $evidence.installerName = $setup.Name
-          $evidence.installerSha256 = $setupSha256
-          $evidence.installerBytes = $setup.Length
-          $evidence.installedExecutable = $installed.FullName
-          $evidence.installedExecutableSha256 = (Get-FileHash $installed.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $evidence | ConvertTo-Json -Depth 20 | Set-Content $evidencePath
-          "EASYCUT_INSTALLED_EXE=$($installed.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Exact NSIS installer SHA256: $setupSha256"
-          # This runner owns the new installation. Record any process already
-          # using that exact executable, then stop it before the CDP launch.
-          $installedProcesses = @(Get-CimInstance Win32_Process | Where-Object { [string]::Equals($_.ExecutablePath,$installed.FullName,[StringComparison]::OrdinalIgnoreCase) } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,CommandLine)
-          ConvertTo-Json -InputObject $installedProcesses -Depth 10 | Set-Content "$env:RUNNER_TEMP/native-evidence/installed-preexisting-processes.json"
-          $installedProcesses | Format-List | Out-String | Write-Host
-          foreach ($installedProcess in $installedProcesses) {
-            Stop-Process -Id $installedProcess.ProcessId -Force -ErrorAction SilentlyContinue
-            Wait-Process -Id $installedProcess.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
-          }
-
-      - name: Node Windows script path preflight
-        run: |
-          $worker = (Resolve-Path windows/app/src-tauri/resources/generation/worker.cjs).Path
-          $inputJson = @{action="status";jobDir=$env:RUNNER_TEMP;runtimeDir="$env:RUNNER_TEMP/video-runtime"} | ConvertTo-Json -Compress
-          $normal = $inputJson | & node $worker
-          if ($LASTEXITCODE -ne 0) { throw "Normal Node script path failed" }
-          $result = $normal | Select-Object -Last 1 | ConvertFrom-Json
-          if ($result.event -ne "result" -or $result.result.skills.Count -ne 5) { throw "Worker status result is invalid" }
-          Write-Host "NORMAL WINDOWS WORKER STATUS PASSED"
-          # Node 20 CJS entry points can reject Windows extended path prefixes.
-          # Record this vendor behavior; the app must pass a normal external path.
-          $PSNativeCommandUseErrorActionPreference = $false
-          $verbatim = '\\?\' + $worker
-          $extended = $inputJson | & node $verbatim 2>&1
-          $extendedExit = $LASTEXITCODE
-          Write-Host "Extended-path Node exit code: $extendedExit"
-          $extended | Select-Object -First 8 | ForEach-Object { Write-Host $_ }
-          exit 0
-
-      - uses: dtolnay/rust-toolchain@stable
-        if: inputs.installerRunId == ''
-
-      - uses: Swatinem/rust-cache@v2
-        if: inputs.installerRunId == ''
-        with:
-          workspaces: windows
-          cache-on-failure: true
-
-      - name: Prepare FFmpeg resources
-        run: |
-          $bin = "windows/app/src-tauri/resources/bin"
-          New-Item -ItemType Directory -Force -Path $bin, windows/app/src-tauri/resources/licenses | Out-Null
-          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
-          Expand-Archive "$env:RUNNER_TEMP/ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP/ffmpeg"
-          $ff = Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Directory | Select-Object -First 1
-          Copy-Item "$($ff.FullName)/bin/ffmpeg.exe", "$($ff.FullName)/bin/ffprobe.exe" $bin
-          Copy-Item "$($ff.FullName)/LICENSE" windows/app/src-tauri/resources/licenses/FFmpeg-LICENSE.txt
-          # Existing README resources satisfy the globs; video creation needs no Whisper download.
-          Get-ChildItem $bin | Format-Table Name, Length
-
-      - name: Rust tests
-        if: inputs.installerRunId == ''
-        working-directory: windows
-        run: |
-          cargo test --workspace
+          npm install --prefix "$env:RUNNER_TEMP/okcut-vm-tools" --no-save playwright-core
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to install test driver' }
+          $env:NODE_PATH = "$env:RUNNER_TEMP/okcut-vm-tools/node_modules"
+          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/okcut-vm-webview"
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+          node windows/app/tests/okcut-vm-010.cjs
           if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Generation worker tests
-        working-directory: windows
-        run: |
-          node --test app/tests/generation-worker.test.cjs
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Real Canvas and Remotion rendering
-        run: |
-          $env:PATH = "$PWD\windows\app\src-tauri\resources\bin;$env:PATH"
-          $env:EASYCUT_GENERATION_EVIDENCE = "$env:RUNNER_TEMP/generation-evidence"
-          node windows/app/tests/generation-integration.cjs
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Build debug app for native video creation checks
-        if: inputs.installerRunId == ''
-        run: |
-          $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          $testConfig.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
-          $testConfig.app.windows[0] | Add-Member -NotePropertyName devtools -NotePropertyValue $true
-          $configPath = "$env:RUNNER_TEMP/generation-tauri.conf.json"
-          $testConfig | ConvertTo-Json -Depth 100 | Set-Content $configPath
-          Push-Location windows/app
-          try {
-            npm ci
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            npx tauri build --debug --no-bundle --features tauri/devtools --config $configPath
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          } finally { Pop-Location }
-
-      - name: Native WebView2 video creation
-        timeout-minutes: 15
-        env:
-          EASYCUT_VALIDATE_INSTALLED: ${{ inputs.installerRunId != '' }}
-        run: |
-          npm install --prefix "$env:RUNNER_TEMP/easycut-generation-ui-tests" --no-save playwright-core
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-generation-ui-tests/node_modules"
-          $env:PATH = "$PWD\windows\app\src-tauri\resources\bin;$env:PATH"
-          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/generation-webview-data"
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
-          $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
-          $env:EASYCUT_GENERATION_MANIFEST = "$env:RUNNER_TEMP/generation-evidence/generation-manifest.json"
-          New-Item -ItemType Directory -Force $env:EASYCUT_NATIVE_OUTPUT | Out-Null
-          $bootstrap = @'
-          const {chromium}=require('playwright-core');
-          (async()=>{
-            let browser,lastError;
-            for(let n=0;n<60;n++){
-              try{browser=await chromium.connectOverCDP('http://127.0.0.1:9222');break;}
-              catch(error){lastError=error;await new Promise(resolve=>setTimeout(resolve,500));}
-            }
-            if(!browser)throw lastError||new Error('Native WebView2 CDP endpoint did not start');
-            const page=browser.contexts()[0].pages().find(p=>p.url().includes('tauri'))||browser.contexts()[0].pages()[0];
-            await page.waitForFunction(()=>window.__TAURI__?.core&&document.querySelector('#video-create'));
-            await page.evaluate(()=>localStorage.setItem('uiLang','ko'));
-            await page.reload();
-            await page.waitForFunction(()=>window.LANG==='ko'&&document.querySelector('#video-create'));
-            await browser.close();
-          })().catch(error=>{console.error(error);process.exit(1)});
-          '@
-          $bootstrapPath = "$env:RUNNER_TEMP/generation-native-bootstrap.cjs"
-          [IO.File]::WriteAllText($bootstrapPath, $bootstrap, [Text.UTF8Encoding]::new($false))
-          # The exact installed binary is never rebuilt with devtools enabled.
-          if ($env:EASYCUT_INSTALLED_EXE) {
-            $exe = Resolve-Path $env:EASYCUT_INSTALLED_EXE
-          } else {
-            $exe = Resolve-Path windows/target/debug/easycut-windows.exe
-          }
-          $launchPath = [string]$exe
-          $prelaunchProcesses = @(Get-CimInstance Win32_Process | Where-Object { [string]::Equals($_.ExecutablePath,$launchPath,[StringComparison]::OrdinalIgnoreCase) } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,CommandLine)
-          ConvertTo-Json -InputObject $prelaunchProcesses -Depth 10 | Set-Content "$env:EASYCUT_NATIVE_OUTPUT/native-prelaunch-processes.json"
-          $prelaunchProcesses | Format-List | Out-String | Write-Host
-          foreach ($prelaunchProcess in $prelaunchProcesses) {
-            Stop-Process -Id $prelaunchProcess.ProcessId -Force -ErrorAction SilentlyContinue
-            Wait-Process -Id $prelaunchProcess.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
-          }
-          $app = $null
-          $policyBackup = @()
-          function Save-NativeProcessSnapshot([string]$stage) {
-            if (-not $app) { return }
-            $app.Refresh()
-            $processes = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(easycut.*|msedgewebview2)\.exe$' } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,CommandLine)
-            $snapshot = @{
-              stage=$stage; utc=[DateTime]::UtcNow.ToString("o"); launchedExecutable=$launchPath
-              launchedPid=$app.Id; hasExited=$app.HasExited
-              exitCode=$(if ($app.HasExited) { $app.ExitCode } else { $null })
-              processes=$processes
-            }
-            $snapshot | ConvertTo-Json -Depth 20 | Set-Content "$env:EASYCUT_NATIVE_OUTPUT/$stage.json"
-            $snapshot | ConvertTo-Json -Depth 20 | Write-Host
-          }
-          try {
-            if ($env:EASYCUT_VALIDATE_INSTALLED -eq "true") {
-              # WebView2 150+ ignores environment/HKCU overrides for elevated
-              # hosts. Use only this app's HKLM values on the disposable runner.
-              # https://learn.microsoft.com/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags
-              $policyName = [IO.Path]::GetFileName($launchPath)
-              if ($policyName -ine "easycut-windows.exe") { throw "Unexpected installed executable for app-scoped WebView2 policy: $policyName" }
-              $integrity = @(& whoami /groups | Select-String 'S-1-16-' | ForEach-Object { $_.Line.Trim() })
-              $integrity | Write-Host
-              ConvertTo-Json -InputObject $integrity | Set-Content "$env:EASYCUT_NATIVE_OUTPUT/native-integrity.json"
-              # UserDataFolder has the same documented app-specific policy form:
-              # https://learn.microsoft.com/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions
-              $overrides = @{
-                AdditionalBrowserArguments="--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
-                UserDataFolder="$env:RUNNER_TEMP/generation-installed-webview-data"
-              }
-              foreach ($setting in $overrides.GetEnumerator()) {
-                $registryPath = "SOFTWARE\Policies\Microsoft\Edge\WebView2\$($setting.Key)"
-                $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($registryPath,$true)
-                $backup = @{path=$registryPath;name=$policyName;keyExisted=($null -ne $key);valueExisted=$false;value=$null;kind=$null}
-                try {
-                  if ($key -and $key.GetValueNames() -contains $policyName) {
-                    $backup.valueExisted=$true
-                    $backup.value=$key.GetValue($policyName,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-                    $backup.kind=$key.GetValueKind($policyName)
-                  }
-                } finally { if ($key) { $key.Dispose() } }
-                $policyBackup += $backup
-                $key = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($registryPath)
-                try { $key.SetValue($policyName,[string]$setting.Value,[Microsoft.Win32.RegistryValueKind]::String) }
-                finally { $key.Dispose() }
-              }
-              Write-Host "Applied temporary WebView2 HKLM policies only for $policyName"
-            }
-            $app = Start-Process $exe -PassThru -RedirectStandardOutput "$env:EASYCUT_NATIVE_OUTPUT/app-stdout.txt" -RedirectStandardError "$env:EASYCUT_NATIVE_OUTPUT/app-stderr.txt"
-            $null = $app.WaitForExit(1000)
-            Save-NativeProcessSnapshot "native-launch"
-            if ($app.HasExited) { throw "Native application exited before CDP startup (PID $($app.Id), exit $($app.ExitCode))" }
-            node $bootstrapPath
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            node windows/app/tests/generation-native.cjs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          } finally {
-            try {
-              Save-NativeProcessSnapshot "native-final-processes"
-            } finally {
-              # Only the app started by this step is terminated; the runner is disposable.
-              if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
-              $restoreFailures = @()
-              foreach ($backup in $policyBackup) {
-                $key = $null
-                try {
-                  $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($backup.path,$true)
-                  if ($backup.valueExisted) {
-                    if (-not $key) { $key = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($backup.path) }
-                    $key.SetValue($backup.name,$backup.value,$backup.kind)
-                  } elseif ($key) { $key.DeleteValue($backup.name,$false) }
-                } catch { $restoreFailures += $_.Exception.Message }
-                finally { if ($key) { $key.Dispose() } }
-              }
-              if ($restoreFailures.Count) { throw "Could not restore temporary WebView2 policy: $($restoreFailures -join '; ')" }
-              if ($policyBackup.Count) { Write-Host "Restored only the app-scoped WebView2 policy values" }
-            }
-          }
-
-      - name: Collect native generation files
+      - name: Save test evidence
         if: always()
-        run: |
-          $jobs = "$env:APPDATA/com.contenjoo.easycut.windows/generated-videos"
-          $evidence = "$env:RUNNER_TEMP/native-evidence/generated-jobs"
-          if (Test-Path $jobs) {
-            foreach ($job in Get-ChildItem $jobs -Directory) {
-              $destination = Join-Path $evidence $job.Name
-              New-Item -ItemType Directory -Force $destination | Out-Null
-              foreach ($pattern in @("request.json","source.json","applied-skills.json","preview-*.png","render.mp4")) {
-                Get-ChildItem $job.FullName -Filter $pattern -File | Copy-Item -Destination $destination
-              }
-            }
-          }
-
-      - uses: actions/upload-artifact@v4
-        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: generation-debug-native-evidence
-          path: ${{ runner.temp }}/native-evidence
-          if-no-files-found: ignore
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: generation-debug-render-evidence
-          path: |
-            ${{ runner.temp }}/generation-evidence/generation-manifest.json
-            ${{ runner.temp }}/generation-evidence/*/preview-*.png
-            ${{ runner.temp }}/generation-evidence/*/render.mp4
-          if-no-files-found: ignore
+          name: okcut-0.10.0-windows-vm-evidence
+          path: ${{ runner.temp }}/okcut-vm-evidence
+          if-no-files-found: error
+          retention-days: 14
