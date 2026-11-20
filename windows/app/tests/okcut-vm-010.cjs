@@ -22,7 +22,7 @@ async function until(check, message, timeout = 30000) {
   throw new Error(message);
 }
 
-function makeWav(filename) {
+function makeWav(filename, frequency) {
   const rate = 48000;
   const samples = rate * 3;
   const bytes = Buffer.alloc(44 + samples * 2);
@@ -41,13 +41,13 @@ function makeWav(filename) {
   for (let i=0; i<samples; i++) {
     const t = i / rate;
     const envelope = 0.11 * (0.2 + 0.8 * Math.sin(2 * Math.PI * 3 * t)**2);
-    const signal = envelope * (Math.sin(2 * Math.PI * 997 * t) + 0.3 * Math.sin(2 * Math.PI * 499 * t));
+    const signal = envelope * (Math.sin(2 * Math.PI * frequency * t) + 0.3 * Math.sin(2 * Math.PI * (frequency / 2) * t));
     bytes.writeInt16LE(Math.round(signal * 32767), 44 + 2 * i);
   }
   fs.writeFileSync(filename, bytes);
 }
 
-function measureMarker(filename) {
+function measureMarker(filename, frequencyHz) {
   const ffmpeg=path.join(path.dirname(installed), 'resources/bin/ffmpeg.exe');
   const data=execFileSync(ffmpeg, ['-v','error','-i',filename,'-map','0:a:0','-ac','1','-ar','48000','-f','f32le','pipe:1'], {maxBuffer:12*1024*1024});
   const block=12000;
@@ -56,7 +56,7 @@ function measureMarker(filename) {
   for (let start=0; start+block<=data.length/4; start+=block) {
     let real=0,imag=0;
     for(let i=0;i<block;i++) {
-      const angle=2*Math.PI*997*i/48000;
+      const angle=2*Math.PI*frequencyHz*i/48000;
       const sample=data.readFloatLE((start+i)*4);
       real+=sample*Math.cos(angle);
       imag+=sample*Math.sin(angle);
@@ -65,14 +65,62 @@ function measureMarker(filename) {
     highest=Math.max(highest,peak);
     if(peak>0.0015) blocksAbove++;
   }
-  assert(blocksAbove>=2,`Test audio signal missing in ${filename}: ${highest}`);
-  return {frequencyHz:997,strongestAmplitude:highest,blocksAbove};
+  let peak=0,sumSquares=0;
+  for(let i=0;i<data.length;i+=4) {
+    const value=data.readFloatLE(i);
+    peak=Math.max(peak,Math.abs(value));
+    sumSquares+=value*value;
+  }
+  return {frequencyHz,strongestAmplitude:highest,blocksAbove,peak,rms:Math.sqrt(sumSquares/(data.length/4))};
 }
 
-function measureInput(filename) {
+const hasTone=stats=>stats?.blocksAbove>=2;
+const micHz=613;
+const systemHz=997;
+const loopbackHelper=path.join(__dirname,'okcut-vm-loopback.ps1');
+
+function measureInputs(filename) {
   if (!filename) return null;
-  try { return measureMarker(filename); }
-  catch (error) { console.error('Input signal measurement:', error.message); return null; }
+  return {mic:measureMarker(filename,micHz),system:measureMarker(filename,systemHz)};
+}
+
+function cableAction(action) {
+  execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Sta','-File',loopbackHelper,'-Action',action],
+    {stdio:'inherit',timeout:35000});
+}
+
+async function probeFreshLoopback(wav) {
+  const checkpoints={};
+  async function sample(name) {
+    const close=await startSoundFixture(wav);
+    try {
+      const file=path.join(evidence,`native-${name}.wav`);
+      execFileSync('dotnet',[process.env.OKCUT_LOOPBACK_PROBE,file],{stdio:'inherit',timeout:15000});
+      const stats=measureMarker(file,systemHz);
+      checkpoints[name]=stats;
+      fs.writeFileSync(path.join(evidence,'loopback-comparison.json'),JSON.stringify(checkpoints,null,2));
+      console.log('Native loopback '+name+':',JSON.stringify(stats));
+      return stats;
+    } finally { await close(); }
+  }
+  await sample('01-clean-install');
+  cableAction('Restart');
+  await sample('02-restart-only');
+  cableAction('Inspect');
+  await sample('03-control-panel-inspected');
+  cableAction('Enable');
+  await sample('04-enabled-before-restart');
+  cableAction('Restart');
+  const first=await sample('05-enabled-after-restart');
+  if(hasTone(first)) {
+    cableAction('Disable');
+    cableAction('Restart');
+    await sample('06-disabled-again');
+    cableAction('Enable');
+    cableAction('Restart');
+    await sample('07-reenabled');
+  }
+  return checkpoints;
 }
 
 async function startSoundFixture(wav) {
@@ -181,14 +229,13 @@ async function playExport(output) {
 
 (async () => {
   assert(installed && evidence);
+  const testWav=path.join(process.env.RUNNER_TEMP,'system-signal.wav');
+  const micWav=path.join(process.env.RUNNER_TEMP,'okcut-mic-fixture.wav');
+  makeWav(testWav,systemHz);
+  makeWav(micWav,micHz);
+  const nativeReference=await probeFreshLoopback(testWav);
   const fixture = spawn('powershell.exe', psArgs('Fixture'), { stdio: 'inherit' });
-  const testWav=path.join(process.env.RUNNER_TEMP,'audio-signal.wav');
-  makeWav(testWav);
   const stopSound=await startSoundFixture(testWav);
-  const nativeLoopback=path.join(evidence,'native-wasapi-reference.wav');
-  execFileSync('dotnet',[process.env.OKCUT_LOOPBACK_PROBE,nativeLoopback],{stdio:'inherit',timeout:15000});
-  const nativeReference=measureInput(nativeLoopback);
-  console.log('Native WASAPI reference signal:',JSON.stringify(nativeReference));
   await delay(1800);
   const app = spawn(installed, [], { stdio: 'ignore' });
   let browser;
@@ -233,7 +280,7 @@ async function playExport(output) {
     assert(await page.locator('#r-mic').isEnabled(),'Installed WebView2 app could not see the virtual Windows microphone');
     await page.locator('#r-mic').setChecked(true);
     await page.locator('#r-sys').setChecked(true);
-    const exactMic=await page.locator('#r-mic-id option').evaluateAll(options=>options.find(o=>o.label.startsWith('CABLE Output'))?.value);
+    const exactMic=await page.locator('#r-mic-id option').evaluateAll(options=>options.find(o=>/fake|file/i.test(o.label))?.value);
     if(exactMic) await page.locator('#r-mic-id').selectOption(exactMic);
     const devices=await page.evaluate(async () => (await navigator.mediaDevices.enumerateDevices()).map(d=>({kind:d.kind,label:d.label})));
     console.log('WebView2 audio devices:',JSON.stringify(devices));
@@ -261,7 +308,7 @@ async function playExport(output) {
     console.log('Real Windows capture:', JSON.stringify({ duration: captured.duration, width: captured.width, height: captured.height, mic:captured.hasAudio, system:!!system, bytes: fs.statSync(captured.path).size }));
     assert(captured.width>=1000 && captured.height>=700,'Expected a monitor-size recording');
     assert(system,'No separate computer audio clip landed on track 3');
-    const inputTones={mic:captured.hasAudio?measureInput(captured.path):null,system:measureInput(system.path)};
+    const inputTones={mic:captured.hasAudio?measureInputs(captured.path):null,system:measureInputs(system.path)};
     fs.copyFileSync(captured.path,path.join(evidence,'screen-capture-with-mic.mp4'));
     fs.copyFileSync(system.path,path.join(evidence,'separate-system-audio.m4a'));
     console.log('Capture file test tones:',JSON.stringify(inputTones));
@@ -282,7 +329,7 @@ async function playExport(output) {
     assert(Number(metadata.format.duration) > 3);
     const audio=metadata.streams.find(s=>s.codec_type==='audio');
     assert.equal(audio.codec_name,'aac');
-    const exportTone=measureInput(output);
+    const exportTone=measureInputs(output);
     console.log('App export:', JSON.stringify({ codec: stream.codec_name, width: stream.width, height: stream.height, duration: metadata.format.duration, bytes: metadata.format.size }));
     const playback = await playExport(output);
     const result = {
@@ -291,7 +338,14 @@ async function playExport(output) {
       inputs:inputTones, nativeReference, exportTone, playback
     };
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
-    assert(inputTones.mic && inputTones.system && exportTone, 'Both audio capture paths and the export must contain the test sound');
+    assert(hasTone(inputTones.mic?.mic), '613Hz WAV is missing from microphone capture');
+    assert(hasTone(inputTones.system?.system), '997Hz is missing from true Windows system capture');
+    assert(inputTones.mic.system.strongestAmplitude < inputTones.mic.mic.strongestAmplitude * 0.08,
+      'System sound leaked into the independent microphone stimulus');
+    assert(inputTones.system.mic.strongestAmplitude < inputTones.system.system.strongestAmplitude * 0.08,
+      'Microphone stimulus leaked into Windows system capture');
+    assert(hasTone(exportTone.mic) && hasTone(exportTone.system),
+      'Export is missing one or both independently captured frequencies');
     console.log('REAL WINDOWS RECORDING -> APP EXPORT -> EDGE PLAYBACK PASSED', JSON.stringify(result));
   } catch (error) {
     if (page && !page.isClosed()) {

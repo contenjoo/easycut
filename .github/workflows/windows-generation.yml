@@ -1,4 +1,4 @@
-name: OK Cut 0.10.0 Windows VM full screen and audio QA
+name: OK Cut 0.10.0 Windows VM clean loopback A/B and distinct audio QA
 on:
   workflow_dispatch:
 permissions:
@@ -6,9 +6,11 @@ permissions:
 jobs:
   recording:
     runs-on: windows-2025-vs2026
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -17,6 +19,8 @@ jobs:
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'OKCut_0.10.0_x64-setup.exe'
           $evidence = Join-Path $env:RUNNER_TEMP 'okcut-vm-evidence'
+          $installed = Join-Path $env:LOCALAPPDATA 'EasyCut/easycut-windows.exe'
+          if (Test-Path $installed) { throw 'An existing installation was found on the supposedly fresh VM' }
           New-Item -Type Directory $evidence | Out-Null
           curl.exe -fLsS --retry 2 https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe -o $installer
           if ($LASTEXITCODE -ne 0) { throw "Download failed: $LASTEXITCODE" }
@@ -24,21 +28,20 @@ jobs:
           if ($hash -ne '506c639f9045121f2a370b7b9233b8848320c8e5da86a011849e14b62d3af4ab') { throw 'Unexpected release installer SHA256' }
           $result = Start-Process $installer -ArgumentList '/S' -Wait -PassThru
           if ($result.ExitCode -ne 0) { throw "Installation failed: $($result.ExitCode)" }
-          $installed = Join-Path $env:LOCALAPPDATA 'EasyCut/easycut-windows.exe'
           if (!(Test-Path $installed)) { throw 'Installed app is missing' }
           $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EasyCut'
           if ($reg.DisplayName -ne 'OK Cut' -or $reg.DisplayVersion -ne '0.10.0') { throw 'Unexpected installed version' }
           @{
             name=$reg.DisplayName; version=$reg.DisplayVersion; installerSha256=$hash;
             installerBytes=(Get-Item $installer).Length; os=(Get-CimInstance Win32_OperatingSystem).Caption;
-            architecture=$env:PROCESSOR_ARCHITECTURE; runId=$env:GITHUB_RUN_ID
+            architecture=$env:PROCESSOR_ARCHITECTURE; runId=$env:GITHUB_RUN_ID; fresh=$true
           } | ConvertTo-Json | Set-Content "$evidence/installation.json"
           "OKCUT_EXE=$installed" >> $env:GITHUB_ENV
           "OKCUT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
       - name: Prepare signed audio fixture endpoints on the disposable VM
         shell: pwsh
         run: .\windows\app\tests\okcut-vm-native-audio.ps1
-      - name: Record the Windows screen, microphone and system audio and play the export
+      - name: Measure loopback before and after, then record independent mic and system signals
         shell: pwsh
         run: |
           npm install --prefix "$env:RUNNER_TEMP/okcut-vm-tools" --no-save playwright-core
@@ -58,7 +61,7 @@ jobs:
           # Use the installed executable's own policy for loopback test control.
           $name = [IO.Path]::GetFileName($env:OKCUT_EXE)
           $settings = @{
-            AdditionalBrowserArguments = '--remote-debugging-port=9222'
+            AdditionalBrowserArguments = "--remote-debugging-port=9222 --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=$env:RUNNER_TEMP/okcut-mic-fixture.wav"
             UserDataFolder = "$env:RUNNER_TEMP/okcut-vm-webview"
           }
           $original = @{}
@@ -83,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: okcut-0.10.0-fullscreen-audio-evidence
+          name: okcut-0.10.0-distinct-audio-evidence
           path: ${{ runner.temp }}/okcut-vm-evidence
           if-no-files-found: error
           retention-days: 14
