@@ -69,6 +69,12 @@ function measureMarker(filename) {
   return {frequencyHz:997,strongestAmplitude:highest,blocksAbove};
 }
 
+function measureInput(filename) {
+  if (!filename) return null;
+  try { return measureMarker(filename); }
+  catch (error) { console.error('Input signal measurement:', error.message); return null; }
+}
+
 async function playExport(output) {
   const player = '<!doctype html><meta charset="utf-8"><title>OK Cut exported MP4 playback</title>' +
     '<h1>OK Cut 0.10.0 — exported MP4</h1><button id="play">Play with sound</button>' +
@@ -168,9 +174,26 @@ async function playExport(output) {
     const context = browser.contexts()[0];
     page = await until(() => context.pages().find(p => /tauri/.test(p.url())), 'App page missing');
     page.on('pageerror', error => console.error(`App error: ${error}`));
-    page.on('console', msg => { if (msg.type() === 'error') console.error(`App console: ${msg.text()}`); });
+    page.on('console', msg => {
+      if (msg.type() === 'error' || msg.text().startsWith('Real media input:')) console.log(`App console: ${msg.text()}`);
+    });
     await page.waitForFunction(() => document.querySelector('#rec-btn')?.onclick && document.querySelector('#title')?.textContent.trim());
     await context.grantPermissions(['microphone'],{origin:new URL(page.url()).origin});
+    await page.evaluate(() => {
+      for (const name of ['getUserMedia','getDisplayMedia']) {
+        const original=navigator.mediaDevices[name].bind(navigator.mediaDevices);
+        navigator.mediaDevices[name]=async options=>{
+          try {
+            const stream=await original(options);
+            console.log('Real media input: '+JSON.stringify({name,options,tracks:stream.getTracks().map(t=>({kind:t.kind,label:t.label,settings:t.getSettings()}))}));
+            return stream;
+          } catch(error) {
+            console.log('Real media input: '+JSON.stringify({name,options,error:{name:error.name,message:error.message,constraint:error.constraint}}));
+            throw error;
+          }
+        };
+      }
+    });
     ui('FocusApp', String(app.pid));
     await page.locator('#rec-btn').click();
     await page.locator('#r-go').waitFor();
@@ -182,6 +205,8 @@ async function playExport(output) {
     assert(await page.locator('#r-mic').isEnabled(),'Installed WebView2 app could not see the virtual Windows microphone');
     await page.locator('#r-mic').setChecked(true);
     await page.locator('#r-sys').setChecked(true);
+    const exactMic=await page.locator('#r-mic-id option').evaluateAll(options=>options.find(o=>o.label.startsWith('CABLE Output'))?.value);
+    if(exactMic) await page.locator('#r-mic-id').selectOption(exactMic);
     const devices=await page.evaluate(async () => (await navigator.mediaDevices.enumerateDevices()).map(d=>({kind:d.kind,label:d.label})));
     console.log('WebView2 audio devices:',JSON.stringify(devices));
     fs.writeFileSync(path.join(evidence,'webview-devices.json'),JSON.stringify(devices,null,2));
@@ -207,12 +232,11 @@ async function playExport(output) {
     sound.kill();
     console.log('Real Windows capture:', JSON.stringify({ duration: captured.duration, width: captured.width, height: captured.height, mic:captured.hasAudio, system:!!system, bytes: fs.statSync(captured.path).size }));
     assert(captured.width>=1000 && captured.height>=700,'Expected a monitor-size recording');
-    assert(captured.hasAudio,'The screen recording had no microphone stream');
     assert(system,'No separate computer audio clip landed on track 3');
-    const inputTones={mic:measureMarker(captured.path),system:measureMarker(system.path)};
+    const inputTones={mic:captured.hasAudio?measureInput(captured.path):null,system:measureInput(system.path)};
     fs.copyFileSync(captured.path,path.join(evidence,'screen-capture-with-mic.mp4'));
     fs.copyFileSync(system.path,path.join(evidence,'separate-system-audio.m4a'));
-    console.log('Both capture files contain the test tone:',JSON.stringify(inputTones));
+    console.log('Capture file test tones:',JSON.stringify(inputTones));
     await page.locator('button[data-cmd="export"]').click();
     await page.locator('#e-fmt').waitFor();
     assert.equal(await page.locator('#e-fmt').inputValue(), 'mp4');
@@ -239,6 +263,7 @@ async function playExport(output) {
       inputs:inputTones, exportTone, playback
     };
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
+    assert(inputTones.mic && inputTones.system, 'The two audio capture paths did not both contain the test sound');
     console.log('REAL WINDOWS RECORDING -> APP EXPORT -> EDGE PLAYBACK PASSED', JSON.stringify(result));
   } catch (error) {
     if (page && !page.isClosed()) {
