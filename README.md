@@ -6,7 +6,7 @@
 
 **[⬇︎ Mac 1.16.0 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [오케이컷 for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [출시 소식](docs/announcements/windows-beta.md) ([English](docs/announcements/windows-beta.en.md)) · 소스는 [`windows/`](windows)
+윈도우 버전: [오케이컷 for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [Windows 출시 소식](https://github.com/contenjoo/easycut/releases/tag/win-v0.10.0) · 소스는 [`windows/`](windows)
 
 **이름이 바뀌었습니다 (macOS 1.16.0·Windows 0.10.0):** EasyCut의 새 이름은 **오케이컷(OK Cut)**입니다. 쓰던 앱은 업데이트만 하면 그대로 이어지고, 프로젝트(.easycut)·설정·키도 그대로입니다. ([출시 소식](docs/announcements/macos-1.16.0.md))
 

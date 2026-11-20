@@ -6,7 +6,7 @@ OK Cut is a Mac and Windows video editor that puts simple cut editing, transcrip
 
 **[⬇︎ Download Mac 1.16.0](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
 
-Windows: [download OK Cut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [announcement](docs/announcements/windows-beta.en.md) · source in [`windows/`](windows)
+Windows: [download OK Cut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [Windows release notes](https://github.com/contenjoo/easycut/releases/tag/win-v0.10.0) · source in [`windows/`](windows)
 
 **New name (macOS 1.16.0 and Windows 0.10.0):** EasyCut is now **OK Cut** (오케이컷). Existing installs keep working through the normal update, and your projects (.easycut), settings and keys carry over. ([announcement](docs/announcements/macos-1.16.0.md))
 
