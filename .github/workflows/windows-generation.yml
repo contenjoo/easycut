@@ -41,10 +41,31 @@ jobs:
           npm install --prefix "$env:RUNNER_TEMP/okcut-vm-tools" --no-save playwright-core
           if ($LASTEXITCODE -ne 0) { throw 'Unable to install test driver' }
           $env:NODE_PATH = "$env:RUNNER_TEMP/okcut-vm-tools/node_modules"
-          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/okcut-vm-webview"
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
-          node windows/app/tests/okcut-vm-010.cjs
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # Elevated WebView2 hosts ignore environment overrides on this runner.
+          # Use the installed executable's own policy for loopback test control.
+          $name = [IO.Path]::GetFileName($env:OKCUT_EXE)
+          $settings = @{
+            AdditionalBrowserArguments = '--remote-debugging-port=9222'
+            UserDataFolder = "$env:RUNNER_TEMP/okcut-vm-webview"
+          }
+          $original = @{}
+          $result = 1
+          try {
+            foreach ($setting in $settings.GetEnumerator()) {
+              $key = "HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\$($setting.Key)"
+              $original[$key] = Get-ItemPropertyValue -Path $key -Name $name -ErrorAction SilentlyContinue
+              New-Item -Path $key -Force | Out-Null
+              New-ItemProperty -Path $key -Name $name -Value $setting.Value -PropertyType String -Force | Out-Null
+            }
+            node windows/app/tests/okcut-vm-010.cjs
+            $result = $LASTEXITCODE
+          } finally {
+            foreach ($key in $original.Keys) {
+              if ($null -eq $original[$key]) { Remove-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue }
+              else { Set-ItemProperty -Path $key -Name $name -Value $original[$key] }
+            }
+          }
+          exit $result
       - name: Save test evidence
         if: always()
         uses: actions/upload-artifact@v4

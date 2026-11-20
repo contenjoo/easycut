@@ -83,6 +83,7 @@ async function playExport(output) {
   let browser;
   try {
     browser = await until(async () => {
+      assert.equal(app.exitCode, null, 'The public installed app exited before UI automation');
       try { return await chromium.connectOverCDP('http://127.0.0.1:9222', { timeout: 2000 }); }
       catch { return null; }
     }, 'The installed WebView2 did not launch');
@@ -140,6 +141,9 @@ async function playExport(output) {
     };
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
     console.log('REAL WINDOWS RECORDING -> APP EXPORT -> EDGE PLAYBACK PASSED', JSON.stringify(result));
+  } catch (error) {
+    try { ui('Screenshot', path.join(evidence, 'final-desktop.png')); } catch {}
+    throw error;
   } finally {
     if (browser) await browser.close().catch(() => {});
     app.kill();
