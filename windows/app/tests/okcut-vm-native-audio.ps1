@@ -103,14 +103,18 @@ public static class CableMenu {
     [DllImport("user32.dll")] static extern uint GetMenuItemID(IntPtr menu, int index);
     [DllImport("user32.dll")] static extern uint GetMenuState(IntPtr menu, uint index, uint flags);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetMenuString(IntPtr menu, uint index, StringBuilder label, int size, uint flags);
-    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll", SetLastError=true)] static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam, uint flags, uint timeout, out UIntPtr result);
+    private static bool Send(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam) {
+        UIntPtr result;
+        return SendMessageTimeout(hwnd,message,wparam,lparam,2,1500,out result)!=IntPtr.Zero;
+    }
     public static string EnsureLoopback(IntPtr hwnd) {
         var root = GetMenu(hwnd);
         if (root == IntPtr.Zero) return "Control panel did not expose a standard menu";
         for(int i=0;i<GetMenuItemCount(root);i++) {
             var menu=GetSubMenu(root,i);
             if(menu==IntPtr.Zero) continue;
-            SendMessage(hwnd,0x117,menu,new IntPtr(i));
+            if (!Send(hwnd,0x117,menu,new IntPtr(i))) continue;
             for(int j=0;j<GetMenuItemCount(menu);j++) {
                 var text=new StringBuilder(256);
                 GetMenuString(menu,(uint)j,text,256,0x400);
@@ -119,8 +123,8 @@ public static class CableMenu {
                 if((state&8)!=0) return "Enable Loopback Streaming was already checked";
                 uint id=GetMenuItemID(menu,j);
                 if(id==0 || id==uint.MaxValue || (state&3)!=0) return "Loopback menu item is not actionable";
-                SendMessage(hwnd,0x111,new IntPtr(id),IntPtr.Zero);
-                SendMessage(hwnd,0x117,menu,new IntPtr(i));
+                if (!Send(hwnd,0x111,new IntPtr(id),IntPtr.Zero)) return "Loopback toggle did not respond";
+                Send(hwnd,0x117,menu,new IntPtr(i));
                 return (GetMenuState(menu,(uint)j,0x400)&8)!=0 ? "Enabled and rechecked Loopback Streaming" : "Could not read back Loopback Streaming";
             }
         }
