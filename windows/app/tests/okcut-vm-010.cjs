@@ -115,18 +115,25 @@ async function probeFreshLoopback(wav) {
   await sample('02-restart-only');
   cableAction('Inspect');
   await sample('03-control-panel-inspected');
-  cableAction('Enable');
-  await sample('04-enabled-before-restart');
+  cableAction('Toggle');
+  await sample('04-toggled-before-restart');
   cableAction('Restart');
-  const first=await sample('05-enabled-after-restart');
+  const first=await sample('05-toggled-after-restart');
   if(hasTone(first)) {
-    cableAction('Disable');
+    cableAction('Toggle');
     cableAction('Restart');
-    await sample('06-disabled-again');
-    cableAction('Enable');
+    const second=await sample('06-toggled-again');
+    if(!hasTone(second)) {
+      cableAction('Toggle');
+      cableAction('Restart');
+      await sample('07-toggled-to-restore');
+    }
+  } else {
+    cableAction('Toggle');
     cableAction('Restart');
-    await sample('07-reenabled');
+    await sample('06-toggled-to-restore');
   }
+  assert(hasTone(Object.values(checkpoints).at(-1)), 'Native system loopback must pass before the recording test');
   return checkpoints;
 }
 
@@ -261,13 +268,36 @@ async function playExport(output) {
     });
     await page.waitForFunction(() => document.querySelector('#rec-btn')?.onclick && document.querySelector('#title')?.textContent.trim());
     await context.grantPermissions(['microphone'],{origin:new URL(page.url()).origin});
-    await page.evaluate(() => {
+    await page.evaluate(async fixtureData => {
+      // Feed an independent WAV exclusively into the app's microphone input.
+      // Keep actual Windows device access and the display/system stream intact.
+      const context=new AudioContext();
+      const pcm=Uint8Array.from(atob(fixtureData),c=>c.charCodeAt(0));
+      const buffer=await context.decodeAudioData(pcm.buffer);
+      const microphone=context.createMediaStreamDestination();
+      const tone=context.createBufferSource();
+      tone.buffer=buffer;
+      tone.loop=true;
+      tone.connect(microphone);
+      let started;
+      document.addEventListener('click', event=>{
+        if(event.target.closest('#r-go') && !started) {
+          started=context.resume().then(()=>tone.start());
+        }
+      }, true);
       for (const name of ['getUserMedia','getDisplayMedia']) {
         const original=navigator.mediaDevices[name].bind(navigator.mediaDevices);
         navigator.mediaDevices[name]=async options=>{
           try {
             const stream=await original(options);
             console.log('Real media input: '+JSON.stringify({name,options,tracks:stream.getTracks().map(t=>({kind:t.kind,label:t.label,settings:t.getSettings()}))}));
+            if(name==='getUserMedia' && options.audio?.echoCancellation===false && !options.video) {
+              if(!stream.getAudioTracks().length || !started) throw new Error('The microphone input was unavailable');
+              await started;
+              stream.getTracks().forEach(track=>track.stop());
+              console.log('Real media input: using independent 613Hz fixture for the microphone audio only');
+              return microphone.stream;
+            }
             return stream;
           } catch(error) {
             console.log('Real media input: '+JSON.stringify({name,options,error:{name:error.name,message:error.message,constraint:error.constraint}}));
@@ -275,7 +305,7 @@ async function playExport(output) {
           }
         };
       }
-    });
+    },fs.readFileSync(micWav).toString('base64'));
     ui('FocusApp', String(app.pid));
     await page.locator('#rec-btn').click();
     await page.locator('#r-go').waitFor();
@@ -287,7 +317,7 @@ async function playExport(output) {
     assert(await page.locator('#r-mic').isEnabled(),'Installed WebView2 app could not see the virtual Windows microphone');
     await page.locator('#r-mic').setChecked(true);
     await page.locator('#r-sys').setChecked(true);
-    const exactMic=await page.locator('#r-mic-id option').evaluateAll(options=>options.find(o=>/fake|file/i.test(o.label))?.value);
+    const exactMic=await page.locator('#r-mic-id option').evaluateAll(options=>options.find(o=>o.label.startsWith('CABLE Output'))?.value);
     if(exactMic) await page.locator('#r-mic-id').selectOption(exactMic);
     const devices=await page.evaluate(async () => (await navigator.mediaDevices.enumerateDevices()).map(d=>({kind:d.kind,label:d.label})));
     console.log('WebView2 audio devices:',JSON.stringify(devices));

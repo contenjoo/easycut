@@ -61,7 +61,7 @@ jobs:
           # Use the installed executable's own policy for loopback test control.
           $name = [IO.Path]::GetFileName($env:OKCUT_EXE)
           $settings = @{
-            AdditionalBrowserArguments = "--remote-debugging-port=9222 --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=$env:RUNNER_TEMP/okcut-mic-fixture.wav"
+            AdditionalBrowserArguments = '--remote-debugging-port=9222'
             UserDataFolder = "$env:RUNNER_TEMP/okcut-vm-webview"
           }
           $original = @{}

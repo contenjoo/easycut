@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('Restart','Inspect','Enable','Disable')][string]$Mode,
+    [Parameter(Mandatory=$true)][ValidateSet('Restart','Inspect','Toggle')][string]$Mode,
     [ValidateRange(1000,15000)][int]$WaitMs = 7000,
     [string]$EvidencePath
 )
@@ -178,10 +178,8 @@ public static class LoopbackMenuQa {
         if ($Mode -eq 'Inspect') {
             $report.status='inspected'; $exitCode=0
         } else {
-            $desired = $Mode -eq 'Enable'
-            if ($before.Checked -eq $desired) {
-                $report.status='alreadyDesired'; $exitCode=0
-            } elseif (@($windows | Where-Object { $_.ClassName -eq '#32770' -or $_.Window -ne $hwnd.ToInt64() -and $_.Owner -ne 0 }).Count -gt 0) {
+            $desired = !$before.Checked
+            if (@($windows | Where-Object { $_.ClassName -eq '#32770' -or $_.Window -ne $hwnd.ToInt64() -and $_.Owner -ne 0 }).Count -gt 0) {
                 $report.status='dialogPresentNoDispatch'; $exitCode=2
             } else {
                 $dispatch = [LoopbackMenuQa]::Dispatch($hwnd,$before.CommandId)
