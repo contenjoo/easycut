@@ -114,11 +114,21 @@ while ((Get-Date) -lt $deadline) {
                 Click $tile
                 Start-Sleep -Milliseconds 300
                 $items = @(Children $root)
-                $audio = $items | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::CheckBox -and $_.Current.Name -match '(audio|sound|소리)' -and !$_.Current.IsOffscreen } | Select-Object -First 1
+                $audio = $items | Where-Object {
+                    $_.Current.ControlType -in @([Windows.Automation.ControlType]::CheckBox,[Windows.Automation.ControlType]::Button) -and
+                    $_.Current.Name -match '(audio|sound|소리)' -and !$_.Current.IsOffscreen
+                } | Select-Object -First 1
                 if (!$audio) { throw 'Entire Screen picker did not expose system audio sharing' }
-                $toggle = $audio.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
-                if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { $toggle.Toggle() }
-                if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { throw 'System audio sharing was not enabled' }
+                $toggle = $null
+                if ($audio.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern,[ref]$toggle)) {
+                    if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { Click $audio }
+                    Start-Sleep -Milliseconds 300
+                    if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { throw 'System audio sharing was not enabled' }
+                } else {
+                    # WebView2 exposes its default-off system-audio switch as a button.
+                    Click $audio
+                    Start-Sleep -Milliseconds 300
+                }
                 if ($share.Current.IsEnabled) {
                     Screenshot (Join-Path $env:OKCUT_EVIDENCE 'entire-screen-audio-selected.png')
                     $tileName = $tile.Current.Name
