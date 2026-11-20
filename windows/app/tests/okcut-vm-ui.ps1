@@ -116,6 +116,18 @@ while ((Get-Date) -lt $deadline) {
             }
         }
     } else {
+        if ($root.Current.Name -match '^(Save As|다른 이름으로 저장)$') {
+            # The common item dialog can expose only its file list to UIA.
+            # The foreground Save As dialog has File name focused by default.
+            Screenshot (Join-Path $env:OKCUT_EVIDENCE 'mp4-save-dialog.png')
+            [Windows.Forms.SendKeys]::SendWait('%n')
+            [Windows.Forms.Clipboard]::SetText($Value)
+            [Windows.Forms.SendKeys]::SendWait('^a')
+            [Windows.Forms.SendKeys]::SendWait('^v')
+            Start-Sleep -Milliseconds 300
+            [Windows.Forms.SendKeys]::SendWait('{ENTER}')
+            exit
+        }
         $save = $items | Where-Object { $_.Current.Name -match '^(Save|저장)$' -and $_.Current.ControlType -eq [Windows.Automation.ControlType]::Button -and $_.Current.AutomationId -eq '1' } | Select-Object -First 1
         if ($save) {
             $file = $items | Where-Object { $_.Current.ControlType -eq [Windows.Automation.ControlType]::Edit -and $_.Current.AutomationId -eq '1001' } | Select-Object -First 1
