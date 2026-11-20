@@ -75,6 +75,30 @@ function measureInput(filename) {
   catch (error) { console.error('Input signal measurement:', error.message); return null; }
 }
 
+async function startSoundFixture(wav) {
+  const server=http.createServer((req,res)=>{
+    if(req.url==='/tone.wav') {
+      res.writeHead(200,{'Content-Type':'audio/wav','Content-Length':fs.statSync(wav).size});
+      fs.createReadStream(wav).pipe(res);
+    } else if(req.url==='/') {
+      res.writeHead(200,{'Content-Type':'text/html'});
+      res.end('<!doctype html><title>OK Cut QA computer sound fixture</title><audio loop controls src="/tone.wav"></audio><button id="play" onclick="document.querySelector(\'audio\').play()">Play test sound</button>');
+    } else { res.writeHead(404); res.end(); }
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  let edge;
+  const close=async()=>{ if(edge) await edge.close(); server.close(); };
+  try {
+    edge=await chromium.launch({channel:'msedge',headless:false});
+    const page=await edge.newPage();
+    await page.goto('http://127.0.0.1:'+server.address().port);
+    await page.locator('#play').click();
+    await page.waitForFunction(()=>document.querySelector('audio').currentTime>0.4);
+    console.log('Separate Edge process is playing the unmuted test signal through Windows speakers');
+    return close;
+  } catch(error) { await close(); throw error; }
+}
+
 async function playExport(output) {
   const player = '<!doctype html><meta charset="utf-8"><title>OK Cut exported MP4 playback</title>' +
     '<h1>OK Cut 0.10.0 — exported MP4</h1><button id="play">Play with sound</button>' +
@@ -160,7 +184,7 @@ async function playExport(output) {
   const fixture = spawn('powershell.exe', psArgs('Fixture'), { stdio: 'inherit' });
   const testWav=path.join(process.env.RUNNER_TEMP,'audio-signal.wav');
   makeWav(testWav);
-  const sound=spawn('powershell.exe', psArgs('Sound',testWav), {stdio:'inherit'});
+  const stopSound=await startSoundFixture(testWav);
   await delay(1800);
   const app = spawn(installed, [], { stdio: 'ignore' });
   let browser;
@@ -229,7 +253,7 @@ async function playExport(output) {
       return {screen,system};
     }, 'Recording did not land on the real edit timeline', 45000);
     fixture.kill();
-    sound.kill();
+    await stopSound();
     console.log('Real Windows capture:', JSON.stringify({ duration: captured.duration, width: captured.width, height: captured.height, mic:captured.hasAudio, system:!!system, bytes: fs.statSync(captured.path).size }));
     assert(captured.width>=1000 && captured.height>=700,'Expected a monitor-size recording');
     assert(system,'No separate computer audio clip landed on track 3');
@@ -254,7 +278,7 @@ async function playExport(output) {
     assert(Number(metadata.format.duration) > 3);
     const audio=metadata.streams.find(s=>s.codec_type==='audio');
     assert.equal(audio.codec_name,'aac');
-    const exportTone=measureMarker(output);
+    const exportTone=measureInput(output);
     console.log('App export:', JSON.stringify({ codec: stream.codec_name, width: stream.width, height: stream.height, duration: metadata.format.duration, bytes: metadata.format.size }));
     const playback = await playExport(output);
     const result = {
@@ -263,7 +287,7 @@ async function playExport(output) {
       inputs:inputTones, exportTone, playback
     };
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
-    assert(inputTones.mic && inputTones.system, 'The two audio capture paths did not both contain the test sound');
+    assert(inputTones.mic && inputTones.system && exportTone, 'Both audio capture paths and the export must contain the test sound');
     console.log('REAL WINDOWS RECORDING -> APP EXPORT -> EDGE PLAYBACK PASSED', JSON.stringify(result));
   } catch (error) {
     if (page && !page.isClosed()) {
@@ -282,6 +306,6 @@ async function playExport(output) {
     if (browser) await browser.close().catch(() => {});
     app.kill();
     fixture.kill();
-    sound.kill();
+    await stopSound().catch(()=>{});
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

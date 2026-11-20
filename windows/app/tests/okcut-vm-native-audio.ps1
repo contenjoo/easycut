@@ -73,3 +73,17 @@ $result = @{
 $result | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $env:OKCUT_EVIDENCE 'windows-audio-endpoints.json')
 $result | ConvertTo-Json -Depth 8 | Write-Host
 if ($result.waveIn -eq 0 -or $result.waveOut -eq 0) { throw 'No active audio fixture input and output' }
+
+# The VM has no personal microphones or user data. Enable desktop microphone
+# access for this run's test cable so Windows can grant the requested permission.
+$microphoneKeys = @(
+    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone',
+    'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone',
+    'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged'
+)
+foreach ($key in $microphoneKeys) {
+    $before = Get-ItemPropertyValue -Path $key -Name Value -ErrorAction SilentlyContinue
+    New-Item -Path $key -Force | Out-Null
+    New-ItemProperty -Path $key -Name Value -Value Allow -PropertyType String -Force | Out-Null
+    Write-Host "Disposable VM microphone setting ($key): $before -> Allow"
+}
