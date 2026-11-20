@@ -88,7 +88,7 @@ let cableActionIndex=0;
 function cableAction(action) {
   const report=path.join(evidence,`cable-${++cableActionIndex}-${action}.json`);
   try {
-    execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Sta','-File',loopbackHelper,'-Mode',action,'-EvidencePath',report],
+    execFileSync('pwsh.exe',['-NoProfile','-NonInteractive','-Sta','-File',loopbackHelper,'-Mode',action,'-EvidencePath',report],
       {stdio:'inherit',timeout:35000});
   } catch (error) {
     if(action==='Restart' || !fs.existsSync(report) || error.status!==2) throw error;
