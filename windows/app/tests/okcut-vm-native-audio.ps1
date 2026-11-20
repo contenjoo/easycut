@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
-$zip = Join-Path $env:RUNNER_TEMP 'VBCABLE_Driver_Pack46.zip'
+$zip = Join-Path $env:RUNNER_TEMP 'VBCABLE_Driver_Pack45.zip'
 $folder = Join-Path $env:RUNNER_TEMP 'vm-audio-test-cable'
-curl.exe -fLsS --retry 2 https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip -o $zip
+curl.exe -fLsS --retry 2 https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip -o $zip
 if ($LASTEXITCODE -ne 0) { throw 'Audio fixture driver download failed' }
-if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'bc44e8974191a5a2427d6c979e2dab08dbb09925f3f435dfa2f0ba3e45b6eb90') {
+if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne 'b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb') {
     throw 'Unexpected audio fixture driver ZIP digest'
 }
 Expand-Archive $zip -DestinationPath $folder

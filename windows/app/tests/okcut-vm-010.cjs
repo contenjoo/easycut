@@ -185,6 +185,10 @@ async function playExport(output) {
   const testWav=path.join(process.env.RUNNER_TEMP,'audio-signal.wav');
   makeWav(testWav);
   const stopSound=await startSoundFixture(testWav);
+  const nativeLoopback=path.join(evidence,'native-wasapi-reference.wav');
+  execFileSync('dotnet',[process.env.OKCUT_LOOPBACK_PROBE,nativeLoopback],{stdio:'inherit',timeout:15000});
+  const nativeReference=measureInput(nativeLoopback);
+  console.log('Native WASAPI reference signal:',JSON.stringify(nativeReference));
   await delay(1800);
   const app = spawn(installed, [], { stdio: 'ignore' });
   let browser;
@@ -284,7 +288,7 @@ async function playExport(output) {
     const result = {
       captured: { duration: captured.duration, width: captured.width, height: captured.height },
       export: { codec: stream.codec_name, width: stream.width, height: stream.height, duration: Number(metadata.format.duration), bytes: Number(metadata.format.size) },
-      inputs:inputTones, exportTone, playback
+      inputs:inputTones, nativeReference, exportTone, playback
     };
     fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
     assert(inputTones.mic && inputTones.system && exportTone, 'Both audio capture paths and the export must contain the test sound');

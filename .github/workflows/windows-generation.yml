@@ -44,6 +44,16 @@ jobs:
           npm install --prefix "$env:RUNNER_TEMP/okcut-vm-tools" --no-save playwright-core
           if ($LASTEXITCODE -ne 0) { throw 'Unable to install test driver' }
           $env:NODE_PATH = "$env:RUNNER_TEMP/okcut-vm-tools/node_modules"
+          $nativeProbe = Join-Path $env:RUNNER_TEMP 'OkCutLoopbackProbe'
+          dotnet new console --framework net8.0 --no-restore --output $nativeProbe
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to prepare native loopback probe' }
+          Copy-Item windows/app/tests/OkCutVmLoopbackCheck.cs (Join-Path $nativeProbe 'Program.cs') -Force
+          $project = Join-Path $nativeProbe 'OkCutLoopbackProbe.csproj'
+          dotnet add $project package NAudio --version 2.2.1
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to restore NAudio' }
+          dotnet build $project --configuration Release --no-restore --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to build native loopback probe' }
+          $env:OKCUT_LOOPBACK_PROBE = Join-Path $nativeProbe 'bin/Release/net8.0/OkCutLoopbackProbe.dll' 
           # Elevated WebView2 hosts ignore environment overrides on this runner.
           # Use the installed executable's own policy for loopback test control.
           $name = [IO.Path]::GetFileName($env:OKCUT_EXE)
