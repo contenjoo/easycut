@@ -3,6 +3,22 @@
 const { chromium } = require('playwright-core');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
+
+async function waitForNativeEditor(browser, timeoutMs = 120000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const context of browser.contexts()) {
+      for (const p of context.pages()) {
+        const ready = await p
+          .evaluate(() => Boolean(window.__TAURI__?.core && document.querySelector('#natural-edit')))
+          .catch(() => false);
+        if (ready) return p;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  throw new Error('Timed out waiting for native EasyCut editor root (#natural-edit)');
+}
 (async () => {
   let browser, lastError;
   for (let n=0;n<60;n++) {
@@ -11,9 +27,8 @@ const assert = require('node:assert/strict');
   }
   if (!browser) console.error('Last CDP error:',lastError?.message);
   assert(browser, 'WebView2 remote debugging endpoint did not start');
-  const page = browser.contexts()[0].pages().find(p=>p.url().includes('tauri')) || browser.contexts()[0].pages()[0];
+  const page = await waitForNativeEditor(browser);
   page.setDefaultTimeout(30000);
-  await page.waitForFunction(()=>window.__TAURI__?.core && document.querySelector('#natural-edit'));
   const events=[]; page.on('pageerror',e=>events.push(e.message));
   // New users can set up Gemini without installing either CLI or owning a subscription.
   await page.click('[data-tab="ai"]');
