@@ -16,6 +16,7 @@ const R = {
   timer: null,
   cancelCountdown: false,
   circle: true,
+  writeError: null, // 녹화 조각 쓰기 실패 (첫 번째 오류)
 };
 
 // 권한 창을 닫지 않고 두면 끝나지 않으므로 정해진 시간까지만 기다린다
@@ -172,14 +173,24 @@ async function start(o) {
     stopStreams();
     return api.toast(L(String(e)));
   }
+  R.writeError = null;
   R.recorders = plan.map((p) => {
     const rec = new MediaRecorder(p.stream, { mimeType: p.mime || undefined, videoBitsPerSecond: p.kind === "screen" ? 8_000_000 : 3_000_000, audioBitsPerSecond: 160_000 });
     rec.ondataavailable = (ev) => {
       if (!ev.data?.size) return;
       // 순서대로 쓴다
       R.writes = R.writes.then(async () => {
+        // 한 번 쓰기에 실패하면(디스크 가득 등) 뒤 조각은 쓰지 않는다 — 쓴 부분까지만 남긴다
+        if (R.writeError) return;
         const buf = new Uint8Array(await ev.data.arrayBuffer());
-        await invoke("rec_chunk", buf, { headers: { "x-kind": p.kind } }).catch((err) => console.error(err));
+        await invoke("rec_chunk", buf, { headers: { "x-kind": p.kind } }).catch((err) => {
+          console.error(err);
+          if (R.writeError) return;
+          R.writeError = String(err);
+          api.toast(L("녹화 파일을 쓰지 못해 녹화를 멈췄습니다: {}", L(R.writeError)));
+          // 이 쓰기 줄 안에서 기다리면 stop()이 자기 자신을 기다리게 되므로 기다리지 않는다
+          if (R.phase === "recording" || R.phase === "paused") stop();
+        });
       });
     };
     return { kind: p.kind, rec };
@@ -290,9 +301,10 @@ export async function stop() {
   try {
     const a = R.area;
     const r = await invoke("rec_finish", { cameraCircle: R.circle, clicks, showClicks: R.showClicks, area: a ? [a.x, a.y, a.w, a.h] : null });
-    api.toast(r.hasCamera ? L("녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)") : L("녹화를 타임라인에 넣었습니다"));
+    if (R.writeError) api.toast(L("녹화 파일을 쓰지 못해 녹화를 멈췄습니다. 쓴 부분까지 타임라인에 넣었습니다: {}", L(R.writeError)));
+    else api.toast(r.hasCamera ? L("녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)") : L("녹화를 타임라인에 넣었습니다"));
     if (r.hasAudio) api.autoTranscribe?.(r.screen);
   } catch (e) {
-    api.toast(L("녹화 파일을 가져오지 못했습니다: {}", L(String(e))));
+    api.toast(L("녹화 파일을 가져오지 못했습니다: {}", L(R.writeError || String(e))));
   }
 }

@@ -164,6 +164,7 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f
         let mut c = tools::command(&ffmpeg);
         c.args(["-y", "-v", "error", "-i"]).arg(src).args(args).args(["-progress", "pipe:1", "-nostats"]).arg(out).stdout(Stdio::piped()).stderr(Stdio::null());
         let Ok(mut child) = c.spawn() else { return false };
+        tools::tie_to_app(&child);
         let dur = media::probe(src).map(|a| a.duration).unwrap_or(0.0).max(0.1);
         if let Some(o) = child.stdout.take() {
             use std::io::BufRead;
@@ -210,6 +211,7 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f
 
 /// 녹화 파일을 정리해 타임라인에: 화면은 트랙 1, 카메라는 트랙 2 오른쪽 아래 작은 화면(원 모양), 컴퓨터 소리는 트랙 3. 그리고 음성 인식.
 pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool, area: Option<(f64, f64, f64, f64)>) -> Result<Value, String> {
+    let _busy = tools::mark_busy();
     let files: Vec<(String, PathBuf)> = {
         let rec = app.state::<Recorder>();
         let mut f = rec.files.lock().unwrap();

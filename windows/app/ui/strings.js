@@ -1130,4 +1130,16 @@ window.EN = {
   "소리 다듬기": "Polish sound",
   "음량을 재지 못했습니다.": "Could not measure loudness.",
   "음량 맞추기 실패: {}": "Loudness normalization failed: {}",
+  // 업데이트 · 저장 · 녹화 안전장치
+  "업데이트하지 못했습니다": "Couldn't update",
+  "업데이트를 확인하지 못했습니다.": "Couldn't check for updates.",
+  "업데이트를 확인하지 못했습니다. ({})": "Couldn't check for updates. ({})",
+  "업데이트 주소가 올바르지 않습니다.": "The update link is not valid.",
+  "받은 업데이트 파일이 릴리스와 다릅니다 (sha256 불일치).": "The downloaded update doesn't match the release (sha256 mismatch).",
+  "내보내기나 녹화 정리가 진행 중입니다. 끝난 뒤에 업데이트하세요.": "An export or recording is still being processed. Update after it finishes.",
+  "작업을 저장하지 못했습니다. 프로젝트 파일: {} / 복구용 파일: {}\n업데이트를 멈췄습니다. 다른 위치에 저장한 뒤 다시 시도하세요.": "Couldn't save your work. Project file: {} / Recovery file: {}\nThe update was stopped. Save to another location and try again.",
+  "작업을 복구용 파일에 보관하지 못했습니다: {}\n업데이트를 멈췄습니다. 다른 위치에 저장한 뒤 다시 시도하세요.": "Couldn't keep your work in the recovery file: {}\nThe update was stopped. Save to another location and try again.",
+  "작업을 저장하지 못했습니다: {}\n업데이트를 멈췄습니다. 다른 위치에 저장한 뒤 다시 시도하세요.": "Couldn't save your work: {}\nThe update was stopped. Save to another location and try again.",
+  "녹화 파일을 쓰지 못해 녹화를 멈췄습니다: {}": "Recording stopped because the file couldn't be written: {}",
+  "녹화 파일을 쓰지 못해 녹화를 멈췄습니다. 쓴 부분까지 타임라인에 넣었습니다: {}": "Recording stopped because the file couldn't be written. What was recorded so far was added to the timeline: {}",
 };
