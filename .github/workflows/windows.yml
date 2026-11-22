@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags: ["win-v*"]
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["windows/**", ".github/workflows/windows.yml", ".github/workflows/test-broadcast-webview.ps1"]
   workflow_dispatch:
     inputs:
       publishRelease:
@@ -15,6 +15,10 @@ on:
         description: Verify a separately authorized single-use private YouTube destination with synthetic devices
         type: boolean
         default: false
+      broadcastInstallerRunId:
+        description: Verify the exact installer from a previous Windows build in the broadcast studio
+        type: string
+        default: ""
       generationOnly:
         description: Run focused video creation checks with a debug app or supplied installer
         type: boolean
@@ -35,12 +39,88 @@ env:
 
 jobs:
   generation:
-    if: github.event_name == 'workflow_dispatch' && (inputs.generationOnly || inputs.installerRunId != '')
+    if: github.event_name == 'workflow_dispatch' && inputs.broadcastInstallerRunId == '' && (inputs.generationOnly || inputs.installerRunId != '')
     uses: ./.github/workflows/windows-generation.yml
     with:
       installerRunId: ${{ inputs.installerRunId }}
+  broadcast-installer:
+    if: github.event_name == 'workflow_dispatch' && inputs.broadcastInstallerRunId != ''
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify and install the exact Windows build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER_RUN_ID: ${{ inputs.broadcastInstallerRunId }}
+        run: |
+          $runId = $env:INSTALLER_RUN_ID
+          if ($runId -notmatch '^[0-9]+$') { throw "Expected a numeric Windows build run ID" }
+          $api = "repos/$env:GITHUB_REPOSITORY/actions/runs/$runId"
+          $run = gh api $api | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.path -ne ".github/workflows/windows.yml" -or $run.head_repository.full_name -ne $env:GITHUB_REPOSITORY) { throw "Expected a Windows build from this repository" }
+          $baseline = $run.head_sha
+          if ($baseline -notmatch '^[0-9a-f]{40}$') { throw "Missing installer source commit" }
+          git fetch --no-tags --depth=1 origin $baseline
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch installer source" }
+          git diff --quiet $baseline HEAD -- "windows/app/ui" "windows/app/src-tauri" "windows/crates" "windows/Cargo*" "windows/app/package*" ":(exclude)windows/**/tests/**"
+          if ($LASTEXITCODE -ne 0) { throw "The selected installer and the checked-out Windows product code differ" }
+
+          $response = gh api "$api/artifacts?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not read installer artifacts" }
+          $artifacts = @($response.artifacts | Where-Object { $_.name -eq "EasyCut-Windows-setup" -and -not $_.expired })
+          if ($artifacts.Count -ne 1) { throw "Expected one unexpired EasyCut-Windows-setup artifact" }
+          $artifact = $artifacts[0]
+          $zip = "$env:RUNNER_TEMP/broadcast-setup.zip"
+          Invoke-WebRequest $artifact.archive_download_url -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept="application/vnd.github+json"} -OutFile $zip
+          $archiveHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($artifact.digest -ne "sha256:$archiveHash") { throw "Installer archive failed the GitHub SHA-256 check" }
+          $download = "$env:RUNNER_TEMP/broadcast-installer"
+          Expand-Archive -LiteralPath $zip -DestinationPath $download
+          $setups = @(Get-ChildItem $download -Filter "*setup.exe" -Recurse -File)
+          if ($setups.Count -ne 1) { throw "Expected one NSIS installer" }
+          $hash = (Get-FileHash $setups[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $install = Start-Process $setups[0].FullName -ArgumentList "/S" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "NSIS installation failed with exit $($install.ExitCode)" }
+          $dir = Join-Path $env:LOCALAPPDATA "EasyCut"
+          $exe = Join-Path $dir "easycut-windows.exe"
+          foreach ($path in @($exe, "$dir/resources/bin/ffmpeg.exe", "$dir/resources/bin/ffprobe.exe")) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Missing installed file: $path" }
+          }
+          $proof = @{sourceRunId=$runId; sourceHeadSha=$baseline; verificationHeadSha=$env:GITHUB_SHA; artifactId=$artifact.id; archiveSha256=$archiveHash; installerSha256=$hash; installerBytes=$setups[0].Length; installedExecutableSha256=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}
+          $output = "$env:RUNNER_TEMP/native-evidence"
+          New-Item -ItemType Directory -Force $output | Out-Null
+          $proof | ConvertTo-Json | Set-Content "$output/installer-verification.json"
+          Write-Host "Exact NSIS installer SHA256: $hash"
+      - name: Check local synthetic broadcast on the installed app
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
+          if ($LASTEXITCODE -ne 0) { throw "Playwright installation failed" }
+          ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode local
+      - name: Check the authorized private YouTube event on the installed app
+        if: inputs.privateLiveTest
+        env:
+          EASYCUT_PRIVATE_LIVE_TEST_KEY: ${{ secrets.EASYCUT_PRIVATE_LIVE_TEST_KEY }}
+        run: |
+          ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode private
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: broadcast-installed-evidence
+          path: ${{ runner.temp }}/native-evidence
+          if-no-files-found: ignore
+
   build:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.generationOnly && inputs.installerRunId == '')
+    if: github.event_name != 'workflow_dispatch' || (!inputs.generationOnly && inputs.installerRunId == '' && inputs.broadcastInstallerRunId == '')
     runs-on: windows-latest
     defaults:
       run:
@@ -220,7 +300,6 @@ jobs:
         timeout-minutes: 15
         run: |
           $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          $testConfig.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
           $testConfig.app.windows[0] | Add-Member -NotePropertyName devtools -NotePropertyValue $true
           $configPath = "$env:RUNNER_TEMP/native-tauri.conf.json"
           $testConfig | ConvertTo-Json -Depth 100 | Set-Content $configPath
@@ -243,33 +322,12 @@ jobs:
           New-Item -ItemType Directory -Force $testResources | Out-Null
           Copy-Item -Path "$installedResources/*" -Destination $testResources -Recurse -Force
           npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
-          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
-          # Avoid reusing a browser process started by an earlier app/install test.
-          Get-Process easycut-windows -ErrorAction SilentlyContinue | Stop-Process -Force
-          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/natural-webview-data"
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+          if ($LASTEXITCODE -ne 0) { throw "Playwright installation failed" }
           $env:EASYCUT_NATIVE_SPEECH = "$env:RUNNER_TEMP/speech.wav"
-          $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
-          New-Item -ItemType Directory -Force $env:EASYCUT_NATIVE_OUTPUT | Out-Null
-          $app = Start-Process windows/target/release/easycut-windows.exe -PassThru
-          try {
-            node windows/app/tests/natural-edit-native.cjs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            $env:EASYCUT_GENERATION_MANIFEST = "$env:RUNNER_TEMP/generation-evidence/generation-manifest.json"
-            node windows/app/tests/generation-native.cjs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            node windows/app/tests/studio-native.cjs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            $env:EASYCUT_CHROME = (Get-Command chrome.exe -ErrorAction SilentlyContinue).Source
-            if (-not $env:EASYCUT_CHROME) { $env:EASYCUT_CHROME = "$env:ProgramFiles/Google/Chrome/Application/chrome.exe" }
-            node windows/app/tests/broadcast-ui.cjs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            node windows/app/tests/broadcast-native.cjs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          } finally {
-            Get-CimInstance Win32_Process | Where-Object { $_.Name -match "easycut|msedgewebview2" } | Select-Object Name,ProcessId,ParentProcessId,CommandLine | Format-List
-            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
-          }
+          $env:EASYCUT_GENERATION_MANIFEST = "$env:RUNNER_TEMP/generation-evidence/generation-manifest.json"
+          $env:EASYCUT_CHROME = (Get-Command chrome.exe -ErrorAction SilentlyContinue).Source
+          if (-not $env:EASYCUT_CHROME) { $env:EASYCUT_CHROME = "$env:ProgramFiles/Google/Chrome/Application/chrome.exe" }
+          ./.github/workflows/test-broadcast-webview.ps1 -Executable "windows/target/release/easycut-windows.exe" -Mode suite
 
       - name: Send synthetic scenes to the authorized private YouTube event
         if: github.event_name == 'workflow_dispatch' && inputs.privateLiveTest
@@ -277,31 +335,7 @@ jobs:
         env:
           EASYCUT_PRIVATE_LIVE_TEST_KEY: ${{ secrets.EASYCUT_PRIVATE_LIVE_TEST_KEY }}
         run: |
-          $eventKey = $env:EASYCUT_PRIVATE_LIVE_TEST_KEY
-          if (-not $eventKey) { throw "Private test requires a separate one-event destination" }
-          Remove-Item Env:EASYCUT_PRIVATE_LIVE_TEST_KEY
-          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
-          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/private-broadcast-webview"
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
-          $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
-          $app = Start-Process windows/target/release/easycut-windows.exe -PassThru
-          try {
-            $ready = $false
-            for ($i = 0; $i -lt 45; $i++) {
-              try {
-                $pages = Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 1
-                if ($pages | Where-Object { $_.type -eq 'page' -and $_.url -match 'tauri' }) { $ready = $true; break }
-              } catch { }
-              Start-Sleep -Seconds 1
-            }
-            if (-not $ready) { throw "Private test studio did not open" }
-            $env:EASYCUT_PRIVATE_LIVE_TEST_KEY = $eventKey
-            node windows/app/tests/broadcast-native.cjs --private-youtube
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          } finally {
-            Remove-Item Env:EASYCUT_PRIVATE_LIVE_TEST_KEY -ErrorAction SilentlyContinue
-            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
-          }
+          ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode private
 
       - uses: actions/upload-artifact@v4
         if: always()

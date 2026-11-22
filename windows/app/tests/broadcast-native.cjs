@@ -9,6 +9,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require('playwright-core');
 
 const output = process.env.EASYCUT_NATIVE_OUTPUT;
+const additionalSessions = new Set();
 const bin = path.join(process.env.LOCALAPPDATA, 'EasyCut', 'resources', 'bin');
 const ffmpeg = path.join(bin, 'ffmpeg.exe');
 const ffprobe = path.join(bin, 'ffprobe.exe');
@@ -73,14 +74,40 @@ function inspectVideo(file) {
   return {phases, peak};
 }
 
+async function openStudio(editor) {
+  const browser = editor.context().browser();
+  await editor.locator('[data-cmd=studio]').first().click();
+  let diagnostic;
+  for (let attempt = 0; attempt < 45; attempt++) {
+    const find = client => client.contexts().flatMap(c => c.pages()).find(page => /\/studio\.html(?:$|[?#])/.test(page.url()));
+    const page = find(browser);
+    if (page) return page;
+    const targets = await fetch('http://127.0.0.1:9222/json/list').then(r => r.json());
+    if (targets.some(t => /\/studio\.html(?:$|[?#])/.test(t.url))) {
+      const fresh = await chromium.connectOverCDP('http://127.0.0.1:9222');
+      const studio = find(fresh);
+      if (studio) { additionalSessions.add(fresh); return studio; }
+      await fresh.close();
+    }
+    if (attempt % 8 === 0) {
+      diagnostic = await editor.evaluate(async () => ({
+        windows:(await window.__TAURI__.window.getAllWindows()).map(w => w.label),
+        toast:document.querySelector('#toast')?.textContent,
+      }));
+      console.log('Studio target discovery', diagnostic, targets.filter(t=>t.type==='page').map(t=>new URL(t.url).pathname));
+      if (diagnostic.toast && /WebView2|0x800|webview creation/i.test(diagnostic.toast)) throw Error(diagnostic.toast);
+    }
+    await delay(500);
+  }
+  throw Error('Studio did not expose a WebView2 page. Native window state: ' + JSON.stringify(diagnostic));
+}
+
 // This mode is explicitly dispatched for one already-private, non-reusable event. It
 // exercises the same Windows UI and encoder while the channel owner retains OAuth.
-async function privateYouTube(ctx, editor) {
+async function privateYouTube(editor) {
   assert(process.env.EASYCUT_PRIVATE_LIVE_TEST_KEY, 'Missing single-event test destination');
   await editor.evaluate(() => window.__TAURI__.core.invoke('new_project'));
-  const open = ctx.waitForEvent('page', {timeout:30000});
-  await editor.locator('[data-cmd=studio]').first().click();
-  const studio = await open;
+  const studio = await openStudio(editor);
   await studio.waitForSelector('#prepare');
   await studio.evaluate(installDevices);
   await studio.selectOption('#output','rtmp');
@@ -133,7 +160,7 @@ async function privateYouTube(ctx, editor) {
   const editor = ctx.pages().find(page => page.url().includes('tauri'));
   assert(editor, 'Missing editor window');
   if (process.argv.includes('--private-youtube')) {
-    try { await privateYouTube(ctx,editor); } finally { await browser.close(); }
+    try { await privateYouTube(editor); } finally { await browser.close(); }
     return;
   }
   const state = (command, args) => editor.evaluate(([cmd, arg]) => window.__TAURI__.core.invoke(cmd, arg), [command, args]);
@@ -148,9 +175,7 @@ async function privateYouTube(ctx, editor) {
   let receiver, studio;
   try {
     await state('new_project');
-    const opened = ctx.waitForEvent('page', {timeout:30000});
-    await editor.locator('[data-cmd=studio]').first().click();
-    studio = await opened;
+    studio = await openStudio(editor);
     await studio.waitForSelector('#prepare');
     await studio.evaluate(installDevices);
     const account = await studio.evaluate(() => window.__TAURI__.core.invoke('youtube_account_status'));
@@ -212,4 +237,5 @@ async function privateYouTube(ctx, editor) {
     if (receiver && receiver.exitCode === null) receiver.kill();
     await browser.close();
   }
-})().catch(error => {console.error(error); process.exitCode = 1;});
+})().finally(() => Promise.all([...additionalSessions].map(client => client.close())))
+  .catch(error => { console.error(error); process.exitCode = 1; });
