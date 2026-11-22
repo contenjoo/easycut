@@ -138,8 +138,10 @@ async function privateYouTube(editor) {
     const {project} = await window.__TAURI__.core.invoke('get_state');
     return project.assets.length >= 2 && project.tracks.flatMap(t => t.clips).length >= 4;
   },null,{timeout:90000});
-  const file = path.join(output,'youtube-reopened.easycut');
-  const movie = path.join(output,'youtube-reopened.mp4');
+  // Only the verification measurements belong in the CI evidence artifact.
+  const privateFiles = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'easycut-private-'));
+  const file = path.join(privateFiles,'youtube-reopened.easycut');
+  const movie = path.join(privateFiles,'youtube-reopened.mp4');
   const proof = await editor.evaluate(async file => {
     const invoke = window.__TAURI__.core.invoke;
     const saved = await invoke('save_project',{path:file});
