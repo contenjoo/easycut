@@ -59,8 +59,6 @@ struct StudioCompositionDesk: View {
 }
 
 private extension RecordController {
-    var studioCameraAvailable: Bool { useCamera && cameras.contains { $0.uniqueID == cameraID } }
-
     var studioScreenAspect: CGFloat {
         let size: CGSize?
         switch target {
@@ -126,8 +124,15 @@ struct StudioSchematic: View, Equatable {
             context.fill(Path(canvas), with: .color(Color(nsColor: Theme.timelineBG)))
             let layout = scene.frames(screenAspect: screenAspect, cameraAspect: cameraAspect, customLayout: customLayout)
             let transform = CGAffineTransform(scaleX: size.width, y: size.height)
-            if let rect = layout.screen { drawScreen(in: rect.applying(transform), context: context) }
-            if showsCamera, let rect = layout.camera { drawCamera(in: rect.applying(transform), context: context) }
+            let front = scene.frontSource(in: customLayout)
+            for layer in [front.other, front] {
+                switch layer {
+                case .screen:
+                    if let rect = layout.screen { drawScreen(in: rect.applying(transform), context: context) }
+                case .camera:
+                    if showsCamera, let rect = layout.camera { drawCamera(in: rect.applying(transform), context: context) }
+                }
+            }
             if guides {
                 let safe = canvas.insetBy(dx: size.width * 0.05, dy: size.height * 0.05)
                 var corners = Path()
@@ -148,6 +153,7 @@ struct StudioSchematic: View, Equatable {
 
     private func drawScreen(in rect: CGRect, context: GraphicsContext) {
         let blue = Color(nsColor: Theme.videoClip)
+        context.fill(Path(rect), with: .color(Color(nsColor: Theme.timelineBG)))
         context.fill(Path(rect), with: .linearGradient(Gradient(colors: [blue.opacity(0.70), blue]),
                      startPoint: rect.origin, endPoint: CGPoint(x: rect.maxX, y: rect.maxY)))
         // A single desktop window gives a wide screen and a narrow captured window the same visual identity.

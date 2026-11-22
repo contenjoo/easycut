@@ -75,6 +75,7 @@ export async function buildMenu() {
       sep(),
       item("미디어 가져오기…", c.import, "Ctrl+I"),
       item("링크로 가져오기 (유튜브 등)…", linkDialog, "Ctrl+Shift+I"),
+      item("방송 스튜디오", c.studio),
       ...(c.record ? [item("화면·얼굴 녹화…", c.record, "Ctrl+Alt+R")] : []),
       sep(),
       item("저장", c.save, "Ctrl+S"),

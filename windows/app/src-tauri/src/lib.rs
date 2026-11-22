@@ -17,6 +17,8 @@ mod recovery;
 mod review_tools;
 mod selftest;
 mod stt;
+mod studio;
+mod youtube;
 mod tools;
 mod update;
 
@@ -1331,8 +1333,8 @@ fn rec_hotkeys(app: AppHandle, on: bool) {
 }
 
 #[tauri::command]
-async fn rec_finish(app: AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: Option<bool>, area: Option<(f64, f64, f64, f64)>) -> Res<Value> {
-    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle, clicks, show_clicks.unwrap_or(true), area)).await.map_err(|e| e.to_string())?
+async fn rec_finish(app: AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: Option<bool>, area: Option<(f64, f64, f64, f64)>, studio_cuts: Option<Vec<studio::Cut>>) -> Res<Value> {
+    tauri::async_runtime::spawn_blocking(move || record::finish(&app, camera_circle, clicks, show_clicks.unwrap_or(true), area, studio_cuts)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1460,6 +1462,7 @@ pub fn run() {
         .manage(AppState { editor: Mutex::new(Editor::default()), cancel: Arc::new(AtomicBool::new(false)), ui: Mutex::default() })
         .manage(ai::Ai::default())
         .manage(generation::Generation::default())
+        .manage(studio::Live::default())
         .manage(record::Recorder::default())
         .manage(clicks::Clicks::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -1481,6 +1484,10 @@ pub fn run() {
             add_caption, delete_captions, move_caption, update_caption, clear_captions,
             duplicate_clips, copy_clips, paste_clips, group_clips, join_clips, tracks_edit,
             privacy_scan, set_blurs,
+            studio::studio_open, studio::studio_live_start, studio::studio_live_stop, studio::studio_live_chunk,
+            youtube::youtube_account_status, youtube::youtube_connect, youtube::youtube_disconnect,
+            youtube::youtube_schedule, youtube::youtube_upcoming, youtube::youtube_start,
+            youtube::youtube_broadcast_status, youtube::youtube_complete,
             rec_begin, rec_chunk, rec_discard, rec_panel, rec_hotkeys, rec_finish, rec_folder, rec_clicks, rec_area,
         ])
         .setup(|app| {
@@ -1493,6 +1500,7 @@ pub fn run() {
         .expect("EasyCut 실행 실패")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                studio::abort(app);
                 generation::cancel(app);
                 ai::cancel_login(app);
             }

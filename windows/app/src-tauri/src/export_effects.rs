@@ -101,7 +101,9 @@ pub fn append_layer(graph:&mut String,last:&str,chain:&str,key:&str,c:&Clip,w:i6
     }else{
         let _=writeln!(graph,"{chain}{alpha},setpts=PTS+{:.6}/TB[fxv{key}];",c.start);(x,y)
     };
-    let _=writeln!(graph,"[{last}][fxv{key}]overlay=x={ox:.4}:y={oy:.4}:eof_action=pass:enable='gte(t,{:.6})*lt(t,{:.6})'[{output}];",c.start,c.end());
+    // A subframe source trim can run out one frame before the clip's timeline end.
+    // Hold its last frame inside the clip; enable releases the layer at the cut.
+    let _=writeln!(graph,"[{last}][fxv{key}]overlay=x={ox:.4}:y={oy:.4}:eof_action=repeat:enable='gte(t,{:.6})*lt(t,{:.6})'[{output}];",c.start,c.end());
     output
 }
 

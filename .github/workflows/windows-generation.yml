@@ -147,12 +147,7 @@ jobs:
       - name: Prepare FFmpeg resources
         run: |
           $bin = "windows/app/src-tauri/resources/bin"
-          New-Item -ItemType Directory -Force -Path $bin, windows/app/src-tauri/resources/licenses | Out-Null
-          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
-          Expand-Archive "$env:RUNNER_TEMP/ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP/ffmpeg"
-          $ff = Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Directory | Select-Object -First 1
-          Copy-Item "$($ff.FullName)/bin/ffmpeg.exe", "$($ff.FullName)/bin/ffprobe.exe" $bin
-          Copy-Item "$($ff.FullName)/LICENSE" windows/app/src-tauri/resources/licenses/FFmpeg-LICENSE.txt
+          ./windows/scripts/install-ffmpeg.ps1
           # Existing README resources satisfy the globs; video creation needs no Whisper download.
           Get-ChildItem $bin | Format-Table Name, Length
 

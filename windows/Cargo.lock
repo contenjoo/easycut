@@ -883,7 +883,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "easycut-core"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "fancy-regex",
  "serde",
@@ -893,10 +893,12 @@ dependencies = [
 
 [[package]]
 name = "easycut-windows"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "easycut-core",
+ "getrandom 0.2.17",
  "keyring",
  "serde",
  "serde_json",
@@ -906,6 +908,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
+ "tempfile",
  "unicode-segmentation",
  "ureq",
  "windows",

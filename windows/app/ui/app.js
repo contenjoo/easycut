@@ -784,6 +784,7 @@ const commands = {
   ai: () => switchTab("ai"),
   aiConnect: () => connectDialog(),
   shortcuts: shortcutsDialog,
+  studio: () => isRecording() ? toast(L("녹화 중입니다")) : invoke("studio_open").catch(e => toast(String(e))),
   record: () => openRecordDialog(),
   duplicate: async () => { if (S.sel.size) applySelect(await run("duplicate_clips", { ids: selIds() })); },
   copy: async () => {

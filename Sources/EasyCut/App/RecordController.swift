@@ -61,10 +61,11 @@ final class RecordController: ObservableObject {
     private var preparing = false
     private var startFailure: String?
 
+    var studioCameraAvailable: Bool { useCamera && cameras.contains { $0.uniqueID == cameraID } }
+
     func selectScene(_ scene: StudioScene) {
         guard studioMode else { return }
-        let hasCamera = useCamera && cameras.contains(where: { $0.uniqueID == cameraID })
-        let resolved: StudioScene = scene == .custom || hasCamera ? scene : .screen
+        let resolved: StudioScene = scene == .custom || studioCameraAvailable ? scene : .screen
         if resolved.isPictureInPicture { studioInsetScene = resolved }
         studioScene = resolved
         let useCustom = resolved == .custom
@@ -597,13 +598,13 @@ extension EditorStore {
             media.prepare(sa)
             if !sceneChanges.isEmpty {
                 player.seek(previousEnd)
-                if let first = project.tracks.first?.clips.first(where: { $0.assetID == sa.id }) {
+                if let first = project.tracks.lazy.flatMap(\.clips).first(where: { $0.assetID == sa.id && $0.sourceIn == 0 }) {
                     selection = [first.id]
                 }
             }
             if let ca { media.prepare(ca) }
             if let aa { media.prepare(aa) }
-            showToast(ca == nil ? "녹화를 타임라인에 넣었습니다" : "녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)")
+            showToast(sceneChanges.isEmpty && ca != nil ? "녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)" : "녹화를 타임라인에 넣었습니다")
             // 말소리가 없는 녹화(무음·시험음)는 자동 음성 인식을 건너뛴다. 대본 탭에서 직접 실행할 수 있다.
             let target = sa.hasAudio ? sa : (aa?.hasAudio == true ? aa : nil)
             if let target {

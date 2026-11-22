@@ -4,9 +4,11 @@
 
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 Mac·Windows 설치형 영상 편집기입니다. macOS 1.13.0·Windows 0.7.0부터 원하는 내용을 설명해 애니메이션·설명·홍보 영상을 만들고 타임라인에서 편집할 수 있습니다.
 
-**[⬇︎ Mac 1.18.0 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.18.0/EasyCut-1.18.0.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
+**[⬇︎ Mac 1.18.1 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.18.1/EasyCut-1.18.1.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.10.1/EasyCut_0.10.1_x64-setup.exe) · [Windows 출시 소식](https://github.com/contenjoo/easycut/releases/tag/win-v0.10.1) · 소스는 [`windows/`](windows)
+윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.11.0/EasyCut_0.11.0_x64-setup.exe) · [Windows 출시 소식](https://github.com/contenjoo/easycut/releases/tag/win-v0.11.0) · 소스는 [`windows/`](windows)
+
+Mac과 Windows의 **방송 스튜디오**에서 Google 계정으로 YouTube 방송을 예약하거나 바로 송출할 수 있습니다. 화면과 카메라의 위치, 크기, 앞뒤 순서를 조절하세요. 방송 중 전환한 장면은 녹화가 끝나면 편집기에 구간별로 들어옵니다. [계정 연결 및 방송 안내](docs/youtube-studio.html)
 
 
 **macOS 1.15.0·Windows 0.9.0:** 클립 **오디오**의 **목소리 선명하게**, 내보내기의 **음량 자동 맞추기·배경음악 자동 줄이기**, 자막 스타일의 **말하는 단어 강조**가 새로 들어왔습니다. ([출시 소식](docs/announcements/macos-1.15.0.md))
@@ -29,8 +31,8 @@ https://github.com/user-attachments/assets/c82c022a-1c3b-4895-94b8-a49f6609b6f9
 
 **M1 이상 Apple Silicon Mac, macOS 14 이상**이 필요합니다.
 
-1. [EasyCut-1.18.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.18.0/EasyCut-1.18.0.dmg)를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
-2. 처음 열 때 한 번: 서명·공증되지 않은 앱이라 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
+1. [EasyCut-1.18.1.dmg](https://github.com/contenjoo/easycut/releases/download/v1.18.1/EasyCut-1.18.1.dmg)를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
+2. 처음 열 때 한 번: 프로젝트 자체 서명을 사용하고 Apple 공증을 받지 않아 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
 3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
 
 기본 편집에 쓰는 Whisper 음성 인식 엔진과 ffmpeg(MKV 등 변환)는 앱 안에 들어 있어 Homebrew 같은 추가 설치가 필요 없습니다. 새 영상 생성에는 Node.js LTS·npm과 Google Chrome이 필요합니다.
@@ -38,7 +40,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 
 ### Windows
 
-**Windows 10/11 64비트**에서 [EasyCut_0.10.1_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.10.1/EasyCut_0.10.1_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
+**Windows 10/11 64비트**에서 [EasyCut_0.11.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.11.0/EasyCut_0.11.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
 
 ## 소스에서 빌드
 
@@ -53,7 +55,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 
 | 기능 | 설명 |
 |---|---|
-| 1인 방송 스튜디오 (macOS 1.18) | 상단 **방송 스튜디오**에서 화면만·카메라만·작은 카메라·나란히를 선택합니다. 작은 카메라를 네 모서리로 옮기거나, **내 배치 편집**에서 두 소스를 직접 옮기고 크기를 바꿀 수 있습니다. **방송 일정**에서 Google로 연결하고, 지금 방송하거나 날짜를 지정해 예약할 수 있습니다. 송출할 때는 **송출 설정 → 실시간 송출 → YouTube 계정**을 선택합니다. 예약 시각에 앱에서 해당 방송을 선택해 **녹화 및 라이브 시작**을 누릅니다. 다른 송출 서비스는 RTMP(S) 서버 주소와 스트림 키로 연결합니다. 종료하면 화면·카메라 원본과 전환 시점이 편집 타임라인에 열립니다. |
+| 1인 방송 스튜디오 (Mac·Windows) | 화면만, 카메라만, 작은 카메라, 나란히, 내 배치 중에서 장면을 선택합니다. **내 배치 편집**에서 각 소스의 위치와 크기, 앞뒤 순서를 조절합니다. Google로 채널을 연결해 방송을 예약하거나 즉시 시작할 수 있습니다. 다른 서비스는 RTMP(S) 서버 주소와 스트림 키로 연결합니다. 방송을 마치면 화면과 카메라, 장면 전환을 타임라인에서 편집할 수 있습니다. [운영체제별 방송 방법](docs/youtube-studio.html) |
 | 화면·얼굴 녹화 | 전체 화면·창·영역을 골라 카메라(얼굴)·마이크·컴퓨터 소리와 함께 녹화 → 끝나면 화면은 트랙 1, 얼굴은 트랙 2 오른쪽 아래 작은 화면, 컴퓨터 소리는 트랙 3에 자동 배치하고 바로 음성 인식. 일시정지 ⌥⌘P, 정지 ⌥⌘. (다른 앱을 쓰는 중에도 동작). 녹화 창 ⌥⌘R, 파일은 동영상 › EasyCut 녹화 |
 | 가져오기 | 영상(MP4·MOV·M4V, **MKV·WebM·AVI·FLV·WMV·TS·MTS·MPG** 등), 오디오(MP3·WAV·M4A·AAC·AIFF), 사진(PNG·JPG·HEIC·GIF·TIFF). 끌어다 놓기 지원 |
 | 멀티 트랙 타임라인 | 클립 이동·트림·분할·복제·복사/붙여넣기, 트랙 음소거/숨김, 스냅, 썸네일·파형 표시, 트랙 높이 조절, 타임라인 영역 크기 조절(위 경계선 끌기) |

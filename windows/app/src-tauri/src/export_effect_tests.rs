@@ -18,6 +18,35 @@ fn render(p:&Project,dir:&Path,key:&str,ffmpeg:&Path)->Vec<Vec<u8>>{
 }
 
 #[test]
+fn subframe_cuts_keep_the_last_frame_and_leave_timeline_gaps_empty() {
+    let Some(ffmpeg) = std::env::var_os("EASYCUT_EFFECT_FFMPEG").map(PathBuf::from) else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("blue.mp4");
+    let result = Command::new(&ffmpeg)
+        .args(["-v", "error", "-f", "lavfi", "-i", "color=blue:s=160x90:r=10:d=1.2",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p"])
+        .arg(&source).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let asset = crate::media::probe(&source).unwrap();
+    let mut project = Project {
+        canvas_width: 160., canvas_height: 90., fps: 10.,
+        assets: vec![asset.clone()], ..Default::default()
+    };
+    for (start, end) in [(0.156, 0.600), (0.756, 1.200)] {
+        project.tracks[0].clips.push(Clip {
+            asset_id: Some(asset.id), start, source_in: start, source_out: end, ..Default::default()
+        });
+    }
+    let frames = render(&project, dir.path(), "trimmed-and-gapped", &ffmpeg);
+    for (index, frame) in frames.iter().enumerate() {
+        let expected_blue = matches!(index, 2..=5 | 8..=11);
+        let [r, g, b] = frame[..3] else { unreachable!() };
+        assert!(r < 25 && g < 25 && if expected_blue { b > 230 } else { b < 25 },
+                "frame {index} should be {}, got [{r}, {g}, {b}]", if expected_blue { "blue" } else { "black" });
+    }
+}
+
+#[test]
 fn ass_layout_keeps_grapheme_clusters_and_all_effect_names_are_handled(){
     let mut style=TextStyle::title();style.animation=Some("typewriter".into());
     let events=effects::ass_events("T",&style,"한👩‍🏫글",0.0,2.0,80.0,45.0,160,90,10.0,0,1.0,0.0,0.0);
