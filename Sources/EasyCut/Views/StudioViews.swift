@@ -1,36 +1,274 @@
 import SwiftUI
+import AVFoundation
+import ScreenCaptureKit
 
-struct StudioSetup: View {
+struct StudioCompositionDesk: View {
     @ObservedObject var rec: RecordController
-    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("시작 장면").font(.headline)
-            LazyVGrid(columns: columns, spacing: 6) {
-                StudioSceneButtons(rec: rec)
+            HStack {
+                Text("배치 미리보기").font(.headline)
+                Spacer()
+                Text(verbatim: "1280 × 720").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            StudioCornerPicker(rec: rec)
-            Divider().padding(.vertical, 2)
-            Toggle("실시간 송출", isOn: $rec.liveEnabled)
-                .toggleStyle(.switch)
+            ZStack {
+                RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: Theme.ruler))
+                StudioSchematic(scene: rec.studioScene, screenAspect: screenAspect, cameraAspect: cameraAspect, guides: true)
+                    .equatable()
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .padding(12)
+            }
+            .frame(minHeight: 130, idealHeight: 218, maxHeight: .infinity)
+            .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.inspectorBorder) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("배치 미리보기"))
+            .accessibilityValue(Text(verbatim: L(rec.studioScene.title)))
+            .accessibilityIdentifier("studio-composition-preview")
+
+            HStack(spacing: 12) {
+                Text("시작 장면").font(.headline)
+                Spacer()
+                sourceLabel("화면", color: Color(nsColor: Theme.videoClip))
+                sourceLabel("카메라", color: Color(nsColor: Theme.imageClip))
+            }
+            StudioSceneStrip(rec: rec, screenAspect: screenAspect, cameraAspect: cameraAspect)
+            if rec.studioCameraAvailable {
+                StudioCorners(rec: rec)
+            } else {
+                Label(L(rec.cameras.isEmpty ? "카메라를 연결하면 카메라 장면을 선택할 수 있습니다." :
+                            "입력에서 카메라를 켜면 카메라 장면을 선택할 수 있습니다."), systemImage: "video.slash")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onChange(of: rec.studioCameraAvailable, initial: true) { _, available in
+            if !available && rec.studioScene != .screen { rec.selectScene(.screen) }
+        }
+    }
+
+    private func sourceLabel(_ title: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 9, height: 9)
+            Text(verbatim: L(title)).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var screenAspect: CGFloat {
+        let size: CGSize?
+        switch rec.target {
+        case .window: size = rec.windows.first { $0.windowID == rec.windowID }?.frame.size
+        case .area: size = rec.area?.size
+        case .display:
+            size = rec.displays.first { $0.displayID == rec.displayID }.map { CGSize(width: $0.width, height: $0.height) }
+        }
+        guard let size, size.width > 0, size.height > 0 else { return 16 / 9 }
+        return size.width / size.height
+    }
+
+    private var cameraAspect: CGFloat {
+        guard let camera = rec.cameras.first(where: { $0.uniqueID == rec.cameraID }),
+              !camera.supportsSessionPreset(.hd1280x720) else { return 16 / 9 }
+        let size = CMVideoFormatDescriptionGetDimensions(camera.activeFormat.formatDescription)
+        guard size.width > 0, size.height > 0 else { return 16 / 9 }
+        return CGFloat(size.width) / CGFloat(size.height)
+    }
+}
+
+private extension RecordController {
+    var studioCameraAvailable: Bool { useCamera && cameras.contains { $0.uniqueID == cameraID } }
+}
+
+/// Uses the normalized rectangles of the live compositor for both the diagram and the scene thumbnails.
+private struct StudioSchematic: View, Equatable {
+    let scene: StudioScene
+    var screenAspect: CGFloat = 16 / 9
+    var cameraAspect: CGFloat = 16 / 9
+    var guides = false
+
+    var body: some View {
+        Canvas { context, size in
+            let canvas = CGRect(origin: .zero, size: size)
+            guard size.width > 0, size.height > 0 else { return }
+            context.fill(Path(canvas), with: .color(Color(nsColor: Theme.timelineBG)))
+            let layout = scene.frames(screenAspect: screenAspect, cameraAspect: cameraAspect)
+            let transform = CGAffineTransform(scaleX: size.width, y: size.height)
+            if let rect = layout.screen { drawScreen(in: rect.applying(transform), context: context) }
+            if let rect = layout.camera { drawCamera(in: rect.applying(transform), context: context) }
+            if guides {
+                let safe = canvas.insetBy(dx: size.width * 0.05, dy: size.height * 0.05)
+                var corners = Path()
+                let leg = min(safe.width, safe.height) * 0.08
+                for x in [safe.minX, safe.maxX] {
+                    for y in [safe.minY, safe.maxY] {
+                        corners.move(to: CGPoint(x: x + (x == safe.minX ? leg : -leg), y: y))
+                        corners.addLine(to: CGPoint(x: x, y: y))
+                        corners.addLine(to: CGPoint(x: x, y: y + (y == safe.minY ? leg : -leg)))
+                    }
+                }
+                context.stroke(corners, with: .color(.white.opacity(0.60)), lineWidth: 1)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: guides ? 4 : 2))
+        .accessibilityHidden(true)
+    }
+
+    private func drawScreen(in rect: CGRect, context: GraphicsContext) {
+        let blue = Color(nsColor: Theme.videoClip)
+        context.fill(Path(rect), with: .linearGradient(Gradient(colors: [blue.opacity(0.70), blue]),
+                     startPoint: rect.origin, endPoint: CGPoint(x: rect.maxX, y: rect.maxY)))
+        // A single desktop window gives a wide screen and a narrow captured window the same visual identity.
+        let unit = min(rect.width, rect.height * 1.6)
+        let w = unit * 0.70, h = unit * 0.39
+        let box = CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+        let face = Path(roundedRect: box, cornerRadius: h * 0.07)
+        context.fill(face, with: .color(.black.opacity(0.23)))
+        context.stroke(face, with: .color(.white.opacity(0.62)), lineWidth: max(0.6, h * 0.018))
+        let toolbarY = box.minY + h * 0.19
+        var toolbar = Path()
+        toolbar.move(to: CGPoint(x: box.minX, y: toolbarY))
+        toolbar.addLine(to: CGPoint(x: box.maxX, y: toolbarY))
+        context.stroke(toolbar, with: .color(.white.opacity(0.33)), lineWidth: max(0.4, h * 0.014))
+        for i in 0..<3 {
+            let dot = CGRect(x: box.minX + h * (0.07 + CGFloat(i) * 0.10), y: box.minY + h * 0.06,
+                             width: h * 0.055, height: h * 0.055)
+            context.fill(Path(ellipseIn: dot), with: .color(.white.opacity(0.74)))
+        }
+        let slide = CGRect(x: box.minX + w * 0.065, y: box.minY + h * 0.31, width: w * 0.48, height: h * 0.53)
+        context.fill(Path(roundedRect: slide, cornerRadius: h * 0.04), with: .color(.white.opacity(0.28)))
+        for (i, lineWidth) in [0.29, 0.22, 0.25].enumerated() {
+            let bar = CGRect(x: box.minX + w * 0.61, y: box.minY + h * (0.36 + CGFloat(i) * 0.16),
+                             width: w * lineWidth, height: h * 0.045)
+            context.fill(Path(roundedRect: bar, cornerRadius: h * 0.02), with: .color(.white.opacity(0.56)))
+        }
+    }
+
+    private func drawCamera(in rect: CGRect, context: GraphicsContext) {
+        let purple = Color(nsColor: Theme.imageClip)
+        var tile = context
+        tile.clip(to: Path(rect))
+        tile.fill(Path(rect), with: .color(Color(nsColor: Theme.rowB)))
+        tile.fill(Path(rect), with: .linearGradient(Gradient(colors: [purple, purple.opacity(0.75)]),
+                  startPoint: rect.origin, endPoint: CGPoint(x: rect.maxX, y: rect.maxY)))
+        let scale = min(rect.width, rect.height)
+        let head = CGRect(x: rect.midX - scale * 0.13, y: rect.midY - scale * 0.28,
+                          width: scale * 0.26, height: scale * 0.29)
+        tile.fill(Path(ellipseIn: head), with: .color(.white.opacity(0.88)))
+        let shoulders = CGRect(x: rect.midX - scale * 0.28, y: rect.midY + scale * 0.05,
+                               width: scale * 0.56, height: scale * 0.39)
+        var silhouette = tile
+        silhouette.clip(to: Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width,
+                                    height: rect.height / 2 + scale * 0.23)))
+        silhouette.fill(Path(ellipseIn: shoulders), with: .color(.white.opacity(0.72)))
+        if scene.isPictureInPicture {
+            let line = max(0.7, scale * 0.022)
+            tile.stroke(Path(rect.insetBy(dx: line / 2, dy: line / 2)), with: .color(.white.opacity(0.72)), lineWidth: line)
+        }
+    }
+}
+
+private struct StudioSceneStrip: View {
+    @ObservedObject var rec: RecordController
+    var screenAspect: CGFloat = 16 / 9
+    var cameraAspect: CGFloat = 16 / 9
+    var compact = false
+    @FocusState private var focused: StudioScene?
+    private let scenes: [StudioScene] = [.screen, .camera, .pictureInPicture, .sideBySide]
+
+    var body: some View {
+        HStack(spacing: compact ? 4 : 6) {
+            ForEach(scenes, id: \.self) { scene in
+                let target = scene == .pictureInPicture ? rec.studioInsetScene : scene
+                let selected = target == rec.studioScene
+                let available = scene == .screen || rec.studioCameraAvailable
+                Button { rec.selectScene(target) } label: {
+                    VStack(spacing: compact ? 2 : 4) {
+                        StudioSchematic(scene: target, screenAspect: screenAspect, cameraAspect: cameraAspect)
+                            .equatable()
+                            .aspectRatio(16 / 9, contentMode: .fit)
+                            .frame(height: compact ? 18 : 27)
+                        Text(verbatim: L(scene.title)).font(.caption)
+                            .lineLimit(1).minimumScaleFactor(0.78)
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .padding(.vertical, compact ? 3 : 5)
+                    .background(selected ? Theme.inspectorSelection : Theme.inspectorInset,
+                                in: RoundedRectangle(cornerRadius: 6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6).strokeBorder(
+                            focused == scene ? Color.primary : (selected ? Theme.accentColor : Theme.inspectorBorder),
+                            lineWidth: focused == scene || selected ? 2 : 1)
+                    }
+                    .opacity(available ? 1 : 0.50)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focused($focused, equals: scene)
+                .disabled(!available)
+                .accessibilityLabel(Text(verbatim: L(scene.title)))
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("studio-scene-\(scene.rawValue)")
+            }
+        }
+        .onMoveCommand { direction in
+            guard rec.studioCameraAvailable, let focused, let current = scenes.firstIndex(of: focused) else { return }
+            let next: Int
+            switch direction {
+            case .left: next = current - 1
+            case .right: next = current + 1
+            default: return
+            }
+            guard scenes.indices.contains(next) else { return }
+            let scene = scenes[next]
+            self.focused = scene
+            rec.selectScene(scene == .pictureInPicture ? rec.studioInsetScene : scene)
+        }
+    }
+}
+
+private struct StudioCorners: View {
+    @ObservedObject var rec: RecordController
+
+    var body: some View {
+        HStack {
+            Label("작은 카메라 위치", systemImage: "pip").font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Picker("작은 카메라 위치", selection: Binding(get: { rec.studioInsetScene }, set: { rec.selectScene($0) })) {
+                Text("왼쪽 위").tag(StudioScene.pictureInPictureTopLeft)
+                Text("오른쪽 위").tag(StudioScene.pictureInPictureTopRight)
+                Text("왼쪽 아래").tag(StudioScene.pictureInPictureBottomLeft)
+                Text("오른쪽 아래").tag(StudioScene.pictureInPicture)
+            }
+            .labelsHidden().controlSize(.small).fixedSize()
+            .accessibilityIdentifier("studio-pip-corner")
+        }
+        .disabled(!rec.studioScene.isPictureInPicture || !rec.studioCameraAvailable)
+    }
+}
+
+struct StudioDestinationSetup: View {
+    @ObservedObject var rec: RecordController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $rec.liveEnabled) {
+                Label("실시간 송출", systemImage: "dot.radiowaves.left.and.right").font(.headline)
+            }
+            .toggleStyle(.switch)
+            .accessibilityIdentifier("studio-live-enabled")
             if rec.liveEnabled {
                 Picker("송출 방식", selection: $rec.useYouTubeAccount) {
                     Text("YouTube 계정").tag(true)
                     Text("스트림 키").tag(false)
                 }.labelsHidden().pickerStyle(.segmented)
-                if rec.useYouTubeAccount {
-                    YouTubeStudioSetup(rec: rec)
-                } else {
-                    manualDestination
-                }
+                if rec.useYouTubeAccount { YouTubeStudioSetup(rec: rec) } else { manualDestination }
+            } else {
+                Label("현재 설정으로는 이 Mac에만 녹화합니다.", systemImage: "internaldrive")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
         }
         .textFieldStyle(.roundedBorder)
-        .onAppear {
-            if !rec.useCamera || rec.cameras.isEmpty { rec.selectScene(.screen) }
-        }
     }
 
     @ViewBuilder private var manualDestination: some View {
@@ -39,13 +277,11 @@ struct StudioSetup: View {
         VStack(alignment: .leading, spacing: 3) {
             Text("서버 주소").font(.caption)
             TextField("rtmps://…", text: $rec.liveServer)
-                .accessibilityLabel(Text("서버 주소"))
-                .accessibilityIdentifier("studio-live-server")
+                .accessibilityLabel(Text("서버 주소")).accessibilityIdentifier("studio-live-server")
         }
         VStack(alignment: .leading, spacing: 3) {
             Text("스트림 키").font(.caption)
-            SecureField("스트림 키", text: $rec.liveKey)
-                .accessibilityIdentifier("studio-live-key")
+            SecureField("스트림 키", text: $rec.liveKey).accessibilityIdentifier("studio-live-key")
         }
         if !rec.liveServer.isEmpty && !rec.liveKey.isEmpty,
            (try? StudioProgram.destination(server: rec.liveServer, key: rec.liveKey)) == nil {
@@ -55,92 +291,15 @@ struct StudioSetup: View {
     }
 }
 
-private extension StudioScene {
-    var symbol: String {
-        switch self {
-        case .screen: return "display"
-        case .camera: return "person.crop.rectangle"
-        case .pictureInPicture, .pictureInPictureTopLeft, .pictureInPictureTopRight, .pictureInPictureBottomLeft:
-            return "pip"
-        case .sideBySide: return "rectangle.split.2x1"
-        }
-    }
-}
-
-private struct StudioCornerPicker: View {
-    @ObservedObject var rec: RecordController
-
-    var body: some View {
-        HStack {
-            Text("작은 카메라 위치").font(.caption)
-            Spacer()
-            Picker("작은 카메라 위치", selection: Binding(
-                get: { rec.studioInsetScene },
-                set: { rec.selectScene($0) }
-            )) {
-                Text("왼쪽 위").tag(StudioScene.pictureInPictureTopLeft)
-                Text("오른쪽 위").tag(StudioScene.pictureInPictureTopRight)
-                Text("왼쪽 아래").tag(StudioScene.pictureInPictureBottomLeft)
-                Text("오른쪽 아래").tag(StudioScene.pictureInPicture)
-            }
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityIdentifier("studio-pip-corner")
-        }
-        .disabled(!rec.studioScene.isPictureInPicture)
-    }
-}
-
-private struct StudioSceneButtons: View {
-    @ObservedObject var rec: RecordController
-
-    var body: some View {
-        ForEach([StudioScene.screen, .camera, .pictureInPicture, .sideBySide], id: \.self) { scene in
-            let target = scene == .pictureInPicture ? rec.studioInsetScene : scene
-            let selected = target == rec.studioScene
-            Button {
-                rec.selectScene(target)
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: scene.symbol)
-                        .font(.system(size: 17, weight: .medium))
-                    Text(L(scene.title)).font(.caption)
-                        .lineLimit(1).minimumScaleFactor(0.8)
-                }
-                .frame(maxWidth: .infinity, minHeight: 43)
-                .padding(.horizontal, 2)
-                .background(selected ? Color.accentColor.opacity(0.18) : .secondary.opacity(0.10),
-                            in: RoundedRectangle(cornerRadius: 6))
-                .overlay {
-                    if selected {
-                        RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor, lineWidth: 1.5)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(scene != .screen && (!rec.useCamera || rec.cameras.isEmpty))
-            .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityIdentifier("studio-scene-\(scene.rawValue)")
-        }
-    }
-}
-
-/// The panel uses the same composited frames as the stream, including scene changes.
 struct StudioMonitor: View {
     @ObservedObject var rec: RecordController
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 5) {
             HStack(spacing: 6) {
-                Image(systemName: "rectangle.on.rectangle")
-                Text("방송 스튜디오").fontWeight(.semibold)
+                Label("방송 스튜디오", systemImage: "rectangle.on.rectangle").fontWeight(.semibold)
                 Spacer(minLength: 4)
-                if rec.liveEnabled {
-                    Text(L(rec.liveStatus))
-                        .lineLimit(2).multilineTextAlignment(.trailing)
-                }
+                if rec.liveEnabled { Text(verbatim: L(rec.liveStatus)).lineLimit(2).multilineTextAlignment(.trailing) }
             }
             .font(.caption)
             if rec.liveEnabled && rec.useYouTubeAccount && !rec.youtubeStatus.isEmpty {
@@ -150,25 +309,24 @@ struct StudioMonitor: View {
             ZStack {
                 Color.black
                 if let frame = rec.studioPreview {
-                    Image(decorative: frame, scale: 1)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
+                    Image(decorative: frame, scale: 1).resizable().aspectRatio(contentMode: .fit)
                 } else {
-                    Text("영상 입력 대기 중")
-                        .font(.caption).foregroundStyle(.white.opacity(0.8))
+                    Text("영상 입력 대기 중").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .aspectRatio(16 / 9, contentMode: .fit)
-            .frame(height: rec.liveEnabled && rec.useYouTubeAccount ? 126 : 150)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .frame(height: rec.liveEnabled && rec.useYouTubeAccount ? 118 : 139)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("현재 장면 미리보기"))
-            VStack(spacing: 6) {
-                HStack(spacing: 5) { StudioSceneButtons(rec: rec) }
-                StudioCornerPicker(rec: rec)
+            .accessibilityValue(Text(verbatim: L(rec.studioScene.title)))
+            VStack(spacing: 4) {
+                StudioSceneStrip(rec: rec, compact: true)
+                if rec.studioCameraAvailable { StudioCorners(rec: rec) }
             }
             .disabled(rec.phase != .recording && rec.phase != .paused)
         }
-        .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(8).background(Theme.panelBG, in: RoundedRectangle(cornerRadius: 10))
+        .environment(\.colorScheme, .dark)
     }
 }

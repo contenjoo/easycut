@@ -182,6 +182,7 @@
 "1초 뒤로 / 앞으로" = "Back / forward 1s";
 "3840×2160 (가로 4K)" = "3840×2160 (landscape 4K)";
 "3초 뒤 녹화를 시작합니다. ⌥⌘. 단축키로 종료하고 편집기로 돌아갑니다." = "Recording begins after a 3-second countdown. Press ⌥⌘. to finish and return to the editor.";
+"3초 뒤 시작 · ⌥⌘. 녹화 종료" = "3-second countdown · ⌥⌘. to stop recording";
 "5초 뒤로 (⇧←)" = "Back 5s (⇧←)";
 "5초 뒤로 / 앞으로" = "Back / forward 5s";
 "5초 앞으로 (⇧→)" = "Forward 5s (⇧→)";
@@ -283,15 +284,13 @@
 "EasyCut 앱에 연결할 수 없습니다. 앱이 실행 중인지 확인하세요." = "Can't connect to EasyCut. Make sure the app is running.";
 "EasyCut 앱이 실행 중이 아닙니다. 앱을 먼저 여세요." = "EasyCut is not running. Open the app first.";
 "EasyCut 영상 편집 앱을 조작합니다. 앱이 실행 중이어야 합니다. 먼저 get_project_state로 상태를 확인하세요." = "Controls the EasyCut video editor. The app must be running. Check the state first with get_project_state.";
+"EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다." = "EasyCut reads your selected YouTube channel and broadcast list to schedule and stream broadcasts. The credentials that keep your account connected are stored in this Mac’s Keychain.";
 "EasyCut을 켜 둔 상태에서 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다." = "With EasyCut open, just say something like \"cut the silences in EasyCut\". The connection stays inside this Mac.";
 "EasyCut을 켜 둔 상태에서 Claude에게 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다." = "With EasyCut open, just tell Claude something like \"cut the silences in EasyCut\". The connection stays inside this Mac.";
 "Finder에서 보기" = "Show in Finder";
 "Google Cloud 열기" = "Open Google Cloud";
 "Google Cloud에서 YouTube Data API v3를 사용 설정하고 데스크톱 앱용 OAuth 클라이언트 JSON을 가져오세요." = "Enable YouTube Data API v3 in Google Cloud, then import your desktop app OAuth client JSON.";
 "Google로 연결" = "Connect with Google";
-"EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다." = "EasyCut reads your selected YouTube channel and broadcast list to schedule and stream broadcasts. The credentials that keep your account connected are stored in this Mac’s Keychain.";
-"YouTube 연동 개인정보처리방침" = "YouTube integration privacy policy";
-"YouTube 서비스 약관" = "YouTube Terms of Service";
 "In/Out 구간 지우기" = "Clear In/Out range";
 "In~Out 구간 삭제 (⌫)" = "Delete the In–Out range (⌫)";
 "Large v3 Turbo (추천, 정확·빠름)" = "Large v3 Turbo (recommended, accurate & fast)";
@@ -373,13 +372,18 @@
 "Whisper가 설치되어 있어요. 긴 영상은 Whisper가 훨씬 빠르고 정확합니다." = "Whisper is installed. For long videos Whisper is much faster and more accurate.";
 "Whisper로 바꾸기" = "Switch to Whisper";
 "YouTube 계정" = "YouTube account";
+"YouTube 계정 및 개인정보" = "YouTube account and privacy";
 "YouTube 계정 설정…" = "Set up YouTube account…";
+"YouTube 계정 연결 전" = "YouTube account disconnected";
+"YouTube 계정 연결됨" = "YouTube account connected";
 "YouTube 라이브 중" = "Live on YouTube";
 "YouTube 방송" = "YouTube broadcasts";
 "YouTube 방송 상태 확인 지연" = "YouTube status update delayed";
 "YouTube 방송 시작 대기 중" = "Waiting for the YouTube broadcast to start";
 "YouTube 방송 종료됨" = "YouTube broadcast ended";
 "YouTube 방송 준비 중…" = "Preparing YouTube broadcast…";
+"YouTube 서비스 약관" = "YouTube Terms of Service";
+"YouTube 연동 개인정보처리방침" = "YouTube integration privacy policy";
 "YouTube에서 송출 수신을 기다리고 있습니다" = "Waiting for YouTube to receive the stream";
 "console.anthropic.com 에서 키를 만든 뒤 아래에 붙여 넣으세요. 키는 이 Mac의 키체인에만 저장됩니다." = "Create a key at console.anthropic.com and paste it below. The key is stored only in this Mac's Keychain.";
 "github.com/yt-dlp 공식 배포본(약 35MB)을 받아 앱 전용 폴더에 설치합니다" = "Downloads the official release from github.com/yt-dlp (about 35MB) into the app's own folder";
@@ -405,6 +409,7 @@
 "강조" = "Emphasis";
 "강조 색" = "Highlight color";
 "개인정보 가리기" = "Hide personal info";
+"개인정보처리방침" = "Privacy policy";
 "검색 지우기" = "Clear search";
 "검색한 글꼴이 없습니다" = "No matching fonts";
 "검은 상자" = "Black box";
@@ -524,6 +529,8 @@
 "녹화 파일을 저장하지 못했습니다: %lf" = "Couldn't save the recording: %lf";
 "녹화 파일을 저장하지 못했습니다: %lld" = "Couldn't save the recording: %lld";
 "녹화 파일을 저장한 뒤 업데이트를 다시 실행하세요." = "After the recording finishes saving, run the update again.";
+"녹화 폴더 열기" = "Open recordings folder";
+"녹화 후 편집 옵션" = "Editing options";
 "녹화가 시작되지 않았습니다." = "Recording didn't start.";
 "녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)" = "Added the recording (screen → Track 1, face → Track 2)";
 "녹화를 마친 뒤 EasyCut을 종료하세요." = "Finish recording before quitting EasyCut.";
@@ -612,6 +619,7 @@
 "로그인을 마치지 못했습니다. 다시 눌러 주세요." = "Login did not finish. Please click again.";
 "로그인을 취소했습니다." = "Login cancelled.";
 "로그인하기" = "Log In";
+"로컬 녹화" = "Local recording";
 "리플 삭제" = "Ripple delete";
 "링크" = "Link";
 "링크 영상" = "Link video";
@@ -700,9 +708,12 @@
 "방송 관리" = "Manage broadcasts";
 "방송 만들기" = "Create broadcast";
 "방송 목록을 불러오는 중…" = "Loading broadcasts…";
+"방송 목록을 불러올 수 없습니다" = "Couldn’t load broadcasts";
 "방송 선택·예약…" = "Choose or schedule a broadcast…";
 "방송 스튜디오" = "Studio";
 "방송 시각" = "Broadcast time";
+"방송 일정" = "Broadcast Schedule";
+"방송 일정…" = "Broadcast schedule…";
 "방송 제목" = "Broadcast title";
 "방송 채널에서 받은 서버 주소와 스트림 키를 입력하세요." = "Enter the server address and stream key from your streaming service.";
 "방송을 만든 뒤 스튜디오에서 ‘녹화 및 라이브 시작’을 누르세요." = "After creating the broadcast, choose “Record and go live” in the studio.";
@@ -713,6 +724,7 @@
 "배경" = "Background";
 "배경색" = "Background color";
 "배치" = "Layout";
+"배치 미리보기" = "Layout preview";
 "버리기" = "Discard";
 "버튼 하나로 로그인하면 끝입니다. 필요한 프로그램 설치와 연결은 앱이 알아서 합니다." = "One click to log in is all it takes. The app installs and connects everything it needs.";
 "변형" = "Transform";
@@ -769,6 +781,7 @@
 "새 버전이 나왔습니다: EasyCut %@" = "A new version is available: EasyCut %@";
 "새 버전이 나왔습니다: EasyCut %lf" = "A new version is available: EasyCut %lf";
 "새 버전이 나왔습니다: EasyCut %lld" = "A new version is available: EasyCut %lld";
+"새 예약" = "New scheduled broadcast";
 "새 자막" = "New caption";
 "새 프로젝트" = "New Project";
 "새 프로젝트.easycut" = "New Project.easycut";
@@ -793,6 +806,7 @@
 "선택 삭제 후 빈틈 메우기 (⌘⌫)" = "Delete selection and close gap (⌘⌫)";
 "선택 클립 삭제 (구간이 있으면 구간 잘라내기)" = "Delete selected clips (or cut the range if set)";
 "선택 해제" = "Deselect";
+"선택됨" = "Selected";
 "선택하세요" = "Choose an option";
 "선택한 %@개 단어를 영상에서 잘라내기  (⌫)" = "Cut the %@ selected words from the video  (⌫)";
 "선택한 %lf개 단어를 영상에서 잘라내기  (⌫)" = "Cut the %lf selected words from the video  (⌫)";
@@ -832,6 +846,9 @@
 "속도 변경" = "Change speed";
 "속도를 바꿀 클립을 선택하세요" = "Select clips to change speed";
 "송출 방식" = "Broadcast destination";
+"송출 설정" = "Broadcast output";
+"송출 설정에서 계정과 방송을 선택하세요." = "Choose a channel and broadcast in Broadcast output.";
+"송출 설정에서 서버 주소와 스트림 키를 확인하세요." = "Check the server and stream key in Broadcast output.";
 "송출 연결 중" = "Connecting to stream";
 "송출 연결을 확인하세요. 로컬 녹화는 계속됩니다." = "Check the stream connection. Recording continues.";
 "송출이 지연되어 중단했습니다. 로컬 녹화는 계속됩니다." = "Streaming stopped after a delay. Recording continues.";
@@ -843,6 +860,7 @@
 "스냅 끔" = "Snap off";
 "스냅 켬" = "Snap on";
 "스냅(자석) 켜기/끄기" = "Snap (magnet) on/off";
+"스튜디오 설정" = "Studio settings";
 "스트림 키" = "Stream key";
 "스페인어" = "Spanish";
 "시간 구간 선택 → ⌫ 잘라내기 (⌥+끌기 = 재생헤드만 이동)" = "Select a time range → ⌫ to cut (⌥+drag = move the playhead only)";
@@ -972,6 +990,7 @@
 "영상 변환 중 (소프트웨어)…" = "Converting video (software)…";
 "영상 변환 중…" = "Converting video…";
 "영상 생성 · Canvas / Remotion" = "Generate Video · Canvas / Remotion";
+"영상 입력" = "Video sources";
 "영상 입력 대기 중" = "Waiting for video";
 "영상 필터" = "Video filters";
 "영상, 오디오, 사진 파일을 선택하세요" = "Choose video, audio or photo files";
@@ -992,6 +1011,7 @@
 "예, 아동용입니다" = "Yes, it’s made for kids";
 "예약 만들기" = "Schedule broadcast";
 "예약된 방송" = "Upcoming broadcasts";
+"예약된 방송이 없습니다" = "No broadcasts scheduled";
 "예약은 YouTube에 저장됩니다. 방송 시각에 스튜디오에서 직접 라이브를 시작하세요." = "This saves the schedule on YouTube. Start the stream in the studio at the scheduled time.";
 "오디오" = "Audio";
 "오디오 분석 실패: %@ — %@" = "Audio analysis failed: %@ — %@";
@@ -1006,6 +1026,7 @@
 "오디오 읽기 실패: %@" = "Failed to read audio: %@";
 "오디오 읽기 실패: %lf" = "Failed to read audio: %lf";
 "오디오 읽기 실패: %lld" = "Failed to read audio: %lld";
+"오디오 입력" = "Audio sources";
 "오디오 추출 중…" = "Extracting audio…";
 "오디오 클립에는 화면 배치가 없습니다." = "Audio clips have no visual layout.";
 "오디오 트랙이 없습니다." = "No audio track.";
@@ -1130,6 +1151,8 @@
 "일시정지" = "Paused";
 "일시정지 (⌥⌘P)" = "Pause (⌥⌘P)";
 "입력 장치" = "Capture sources";
+"입력 장치에서 녹화할 영역을 고르세요." = "Choose a recording area in Inputs.";
+"입력에서 카메라를 켜면 카메라 장면을 선택할 수 있습니다." = "Turn on the camera under Inputs to use camera scenes.";
 "자동" = "Auto";
 "자동 (모델 기본)" = "Auto (model default)";
 "자동 저장" = "Auto Save";
@@ -1267,6 +1290,7 @@
 "찾을 수 없는 파일: %lf" = "File not found: %lf";
 "찾을 수 없는 파일: %lld" = "File not found: %lld";
 "채널 회원 전용 영상입니다." = "This video is for channel members only.";
+"처리 중" = "Working";
 "처음 / 끝" = "Start / end";
 "처음 10초 잘라내고 나머지는 1.5배속" = "Cut the first 10 seconds, rest at 1.5×";
 "처음 사용할 렌더링 도구를 준비하는 중…" = "Preparing the rendering tools for first use…";
@@ -1318,6 +1342,7 @@
 "카메라·마이크를 켜지 못했습니다: %@" = "Couldn't turn on the camera/microphone: %@";
 "카메라·마이크를 켜지 못했습니다: %lf" = "Couldn't turn on the camera/microphone: %lf";
 "카메라·마이크를 켜지 못했습니다: %lld" = "Couldn't turn on the camera/microphone: %lld";
+"카메라를 연결하면 카메라 장면을 선택할 수 있습니다." = "Connect a camera to use camera scenes.";
 "카메라를 찾지 못했습니다" = "No camera found";
 "카메라만" = "Camera only";
 "컴퓨터 소리 (별도 트랙)" = "Computer audio (separate track)";
@@ -1430,6 +1455,7 @@
 "합칠 수 있는 클립이 없습니다 (같은 트랙에서 이웃한 클립을 선택하세요)" = "Nothing to join (select neighboring clips on the same track)";
 "합칠 클립을 2개 이상 선택하세요" = "Select 2 or more clips to join";
 "해상도" = "Resolution";
+"현재 설정으로는 이 Mac에만 녹화합니다." = "Your recording will be saved on this Mac.";
 "현재 장면 PNG 저장" = "Save current frame as PNG";
 "현재 장면 PNG로 저장…" = "Save Current Frame as PNG…";
 "현재 장면 미리보기" = "Current scene preview";

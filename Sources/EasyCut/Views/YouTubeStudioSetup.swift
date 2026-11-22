@@ -48,7 +48,7 @@ struct YouTubeStudioSetup: View {
             } else if account.isConnected {
                 Text("방송할 예약을 선택하거나 새 방송을 만드세요.").font(.caption).foregroundStyle(.secondary)
             }
-            Button(L(account.isConnected ? "방송 선택·예약…" : "YouTube 계정 설정…")) { managing = true }
+            Button(L(account.isConnected ? "방송 일정…" : "YouTube 계정 설정…")) { managing = true }
                 .accessibilityIdentifier("studio-youtube-manage")
         }
         .onChange(of: account.isConnected, initial: true) { _, connected in
@@ -61,7 +61,7 @@ struct YouTubeStudioSetup: View {
     }
 }
 
-private struct YouTubeBroadcastManager: View {
+struct YouTubeBroadcastManager: View {
     @ObservedObject var rec: RecordController
     @ObservedObject private var account = YouTubeAccount.shared
     @ObservedObject private var service = YouTubeLiveService.shared
@@ -79,54 +79,92 @@ private struct YouTubeBroadcastManager: View {
     @State private var confirmDisconnect = false
     @State private var importing = false
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var scheduleTint: Color {
+        colorScheme == .dark ? Theme.accentColor : Color(nsColor: Theme.videoClip)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("YouTube 방송").font(.title2.bold())
-                Spacer()
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(scheduleTint)
+                    .frame(width: 48, height: 48)
+                    .background(scheduleTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("방송 일정").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    if account.isConnected, let channel = service.channelTitle {
+                        YouTubeChannelLabel(title: channel)
+                    } else {
+                        Text(verbatim: L(account.isConnected ? "YouTube 계정 연결됨" : "YouTube 계정 연결 전"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
                 if account.isConnected {
                     Button("계정 연결 해제") { confirmDisconnect = true }
                         .controlSize(.small).disabled(loading)
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다.")
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 14) {
-                    Link("YouTube 연동 개인정보처리방침", destination: URL(string: "https://learntoday.kr/easycut/youtube-privacy")!)
-                        .accessibilityIdentifier("studio-youtube-privacy")
-                    Link("YouTube 서비스 약관", destination: URL(string: "https://www.youtube.com/t/terms")!)
+            .padding(.horizontal, 22).padding(.vertical, 16)
+
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if account.isConnected {
+                        Picker("방송 관리", selection: $creating) {
+                            Text("예약된 방송").tag(false)
+                            Text("새 방송").tag(true)
+                        }
+                        .labelsHidden().pickerStyle(.segmented).disabled(loading)
+                        if creating { creationForm } else { eventList }
+                        accountPrivacy
+                    } else {
+                        accountPrivacy
+                        connectionForm
+                    }
                 }
+                .padding(.horizontal, 22).padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.callout)
-            if account.isConnected {
-                if let channel = service.channelTitle { YouTubeChannelLabel(title: channel) }
-                Picker("방송 관리", selection: $creating) {
-                    Text("예약된 방송").tag(false)
-                    Text("새 방송").tag(true)
-                }.labelsHidden().pickerStyle(.segmented).disabled(loading)
-                if creating { creationForm } else { eventList }
-            } else {
-                connectionForm
-            }
+
+            Divider()
             if !error.isEmpty {
-                Text(verbatim: error).font(.callout).foregroundStyle(.red)
-                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                Label {
+                    Text(verbatim: error).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.callout).foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 22).padding(.top, 8)
             }
-            HStack {
-                if loading || account.connecting { ProgressView().controlSize(.small) }
+            HStack(spacing: 10) {
+                if account.isConnected {
+                    privacyLink.font(.callout)
+                }
+                if loading || account.connecting {
+                    ProgressView().controlSize(.small).accessibilityLabel(Text("처리 중"))
+                }
                 Spacer()
                 Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction).disabled(loading)
                 if account.isConnected && creating {
                     Button(L(later ? "예약 만들기" : "방송 만들기")) {
                         if privacy == "private" { create() } else { confirmCreate = true }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(loading || !validDraft)
+                    .buttonStyle(.borderedProminent).disabled(loading || !validDraft)
                 }
             }
+            .padding(.horizontal, 22).padding(.vertical, 12)
         }
-        .padding(20).frame(width: 495)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(minWidth: 400, idealWidth: 540, maxWidth: 620,
+               minHeight: 280, idealHeight: account.isConnected ? 520 : 385, maxHeight: 640)
+        .tint(scheduleTint)
         .interactiveDismissDisabled(loading)
         .onAppear { if account.isConnected { refresh() } }
         .onChange(of: account.isConnected) { _, connected in
@@ -161,8 +199,34 @@ private struct YouTubeBroadcastManager: View {
         }
     }
 
+    private var accountPrivacy: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("YouTube 계정 및 개인정보", systemImage: "lock.shield")
+                .font(.subheadline.weight(.semibold)).accessibilityAddTraits(.isHeader)
+            Text("EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 14) {
+                if !account.isConnected { privacyLink }
+                Link("YouTube 서비스 약관", destination: URL(string: "https://www.youtube.com/t/terms")!)
+            }
+            .font(.callout)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.inspectorInset, in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private var privacyLink: some View {
+        Link(destination: URL(string: "https://learntoday.kr/easycut/youtube-privacy")!) {
+            Text(verbatim: L(account.isConnected ? "개인정보처리방침" : "YouTube 연동 개인정보처리방침"))
+        }
+        .accessibilityLabel(Text("YouTube 연동 개인정보처리방침"))
+        .accessibilityIdentifier("studio-youtube-privacy")
+    }
+
     private var connectionForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if !account.hasClient {
                 Text("Google Cloud에서 YouTube Data API v3를 사용 설정하고 데스크톱 앱용 OAuth 클라이언트 JSON을 가져오세요.")
                     .fixedSize(horizontal: false, vertical: true)
@@ -172,75 +236,167 @@ private struct YouTubeBroadcastManager: View {
                 }
             } else {
                 Text("방송할 YouTube 채널의 Google 계정으로 연결하세요.")
-                Button("Google로 연결") {
-                    perform {
-                        try await account.connect()
-                        try await loadEvents()
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    Button("Google로 연결") {
+                        perform {
+                            try await account.connect()
+                            try await loadEvents()
+                        }
                     }
-                }.buttonStyle(.borderedProminent).disabled(loading || account.connecting)
-                if !account.connecting { Button("OAuth 설정 변경…") { importing = true }.controlSize(.small).disabled(loading) }
+                    .buttonStyle(.borderedProminent).disabled(loading || account.connecting)
+                    if !account.connecting {
+                        Button("OAuth 설정 변경…") { importing = true }.controlSize(.small).disabled(loading)
+                    }
+                }
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 10)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var eventList: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("이 Mac의 EasyCut에서 만든 방송").font(.headline)
+                Text("이 Mac의 EasyCut에서 만든 방송").font(.headline).accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("새로고침") { refresh() }.controlSize(.small).disabled(loading)
+                Button { refresh() } label: {
+                    Label("새로고침", systemImage: "arrow.clockwise")
+                }
+                .controlSize(.small)
             }
             if events.isEmpty {
-                Text(verbatim: L(loading ? "방송 목록을 불러오는 중…" : "선택할 방송이 없습니다."))
-                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 112)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(events, id: \.id) { event in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(verbatim: event.title).lineLimit(2)
-                                    Text(verbatim: "\(event.privacyLabel) · \(event.scheduleLabel)")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button("선택") { rec.youtubeEvent = event; dismiss() }
-                                    .accessibilityLabel(Text(verbatim: "\(event.title) · \(L("선택"))"))
-                            }.padding(.vertical, 7)
-                            Divider()
+                VStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .font(.title2).foregroundStyle(scheduleTint).accessibilityHidden(true)
+                    Text(verbatim: emptyListMessage)
+                        .font(.subheadline.weight(.medium))
+                    if !loading {
+                        Button {
+                            later = true
+                            if startDate <= Date() { startDate = Date().addingTimeInterval(3600) }
+                            creating = true
+                        } label: {
+                            Label("새 예약", systemImage: "plus")
                         }
+                        .buttonStyle(.bordered)
                     }
-                }.frame(maxHeight: 228)
+                }
+                .padding(14).frame(maxWidth: .infinity)
+                .background(Theme.inspectorCard, in: RoundedRectangle(cornerRadius: 10))
+            } else {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(events) { event in
+                        scheduleRow(event)
+                    }
+                }
             }
-        }.disabled(!account.isConnected || loading)
+        }
+        .disabled(!account.isConnected || loading)
+    }
+
+    private var emptyListMessage: String {
+        if loading { return L("방송 목록을 불러오는 중…") }
+        return L(error.isEmpty ? "예약된 방송이 없습니다" : "방송 목록을 불러올 수 없습니다")
+    }
+
+    private func scheduleRow(_ event: YouTubeEvent) -> some View {
+        let selected = rec.youtubeEvent?.id == event.id
+        return HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                Text(event.date, format: .dateTime.month(.abbreviated)).font(.caption.weight(.semibold))
+                Text(event.date, format: .dateTime.day()).font(.title3.bold()).monospacedDigit()
+            }
+            .foregroundStyle(scheduleTint).frame(width: 45, height: 45)
+            .background(scheduleTint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: event.title).font(.body.weight(.semibold))
+                    .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    Label {
+                        if Calendar.current.isDate(event.date, equalTo: Date(), toGranularity: .year) {
+                            Text(event.date, format: .dateTime.weekday(.abbreviated).hour().minute())
+                        } else {
+                            Text(verbatim: event.scheduleLabel)
+                        }
+                    } icon: { Image(systemName: "clock") }
+                    Label {
+                        Text(verbatim: event.privacyLabel)
+                    } icon: {
+                        Image(systemName: privacySymbol(event.privacy))
+                    }
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "\(event.title), \(event.scheduleLabel), \(event.privacyLabel)"))
+            Button(selected ? L("선택됨") : L("선택")) {
+                rec.youtubeEvent = event
+                dismiss()
+            }
+            .controlSize(.small)
+            .accessibilityLabel(Text(verbatim: "\(event.title) · \(selected ? L("선택됨") : L("선택"))"))
+        }
+        .padding(9)
+        .background(selected ? Theme.inspectorSelection : Theme.inspectorCard, in: RoundedRectangle(cornerRadius: 9))
+        .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? scheduleTint : Theme.inspectorBorder) }
+    }
+
+    private func privacySymbol(_ value: String) -> String {
+        switch value {
+        case "private": return "lock"
+        case "unlisted": return "link"
+        case "public": return "globe"
+        default: return "questionmark.circle"
+        }
     }
 
     private var creationForm: some View {
-        Form {
-            TextField("방송 제목", text: $title)
-            if !title.isEmpty && !validTitle {
-                Text("100자 이하로 입력하고 <와 >는 빼 주세요.").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("방송 제목").font(.subheadline.weight(.semibold))
+                TextField("방송 제목", text: $title).textFieldStyle(.roundedBorder)
+                if !title.isEmpty && !validTitle {
+                    Text("100자 이하로 입력하고 <와 >는 빼 주세요.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
-            Picker("방송 시각", selection: $later) {
-                Text("지금 준비").tag(false)
-                Text("날짜 지정").tag(true)
-            }.pickerStyle(.segmented)
-            if later {
-                DatePicker("시작 예정", selection: $startDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-            }
-            Picker("공개 범위", selection: $privacy) {
-                Text("비공개").tag("private")
-                Text("일부 공개").tag("unlisted")
-                Text("공개").tag("public")
-            }
-            Picker("아동용 콘텐츠", selection: $kids) {
-                Text("선택하세요").tag(nil as Bool?)
-                Text("예, 아동용입니다").tag(true as Bool?)
-                Text("아니요, 아동용이 아닙니다").tag(false as Bool?)
+
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 11) {
+                GridRow {
+                    Text("방송 시각")
+                    Picker("방송 시각", selection: $later) {
+                        Text("지금 준비").tag(false)
+                        Text("날짜 지정").tag(true)
+                    }.labelsHidden().pickerStyle(.segmented)
+                }
+                if later {
+                    GridRow {
+                        Text("시작 예정")
+                        DatePicker("시작 예정", selection: $startDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                            .labelsHidden()
+                    }
+                }
+                GridRow {
+                    Text("공개 범위")
+                    Picker("공개 범위", selection: $privacy) {
+                        Text("비공개").tag("private")
+                        Text("일부 공개").tag("unlisted")
+                        Text("공개").tag("public")
+                    }.labelsHidden()
+                }
+                GridRow {
+                    Text("아동용 콘텐츠")
+                    Picker("아동용 콘텐츠", selection: $kids) {
+                        Text("선택하세요").tag(nil as Bool?)
+                        Text("예, 아동용입니다").tag(true as Bool?)
+                        Text("아니요, 아동용이 아닙니다").tag(false as Bool?)
+                    }.labelsHidden()
+                }
             }
             Text(verbatim: L(later ? "예약은 YouTube에 저장됩니다. 방송 시각에 스튜디오에서 직접 라이브를 시작하세요." :
                     "방송을 만든 뒤 스튜디오에서 ‘녹화 및 라이브 시작’을 누르세요."))
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.disabled(loading)
     }
 
