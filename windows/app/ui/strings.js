@@ -1,6 +1,9 @@
 // 영어 문구표: 한국어 원문 → 영어. 맥 앱 LocTable.swift를 바탕으로, 윈도우에만 있는 문구를 더했다.
 // 새 한국어 문구를 L("…")로 쓰면 여기에 영어를 추가한다.
 window.EN = {
+  "선택한 YouTube 방송을 지금 시작할까요?": "Start this YouTube broadcast now?",
+  "선택한 공개 범위로 YouTube 방송을 만들까요?": "Create this YouTube broadcast with the selected visibility?",
+  "이 PC의 YouTube 계정 연결을 해제할까요?": "Disconnect the YouTube account on this PC?",
   "Google 계정으로 연결": "Connect with Google",
   "RTMP 또는 RTMPS 서버 주소와 스트림 키를 확인하세요.": "Check the RTMP or RTMPS server address and stream key.",
   "YouTube 계정 연결됨": "YouTube account connected",

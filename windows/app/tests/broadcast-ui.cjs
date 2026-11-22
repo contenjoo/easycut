@@ -10,7 +10,9 @@ function fixture() {
   let connected = false, scheduled = [], attemptEnd = 0;
   const calls = window.calls = [];
   const account = () => ({ configured:true, connected, channelTitle:connected ? "테스트 채널" : null });
+  window.confirmations = [];
   window.__TAURI__ = {
+    dialog:{ask: async details => {window.confirmations.push(details); return !window.declineReview;}},
     core: { invoke: async (name,args) => {
       if (["studio_live_chunk","rec_chunk"].includes(name)) return true;
       calls.push({name,args});
@@ -78,6 +80,13 @@ function fixture() {
     assert.match(await $("#notice").innerText(),/예약 일시/);
     assert.equal(await page.evaluate(()=>calls.filter(c=>c.name==="youtube_schedule").length),0);
     await $("#schedule-time").fill("2099-05-20T15:30");
+    await $("#privacy").selectOption("public");
+    await page.evaluate(()=>{window.declineReview=true;});
+    await $("#schedule").click();
+    assert.equal(await page.evaluate(()=>calls.filter(c=>c.name==="youtube_schedule").length),0);
+    assert.match(await page.evaluate(()=>window.confirmations.at(-1)),/공개/);
+    await $("#privacy").selectOption("private");
+    await page.evaluate(()=>{window.declineReview=false;});
     await $("#schedule").click();
     await $("#existing-fields").waitFor({state:"visible"});
     assert.equal(await $("#broadcasts").inputValue(),"scheduled-0");
@@ -86,6 +95,10 @@ function fixture() {
     await $("#camera").check();
     await $("#prepare").click();
     await page.waitForSelector("body[data-phase=ready]");
+    await page.evaluate(()=>{window.declineReview=true;});
+    await $("#go").click(); await page.waitForSelector("body[data-phase=ready]");
+    assert.equal(await page.evaluate(()=>calls.filter(c=>c.name==="rec_begin").length),0);
+    await page.evaluate(()=>{window.declineReview=false;});
     await $("#go").click();
     await page.waitForSelector("body[data-phase=recording]");
     assert.equal(await page.evaluate(()=>calls.filter(c=>c.name==="youtube_schedule").length),1);

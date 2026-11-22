@@ -234,6 +234,9 @@ async function start() {
   phase = "starting"; refresh(); rawError = ""; liveFailed = false;
   writers = []; cuts = []; liveWrites = Promise.resolve();
   try {
+    if (output() === "youtube" && !await youtube.approveStart()) {
+      phase = "ready"; refresh(); return;
+    }
     const display = sources.screen.srcObject;
     writers.push(makeWriter("screen",new MediaStream([...display.getVideoTracks(),...(sources.mic?.getAudioTracks() || [])])));
     if (sources.camera) writers.push(makeWriter("camera",sources.camera.srcObject));

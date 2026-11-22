@@ -5,6 +5,11 @@ export function mountYouTube(invoke, refresh) {
   const setNotice = s => { $("notice").textContent = s; };
   const selected = () => broadcasts.find(item => item.id === $("broadcasts").value);
   const privacyName = value => L(({private:"비공개",unlisted:"일부 공개",public:"공개"})[value] || value);
+  function review(item, prompt) {
+    const when = item.scheduledAt ? new Date(item.scheduledAt).toLocaleString(document.documentElement.lang) : "";
+    const details = [account.channelTitle,item.title,privacyName(item.privacy),when].filter(Boolean).join(" · ");
+    return window.__TAURI__.dialog.ask(details,{title:L(prompt),kind:"warning"});
+  }
   function drawOptions(id) {
     const list = $("broadcasts");
     list.replaceChildren();
@@ -53,6 +58,7 @@ export function mountYouTube(invoke, refresh) {
   }
   $("connect").onclick = () => task(async () => { account = await invoke("youtube_connect"); });
   $("disconnect").onclick = () => task(async () => {
+    if (!await window.__TAURI__.dialog.ask(account.channelTitle || L("YouTube 계정 연결됨"),{title:L("이 PC의 YouTube 계정 연결을 해제할까요?"),kind:"warning"})) return;
     await invoke("youtube_disconnect"); await syncAccount();
   });
   $("broadcast-mode").onchange = () => {
@@ -61,7 +67,9 @@ export function mountYouTube(invoke, refresh) {
   };
   $("reload").onclick = () => task(() => load($("broadcasts").value));
   $("schedule").onclick = () => task(async () => {
-    const item = await invoke("youtube_schedule",validateNew(true));
+    const draft = validateNew(true);
+    if (draft.privacy !== "private" && !await review(draft,"선택한 공개 범위로 YouTube 방송을 만들까요?")) return;
+    const item = await invoke("youtube_schedule",draft);
     remember(item); setNotice(L("예약했습니다. {}",item.title));
   });
   return {
@@ -96,6 +104,11 @@ export function mountYouTube(invoke, refresh) {
         case "existing": if (!selected()) throw Error(L("송출할 예약 방송을 선택하세요.")); break;
         default: validateNew(false);
       }
+    },
+    async approveStart() {
+      const item = $("broadcast-mode").value === "now" ? validateNew(false) : selected();
+      if (item.privacy === "private" && (!item.scheduledAt || Date.parse(item.scheduledAt)-Date.now() <= 60000)) return true;
+      return review(item,"선택한 YouTube 방송을 지금 시작할까요?");
     },
     async start() {
       let item = selected();
