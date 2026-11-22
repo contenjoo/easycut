@@ -45,6 +45,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     /// 카메라 미리보기용 (녹화 중 떠 있는 작은 창에 쓴다)
     let session = AVCaptureSession()
     var onError: ((String) -> Void)?
+    /// 카메라·마이크가 끊기거나 다른 앱이 가져갔을 때 (녹화는 계속, 화면에 경고)
+    var onDeviceWarning: ((String) -> Void)?
+    private var deviceObservers: [NSObjectProtocol] = []
 
     private let queue = DispatchQueue(label: "easycut.recorder")
     private let options: Options
@@ -231,6 +234,35 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         }
         session.commitConfiguration()
         session.startRunning()
+        observeDevices()
+    }
+
+    private func observeDevices() {
+        guard deviceObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        let warn: (String) -> Void = { [weak self] msg in DispatchQueue.main.async { self?.onDeviceWarning?(msg) } }
+        deviceObservers.append(center.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: nil, queue: nil) { [weak self] note in
+            guard let self, let device = note.object as? AVCaptureDevice else { return }
+            if device == self.options.camera { warn("카메라 연결이 끊겼습니다. 다시 연결하거나 녹화를 정지하세요.") }
+            if device == self.options.microphone { warn("마이크 연결이 끊겼습니다. 지금부터 목소리가 녹음되지 않습니다.") }
+        })
+        deviceObservers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { _ in
+            warn("다른 앱이 카메라나 마이크를 쓰고 있어 입력이 멈췄습니다.")
+        })
+        deviceObservers.append(center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: nil) { _ in
+            warn("")
+        })
+        deviceObservers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak self] note in
+            let err = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
+            warn("카메라·마이크 오류: " + (err?.localizedDescription ?? ""))
+            // 가능하면 장치를 다시 켠다
+            self?.queue.async { if let s = self?.session, !s.isRunning { s.startRunning() } }
+        })
+    }
+
+    private func stopObservingDevices() {
+        deviceObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        deviceObservers.removeAll()
     }
 
     /// 지금이 녹화 파일의 몇 초인지 (멈춤 중이거나 녹화 전후면 nil)
@@ -280,6 +312,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         try? await stream?.stopCapture()
         stream = nil
         if session.isRunning { session.stopRunning() }
+        stopObservingDevices()
 
         // 큐에 남은 버퍼를 마저 쓴 뒤 닫는다
         let (sw, cw) = queue.sync { (screenWriter, camWriter) }
@@ -347,6 +380,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         try? await stream?.stopCapture()
         stream = nil
         if session.isRunning { session.stopRunning() }
+        stopObservingDevices()
         queue.sync {
             for writer in [screenWriter, camWriter, sysWriter].compactMap({ $0 }) where writer.status == .writing || writer.status == .unknown { writer.cancelWriting() }
         }

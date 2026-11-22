@@ -874,7 +874,13 @@ final class EditorStore: ObservableObject {
                 self.showToast("\(asset.name): \(words.count)개 단어 인식 완료")
                 if self.spokenEditEnabled && !NaturalEdit.commands(self.project.timelineWords()).isEmpty { self.showNaturalEdit = true }
                 // 자막이 비어 있으면 자동 생성
-                if self.project.captions.isEmpty && !words.isEmpty { self.generateCaptions(confirm: false) }
+                if self.project.captions.isEmpty && !words.isEmpty {
+                    if SpeechCheck.looksRepetitive(words.map(\.text)) {
+                        self.showToast("같은 말이 반복돼 인식이 의심스러워 자막을 자동으로 만들지 않았습니다")
+                    } else {
+                        self.generateCaptions(confirm: false)
+                    }
+                }
             } catch {
                 guard let self else { return }
                 self.transcribing[assetID] = nil

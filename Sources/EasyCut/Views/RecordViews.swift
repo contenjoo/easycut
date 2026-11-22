@@ -247,6 +247,7 @@ struct RecordSheet: View {
                 Text("녹화할 수 있는 창이 없습니다").foregroundStyle(.secondary)
             } else {
                 Picker("창", selection: $rec.windowID) {
+                    Text("녹화할 창을 고르세요").tag(CGWindowID(0))
                     ForEach(rec.windows, id: \.windowID) { Text(RecordController.windowLabel($0)).lineLimit(1).tag($0.windowID) }
                 }
             }
@@ -336,6 +337,12 @@ struct RecordPanelView: View {
                     .frame(width: 150, height: 150)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 2))
+            }
+            if !controller.studioMode, !controller.deviceWarning.isEmpty {
+                Label(L(controller.deviceWarning), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.black.opacity(0.78), in: Capsule())
             }
             HStack(spacing: 10) {
                 switch controller.phase {

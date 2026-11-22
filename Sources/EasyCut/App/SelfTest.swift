@@ -53,6 +53,16 @@ enum SelfTest {
         try? Data("자동 저장 1".utf8).write(to: url)
         store.backupBeforeFirstAutosave(url)
         check((try? String(contentsOf: bak, encoding: .utf8)) == "원본", "같은 실행에서 두 번째 자동 저장은 백업을 덮어쓰지 않음")
+        print("▶ 말소리 판별")
+        let tone = [Float](repeating: 0.2, count: 200)
+        check(!SpeechCheck.judge(frameRMS: tone).likelySpeech, "일정한 시험음은 말소리 아님")
+        check(!SpeechCheck.judge(frameRMS: [Float](repeating: 0, count: 200)).likelySpeech, "무음은 말소리 아님")
+        let talk = (0..<200).map { i -> Float in i % 7 == 0 ? 0.002 : [0.02, 0.15, 0.06, 0.3, 0.01][i % 5] }
+        check(SpeechCheck.judge(frameRMS: talk).likelySpeech, "크기가 오르내리는 소리는 말소리")
+        let repeated = Array(repeating: ["이", "녀석이", "너무", "잘", "안", "돼"], count: 4).flatMap { $0 }
+        check(SpeechCheck.looksRepetitive(repeated), "같은 문장 반복은 의심스러운 인식")
+        check(!SpeechCheck.looksRepetitive("안녕하세요 오늘은 방송 스튜디오 녹화를 확인합니다 화면과 카메라가 잘 나오는지 봅시다 그리고 끝".split(separator: " ").map(String.init)),
+              "보통 문장은 반복 아님")
     }
 
     /// 실제 앱의 복구 파일·자동 저장을 건드리지 않도록 이 프로세스만 따로 쓴다.

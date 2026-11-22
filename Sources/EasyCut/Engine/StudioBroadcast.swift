@@ -50,9 +50,13 @@ final class StudioBroadcast: NSObject, AVAssetWriterDelegate {
         return transport.failed
     }
     var canAcceptAudio: Bool { writer.status == .writing && audio.isReadyForMoreMediaData }
+    var isConnected: Bool { transport.isConnected }
+    /// 다시 연결한 송출은 이 시각을 0초로 삼는다 (새 연결마다 타임스탬프가 0부터 시작)
+    private let origin: CMTime
 
-    init(url: URL, onStatus: @escaping (String) -> Void) throws {
+    init(url: URL, origin: CMTime = .zero, onStatus: @escaping (String) -> Void) throws {
         let endpoint = try StudioEndpoint(url)
+        self.origin = origin
         writer = AVAssetWriter(contentType: .mpeg4Movie)
         writer.outputFileTypeProfile = .mpeg4AppleHLS
         writer.preferredOutputSegmentInterval = CMTime(value: 1, timescale: 1)
@@ -95,10 +99,21 @@ final class StudioBroadcast: NSObject, AVAssetWriterDelegate {
         var frame: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &frame) == kCVReturnSuccess, let frame else { return }
         render(frame)
-        if !pixels.append(frame, withPresentationTime: time) { transport.fail(Self.connectionError) }
+        if !pixels.append(frame, withPresentationTime: time - origin) { transport.fail(Self.connectionError) }
     }
 
     func appendAudio(_ sample: CMSampleBuffer) {
+        var sample = sample
+        if origin != .zero {
+            let shifted = sample.presentationTimeStamp - origin
+            guard shifted >= .zero else { return }   // 다시 연결하기 전 구간의 소리
+            var timing = CMSampleTimingInfo(duration: sample.duration, presentationTimeStamp: shifted, decodeTimeStamp: .invalid)
+            var copy: CMSampleBuffer?
+            guard CMSampleBufferCreateCopyWithNewTiming(allocator: nil, sampleBuffer: sample, sampleTimingEntryCount: 1,
+                                                        sampleTimingArray: &timing, sampleBufferOut: &copy) == noErr,
+                  let copy else { return }
+            sample = copy
+        }
         if !audio.append(sample) { transport.fail(Self.connectionError) }
     }
 
@@ -127,6 +142,7 @@ private final class StudioRTMPTransport: @unchecked Sendable {
     private var stopping = false
     private var connected = false
     var failed: Bool { lock.withLock { failure } }
+    var isConnected: Bool { lock.withLock { connected && !failure } }
 
     init(endpoint: StudioEndpoint, onStatus: @escaping (String) -> Void) throws {
         self.onStatus = onStatus
