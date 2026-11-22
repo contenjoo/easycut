@@ -23,16 +23,27 @@ pub fn folder() -> PathBuf {
 }
 
 fn stamp() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H.%M.%S").to_string()
+    chrono::Local::now().format("%Y-%m-%d %H.%M.%S%.3f").to_string()
 }
 
 /// 녹화 시작: 종류별(screen/camera/system) 파일을 만든다. 확장자는 MediaRecorder 형식(webm/mp4)
 pub fn begin(app: &AppHandle, kinds: &[(String, String)]) -> Result<Value, String> {
     let rec = app.state::<Recorder>();
     let mut files = rec.files.lock().unwrap();
-    files.clear();
+    if !files.is_empty() {
+        return Err("다른 녹화가 진행 중입니다.".into());
+    }
     let st = stamp();
     let mut out = json!({});
+    let mut created = HashMap::new();
+    let mut unique = std::collections::HashSet::new();
+    if kinds.is_empty() || kinds.iter().any(|(kind, ext)| {
+        !["screen", "camera", "system"].contains(&kind.as_str())
+            || !["mp4", "webm"].contains(&ext.as_str())
+            || !unique.insert(kind)
+    }) {
+        return Err("녹화 형식이 올바르지 않습니다.".into());
+    }
     for (kind, ext) in kinds {
         let label = match kind.as_str() {
             "screen" => "화면",
@@ -40,10 +51,20 @@ pub fn begin(app: &AppHandle, kinds: &[(String, String)]) -> Result<Value, Strin
             _ => "컴퓨터 소리",
         };
         let path = tools::temp_dir().join(format!("녹화 {st} {label}.rec.{ext}"));
-        let f = std::fs::File::create(&path).map_err(|e| format!("녹화 파일을 만들지 못했습니다: {e}"))?;
+        let f = match std::fs::File::create_new(&path) {
+            Ok(file) => file,
+            Err(e) => {
+                for (_, (p, f)) in created {
+                    drop(f);
+                    let _ = std::fs::remove_file(p);
+                }
+                return Err(format!("녹화 파일을 만들지 못했습니다: {e}"));
+            }
+        };
         out[kind] = json!(path.to_string_lossy());
-        files.insert(kind.clone(), (path, f));
+        created.insert(kind.clone(), (path, f));
     }
+    *files = created;
     Ok(out)
 }
 
@@ -209,7 +230,13 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f
 }
 
 /// 녹화 파일을 정리해 타임라인에: 화면은 트랙 1, 카메라는 트랙 2 오른쪽 아래 작은 화면(원 모양), 컴퓨터 소리는 트랙 3. 그리고 음성 인식.
-pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool, area: Option<(f64, f64, f64, f64)>) -> Result<Value, String> {
+pub fn finish(
+    app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool,
+    area: Option<(f64, f64, f64, f64)>, studio_cuts: Option<Vec<crate::studio::Cut>>,
+) -> Result<Value, String> {
+    if studio_cuts.as_ref().is_some_and(|cuts| !crate::studio::valid(cuts)) {
+        return Err("장면 목록이 올바르지 않습니다.".into());
+    }
     let files: Vec<(String, PathBuf)> = {
         let rec = app.state::<Recorder>();
         let mut f = rec.files.lock().unwrap();
@@ -269,12 +296,26 @@ pub fn finish(app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_
             if let Some(aa) = &aa {
                 p.assets.push(aa.clone());
             }
-            if was_empty && sa.width > 0.0 {
+            if was_empty && studio_cuts.is_some() {
+                p.canvas_width = 1280.;
+                p.canvas_height = 720.;
+            } else if was_empty && sa.width > 0.0 {
                 p.canvas_width = sa.width;
                 p.canvas_height = sa.height;
             }
             while p.tracks.len() < 3 {
                 p.tracks.push(easycut_core::Track::named(format!("트랙 {}", p.tracks.len() + 1)));
+            }
+            if let Some(cuts) = studio_cuts.as_ref() {
+                let start = p.duration();
+                crate::studio::insert_sources(p, &sa, ca.as_ref(), cuts, start);
+                if let Some(audio) = &aa {
+                    let id = p.insert(audio, 2, start, 5.0);
+                    if let Some(c) = p.clip_mut(id) {
+                        c.source_out = c.source_out.min(sa.duration);
+                    }
+                }
+                return;
             }
             let t = if was_empty { 0.0 } else { p.track_end(0).max(p.track_end(1)).max(p.track_end(2)) };
             let sid = p.insert(&sa, 0, t, 5.0);

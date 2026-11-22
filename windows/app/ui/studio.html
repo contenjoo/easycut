@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EasyCut · 방송 스튜디오</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="studio.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="identity"><span class="brand">EasyCut</span><span class="divider"></span><h1 data-l="방송 스튜디오">방송 스튜디오</h1></div>
+    <div class="transport"><span id="status" role="status"></span><time id="elapsed">00:00</time></div>
+  </header>
+  <main>
+    <section class="workspace" aria-labelledby="preview-heading">
+      <div class="section-head"><h2 id="preview-heading" data-l="방송 미리보기">방송 미리보기</h2><small>1280 × 720</small></div>
+      <div class="monitor">
+        <canvas id="preview" width="1280" height="720"></canvas>
+        <div id="empty-stage"><span class="screen-glyph" aria-hidden="true"></span><span data-l="공유할 화면을 선택하세요">공유할 화면을 선택하세요</span></div>
+      </div>
+      <section class="scene-section" aria-labelledby="scene-heading">
+        <div class="section-head"><h2 id="scene-heading" data-l="장면 전환">장면 전환</h2><button id="edit-layout" data-l="내 배치 편집">내 배치 편집</button></div>
+        <div id="scenes" role="group" aria-labelledby="scene-heading"></div>
+        <label id="corner-control" hidden><span data-l="카메라 위치">카메라 위치</span>
+          <select id="corner"><option value="br" data-l="오른쪽 아래">오른쪽 아래</option><option value="bl" data-l="왼쪽 아래">왼쪽 아래</option><option value="tr" data-l="오른쪽 위">오른쪽 위</option><option value="tl" data-l="왼쪽 위">왼쪽 위</option></select>
+        </label>
+      </section>
+    </section>
+    <aside>
+      <fieldset id="devices"><legend data-l="입력 장치">입력 장치</legend>
+        <label class="check"><input id="camera" type="checkbox"><span data-l="카메라">카메라</span></label>
+        <label class="check"><input id="mic" type="checkbox"><span data-l="마이크">마이크</span></label>
+        <label class="check"><input id="system" type="checkbox"><span data-l="컴퓨터 소리">컴퓨터 소리</span></label>
+      </fieldset>
+      <fieldset id="live-options"><legend data-l="송출 설정">송출 설정</legend>
+        <label class="stack"><span data-l="목적지">목적지</span>
+          <select id="output"><option value="local" data-l="로컬 녹화">로컬 녹화</option><option value="youtube">YouTube Live</option><option value="rtmp" data-l="직접 연결 (RTMP)">직접 연결 (RTMP)</option></select>
+        </label>
+        <div id="rtmp-fields" hidden>
+          <label class="stack"><span data-l="서버 주소">서버 주소</span><input type="url" id="server" placeholder="rtmps://…" autocomplete="off" spellcheck="false"></label>
+          <label class="stack"><span data-l="스트림 키">스트림 키</span><input type="password" id="key" autocomplete="off"></label>
+        </div>
+        <div id="youtube-fields" hidden>
+          <div id="channel-state" role="status"></div>
+          <button id="connect" data-l="Google 계정으로 연결">Google 계정으로 연결</button>
+          <button id="disconnect" hidden data-l="계정 연결 해제">계정 연결 해제</button>
+          <div id="broadcast-fields" hidden>
+            <label class="stack"><span data-l="방송 선택">방송 선택</span><select id="broadcast-mode">
+              <option value="now" data-l="지금 방송">지금 방송</option><option value="schedule" data-l="새 방송 예약">새 방송 예약</option><option value="existing" data-l="예약한 방송 사용">예약한 방송 사용</option>
+            </select></label>
+            <div id="new-broadcast">
+              <label class="stack"><span data-l="방송 제목">방송 제목</span><input id="broadcast-title" maxlength="100"></label>
+              <label class="stack"><span data-l="공개 범위">공개 범위</span><select id="privacy"><option value="private" data-l="비공개">비공개</option><option value="unlisted" data-l="일부 공개">일부 공개</option><option value="public" data-l="공개">공개</option></select></label>
+              <label class="check"><input type="checkbox" id="kids"><span data-l="아동용 콘텐츠">아동용 콘텐츠</span></label>
+            </div>
+            <div id="schedule-fields" hidden>
+              <label class="stack"><span data-l="예약 일시 (현지 시간)">예약 일시 (현지 시간)</span><input id="schedule-time" type="datetime-local"></label>
+              <button id="schedule" data-l="YouTube에 예약">YouTube에 예약</button>
+            </div>
+            <div id="existing-fields" hidden>
+              <label class="stack"><span data-l="예약 목록">예약 목록</span><select id="broadcasts"></select></label>
+              <button id="reload" data-l="목록 새로고침">목록 새로고침</button>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+    </aside>
+  </main>
+  <footer>
+    <p id="notice" role="alert"></p>
+    <div class="actions">
+      <button id="prepare" class="primary" data-l="화면 선택·미리보기">화면 선택·미리보기</button>
+      <button id="go" class="primary" hidden></button><button id="stop" class="finish" hidden data-l="종료하고 편집">종료하고 편집</button>
+      <button id="retry-end" hidden data-l="YouTube 종료 재시도">YouTube 종료 재시도</button>
+      <button id="return-editor" hidden data-l="편집기로 돌아가기">편집기로 돌아가기</button>
+    </div>
+  </footer>
+  <dialog id="layout-dialog" aria-labelledby="layout-title">
+    <h2 id="layout-title" data-l="내 배치 편집">내 배치 편집</h2>
+    <p class="hint" data-l="소스를 끌어 이동하고 모서리를 끌어 크기를 조절하세요.">소스를 끌어 이동하고 모서리를 끌어 크기를 조절하세요.</p>
+    <div id="layout-stage" tabindex="0" role="group" data-l-aria="배치 편집 영역" aria-label="배치 편집 영역"><canvas id="layout-preview" width="1280" height="720"></canvas><div id="selection"><i data-corner="tl"></i><i data-corner="tr"></i><i data-corner="bl"></i><i data-corner="br"></i></div></div>
+    <div class="layout-tools">
+      <label><span data-l="소스">소스</span> <select id="layer"><option value="screen" data-l="화면">화면</option><option value="camera" data-l="카메라">카메라</option></select></label>
+      <div class="nudges" role="group" data-l-aria="위치" aria-label="위치"><button data-dx="-1" data-l-aria="왼쪽으로 이동">←</button><button data-dy="-1" data-l-aria="위로 이동">↑</button><button data-dy="1" data-l-aria="아래로 이동">↓</button><button data-dx="1" data-l-aria="오른쪽으로 이동">→</button></div>
+      <div class="nudges" role="group" data-l-aria="크기" aria-label="크기"><button id="shrink" data-l-aria="축소">−</button><button id="grow" data-l-aria="확대">＋</button></div>
+      <button id="front" data-l="맨 앞으로">맨 앞으로</button>
+    </div>
+    <div class="dialog-actions"><button id="reset-layout" data-l="기본 배치">기본 배치</button><button id="cancel-layout" data-l="취소">취소</button><button class="primary" id="apply-layout" data-l="배치 적용">배치 적용</button></div>
+  </dialog>
+  <script src="strings.js"></script><script src="i18n.js"></script><script type="module" src="studio.js"></script>
+</body>
+</html>

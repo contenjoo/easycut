@@ -4,7 +4,8 @@
   "windows": [
     "main",
     "recpanel",
-    "recarea"
+    "recarea",
+    "studio"
   ],
   "permissions": [
     "core:default",

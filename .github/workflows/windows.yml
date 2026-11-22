@@ -81,6 +81,8 @@ jobs:
           $env:EASYCUT_EFFECT_FFMPEG = "$PWD\app\src-tauri\resources\bin\ffmpeg.exe"
           cargo test --workspace
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          cargo test -p easycut-windows --lib studio::tests:: -- --include-ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           node --test app/tests/effects-preview.test.mjs app/tests/effect-controls.test.mjs
           if ($LASTEXITCODE -ne 0) { exit 1 }
           node app/tests/natural-edit.test.mjs
@@ -96,8 +98,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build installer
+        env:
+          EASYCUT_YOUTUBE_CLIENT_ID: ${{ secrets.EASYCUT_YOUTUBE_CLIENT_ID }}
+          EASYCUT_YOUTUBE_CLIENT_SECRET: ${{ secrets.EASYCUT_YOUTUBE_CLIENT_SECRET }}
         working-directory: windows/app
         run: |
+          if (-not $env:EASYCUT_YOUTUBE_CLIENT_ID -or -not $env:EASYCUT_YOUTUBE_CLIENT_SECRET) { throw "Configure the EasyCut desktop OAuth client before packaging." }
           npm ci
           npx tauri build
 
@@ -204,6 +210,9 @@ jobs:
 
       # UI instrumentation is a separate build; the installer above keeps devtools disabled.
       - name: Native WebView2 recording and natural edit UI
+        env:
+          EASYCUT_YOUTUBE_CLIENT_ID: ${{ secrets.EASYCUT_YOUTUBE_CLIENT_ID }}
+          EASYCUT_YOUTUBE_CLIENT_SECRET: ${{ secrets.EASYCUT_YOUTUBE_CLIENT_SECRET }}
         timeout-minutes: 15
         run: |
           $testConfig = Get-Content windows/app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
@@ -246,6 +255,8 @@ jobs:
             node windows/app/tests/generation-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
             node windows/app/tests/studio-native.cjs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            node windows/app/tests/broadcast-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally {
             Get-CimInstance Win32_Process | Where-Object { $_.Name -match "easycut|msedgewebview2" } | Select-Object Name,ProcessId,ParentProcessId,CommandLine | Format-List

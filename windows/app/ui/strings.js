@@ -1,6 +1,8 @@
 // 영어 문구표: 한국어 원문 → 영어. 맥 앱 LocTable.swift를 바탕으로, 윈도우에만 있는 문구를 더했다.
 // 새 한국어 문구를 L("…")로 쓰면 여기에 영어를 추가한다.
 window.EN = {
+  "방송 스튜디오": "Broadcast Studio",
+  "녹화 중입니다": "Recording in progress",
   "가로로 펼치기": "Stretch open",
   "각 텍스트와 자막이 시작할 때 적용됩니다. 짧은 구간에서는 효과 시간이 자동으로 줄어듭니다.": "Applies when each text clip or caption starts. The animation duration is shortened for short clips or captions.",
   "강도": "Intensity",
