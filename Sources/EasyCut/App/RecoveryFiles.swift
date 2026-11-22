@@ -52,6 +52,15 @@ enum RecoveryFiles {
         try? FileManager.default.removeItem(at: ownURL)
     }
 
+    /// 정상 종료할 때 남길 복구 파일이 없으면 잠금 파일도 지운다 (복구 파일이 있으면 다음 실행이 복구를 묻도록 둔다)
+    static func releaseOwnLockIfClean() {
+        guard !FileManager.default.fileExists(atPath: ownURL.path) else { return }
+        let path = lockURL(for: ownURL).path
+        mutex.lock(); defer { mutex.unlock() }
+        if let fd = held.removeValue(forKey: path) { close(fd) }
+        try? FileManager.default.removeItem(atPath: path)
+    }
+
     /// 지금 실행 중인 EasyCut(이 실행 포함)이 쥐고 있는 복구 파일인지
     static func isHeldByRunningInstance(_ url: URL) -> Bool {
         if url.standardizedFileURL.path == ownURL.standardizedFileURL.path { return true }

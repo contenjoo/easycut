@@ -107,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { store?.videoGenerator.cancel() }
+        RecoveryFiles.releaseOwnLockIfClean()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
