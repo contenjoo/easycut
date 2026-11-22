@@ -180,7 +180,7 @@ impl Registry {
     fn path(app: &AppHandle) -> Result<PathBuf> {
         Ok(app
             .path()
-            .app_data_dir()
+            .app_local_data_dir()
             .map_err(|_| STORE)?
             .join("youtube-broadcasts.json"))
     }

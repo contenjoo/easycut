@@ -8,7 +8,7 @@ let phase = "setup", scene = "screen", custom = readLayout();
 let streams = [], sources = {}, writers = [], cuts = [], frameTimer, started = 0;
 let liveRecorder = null, liveStream = null, audioContext = null, encoderStarted = false;
 let liveState = "", liveWrites = Promise.resolve(), liveFailed = false, rawError = "";
-let connectTimer, statusTimer, statusPending = false, ownsFiles = false, completedMessage = "";
+let connectTimer, statusTimer, lastStatusCheck = 0, statusPending = false, ownsFiles = false, completedMessage = "";
 let ending = null;
 const youtube = mountYouTube(invoke,refresh);
 const failText = error => L(String(error?.message || error));
@@ -166,7 +166,8 @@ function liveError(reason) {
 async function checkRemote() {
   const id = youtube.active;
   if (statusPending || !id || liveFailed || phase !== "recording") return;
-  statusPending = true;
+  if (liveState === "YouTube 방송 중" && Date.now() - lastStatusCheck < 60000) return;
+  lastStatusCheck = Date.now(); statusPending = true;
   try {
     const status = await youtube.status(id);
     if (phase !== "recording" || youtube.active !== id || liveFailed) return;

@@ -73,11 +73,69 @@ function inspectVideo(file) {
   return {phases, peak};
 }
 
+// This mode is explicitly dispatched for one already-private, non-reusable event. It
+// exercises the same Windows UI and encoder while the channel owner retains OAuth.
+async function privateYouTube(ctx, editor) {
+  assert(process.env.EASYCUT_PRIVATE_LIVE_TEST_KEY, 'Missing single-event test destination');
+  await editor.evaluate(() => window.__TAURI__.core.invoke('new_project'));
+  const open = ctx.waitForEvent('page', {timeout:30000});
+  await editor.locator('[data-cmd=studio]').first().click();
+  const studio = await open;
+  await studio.waitForSelector('#prepare');
+  await studio.evaluate(installDevices);
+  await studio.selectOption('#output','rtmp');
+  await studio.fill('#server','rtmps://a.rtmps.youtube.com:443/live2');
+  await studio.locator('#key').evaluate((input, key) => { input.value = key; }, process.env.EASYCUT_PRIVATE_LIVE_TEST_KEY);
+  delete process.env.EASYCUT_PRIVATE_LIVE_TEST_KEY;
+  await studio.check('#camera'); await studio.check('#mic');
+  await studio.click('#prepare');
+  await studio.waitForSelector('body[data-phase="ready"]');
+  await studio.click('#scenes button[value=screen]');
+  try {
+    await studio.click('#go');
+    await studio.waitForSelector('body[data-phase="recording"]');
+    await studio.waitForFunction(() => /송출 중$|Streaming$|Live$/i.test(document.querySelector('#status').textContent),null,{timeout:45000});
+    await delay(18000);
+    await studio.click('#scenes button[value=camera]');
+    await delay(14000);
+    await studio.click('#edit-layout');
+    await studio.selectOption('#layer','camera');
+    await studio.click('#shrink');
+    await studio.click('#apply-layout');
+    await delay(25000);
+    assert.match(await studio.locator('#status').textContent(), /송출 중$|Streaming$|Live$/i);
+  } finally {
+    if (await studio.locator('#stop').isVisible().catch(()=>false)) await studio.click('#stop');
+  }
+  await editor.waitForFunction(async () => {
+    const {project} = await window.__TAURI__.core.invoke('get_state');
+    return project.assets.length >= 2 && project.tracks.flatMap(t => t.clips).length >= 4;
+  },null,{timeout:90000});
+  const file = path.join(output,'youtube-reopened.easycut');
+  const movie = path.join(output,'youtube-reopened.mp4');
+  const proof = await editor.evaluate(async file => {
+    const invoke = window.__TAURI__.core.invoke;
+    const saved = await invoke('save_project',{path:file});
+    await invoke('new_project');
+    const reopened = await invoke('open_project',{path:file});
+    if (JSON.stringify(saved.project.tracks) !== JSON.stringify(reopened.project.tracks)) throw Error('Track round trip mismatch');
+    return {clips:reopened.project.tracks.flatMap(t=>t.clips).length};
+  },file);
+  await editor.evaluate(movie => window.__TAURI__.core.invoke('export_video',{path:movie,height:480,burnCaptions:false,format:'mp4',alsoSrt:false,range:null}),movie);
+  proof.export = inspectVideo(movie);
+  fs.writeFileSync(path.join(output,'youtube-windows.json'),JSON.stringify(proof,null,2));
+  console.log('WINDOWS PRIVATE INGEST AND REOPENED EDIT',JSON.stringify(proof));
+}
+
 (async () => {
   const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
   const ctx = browser.contexts()[0];
   const editor = ctx.pages().find(page => page.url().includes('tauri'));
   assert(editor, 'Missing editor window');
+  if (process.argv.includes('--private-youtube')) {
+    try { await privateYouTube(ctx,editor); } finally { await browser.close(); }
+    return;
+  }
   const state = (command, args) => editor.evaluate(([cmd, arg]) => window.__TAURI__.core.invoke(cmd, arg), [command, args]);
   const privatePort = net.createServer();
   privatePort.listen(0, '127.0.0.1');

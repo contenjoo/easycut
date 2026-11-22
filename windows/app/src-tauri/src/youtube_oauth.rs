@@ -369,6 +369,62 @@ mod tests {
             Callback::Invalid
         ));
     }
+    fn browser_response(query: &'static str) -> Callback {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let origin = listener.local_addr().unwrap().to_string();
+        let client_origin = origin.clone();
+        let client = std::thread::spawn(move || {
+            let mut browser = TcpStream::connect(&client_origin).unwrap();
+            write!(browser, "GET /?{query} HTTP/1.1\r\n").unwrap();
+            write!(
+                browser,
+                "Host: {client_origin}\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+        });
+        let (mut connection, peer) = listener.accept().unwrap();
+        assert!(peer.ip().is_loopback());
+        let response = receive(
+            &mut connection,
+            &origin,
+            "test-state",
+            Instant::now() + Duration::from_secs(2),
+        );
+        client.join().unwrap();
+        response
+    }
+
+    #[test]
+    fn browser_authorization_arrives_on_ephemeral_loopback() {
+        let response = browser_response("state=test-state&code=fake-code");
+        assert!(matches!(response, Callback::Code(code) if code == "fake-code"));
+    }
+
+    #[test]
+    fn browser_denial_arrives_on_ephemeral_loopback() {
+        let response = browser_response("state=test-state&error=access_denied");
+        assert!(matches!(response, Callback::Denied));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn credential_manager_roundtrips_isolated_synthetic_grant() {
+        let entry = format!("test-{}", nonce().unwrap());
+        assert!(Grant::load(&entry).unwrap().is_none());
+        let stored = Grant {
+            refresh: "synthetic-refresh".into(),
+            channel: "channel".into(),
+            title: "시험 채널".into(),
+        };
+        stored.save(&entry).unwrap();
+        let reloaded = Grant::load(&entry).unwrap();
+        Grant::clear(&entry).unwrap();
+        let reloaded = reloaded.unwrap();
+        assert_eq!(reloaded.refresh, "synthetic-refresh");
+        assert_eq!(reloaded.title, "시험 채널");
+        assert!(Grant::load(&entry).unwrap().is_none());
+    }
+
     #[test]
     fn pkce_matches_rfc7636_vector() {
         let v = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";

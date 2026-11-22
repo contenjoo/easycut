@@ -13,17 +13,19 @@ a{color:#17589a;text-underline-offset:.18em}h1,h2{line-height:1.35}h1{font-size:
 <nav><a href="youtube-studio.html">EasyCut 방송 스튜디오 안내</a></nav>
 <h1>EasyCut의 YouTube 연동 개인정보처리방침</h1>
 <p><small>주식회사 오늘배움 · 2026년 11월 22일</small></p>
-<p>EasyCut의 Mac용 방송 스튜디오는 Google 로그인을 통해 본인의 YouTube 채널에 라이브 방송을 예약하고 송출할 수 있는 기능입니다. 이 안내는 방송 스튜디오에서 Google 계정을 연결할 때 적용됩니다.</p>
+<p>EasyCut의 Mac·Windows용 방송 스튜디오는 Google 로그인을 통해 본인의 YouTube 채널에 라이브 방송을 예약하고 송출할 수 있는 기능입니다. 이 안내는 방송 스튜디오에서 Google 계정을 연결할 때 적용됩니다.</p>
 <h2>어떤 정보를 왜 사용하는지</h2>
 <p>계정을 연결하면 앱은 YouTube Data API를 통해 사용자가 선택한 채널의 이름과 식별자를 확인합니다. 방송 예약에는 제목, 시작 예정 시각, 공개 범위와 아동용 콘텐츠 여부를 사용합니다. 앱은 선택한 예약의 송출 주소를 받아 방송을 시작하고 종료 상태를 확인합니다. Google 동의 화면에 표시되는 YouTube 계정 관리 권한은 이 작업을 수행하는 데 사용됩니다.</p>
 <h2>어디에 저장되고 누구에게 전송되는지</h2>
-<p>계정 연결을 유지하는 인증 정보는 해당 Mac 사용자의 키체인에 저장합니다. 앱은 채널과 이 Mac에서 만든 방송의 식별자를 로컬 설정에 보관해 다음에 예약을 불러옵니다. 송출용 키는 연결에 필요한 동안만 사용합니다.</p>
-<p>예약 정보는 사용자의 Google 계정을 통해 YouTube로 전송됩니다. 라이브를 시작하면 선택한 화면과 소리가 해당 YouTube 채널로 전송됩니다. 방송 공개 범위는 사용자가 예약할 때 정하며 기본값은 비공개입니다. 녹화 원본과 편집 프로젝트는 Mac에 저장됩니다. 이 연동 기능은 Google 인증 정보나 방송 영상을 오늘배움 서버에 전송하지 않습니다.</p>
+<p>계정 연결을 유지하는 인증 정보는 Mac에서는 해당 사용자의 키체인에, Windows에서는 해당 사용자의 자격 증명 관리자에 저장합니다. Windows 자격 증명에는 연결된 채널의 이름과 식별자도 함께 보관합니다.</p>
+<p>앱은 이 기기에서 만든 예약을 다시 불러오기 위해 채널별 방송 식별자를 보관합니다. Mac은 앱 설정을 사용합니다. Windows는 앱 데이터 폴더의 <code>youtube-broadcasts.json</code>에 방송 식별자와 전용 스트림 식별자를 저장합니다. 송출용 키는 인코더를 연결하는 동안에만 사용합니다.</p>
+<p>예약 정보는 사용자의 Google 계정을 통해 YouTube로 전송됩니다. 라이브를 시작하면 선택한 화면과 소리가 해당 YouTube 채널로 전송됩니다. 방송 공개 범위는 사용자가 예약할 때 정하며 기본값은 비공개입니다. 녹화 원본과 편집 프로젝트는 사용자의 기기에 저장됩니다. 이 연동 기능은 Google 인증 정보나 방송 영상을 오늘배움 서버에 전송하지 않습니다.</p>
 <h2>연결 해제와 데이터 삭제</h2>
 <ul>
-<li>EasyCut의 방송 스튜디오에서 <strong>방송 일정 → 계정 연결 해제</strong>를 선택하면 앱이 키체인의 인증 정보를 제거하고 Google에 접근 권한 철회를 요청합니다. Google 계정의 <a href="https://myaccount.google.com/connections">서드 파티 연결 관리</a>에서도 권한을 취소할 수 있습니다.</li>
-<li>이미 생성된 예약과 다시보기는 본인이 <a href="https://studio.youtube.com/">YouTube Studio</a>에서 삭제할 수 있습니다. 로컬 녹화 원본과 편집 프로젝트는 Finder에서 삭제할 수 있습니다.</li>
-<li>이 Mac 사용자의 방송 식별자를 모두 지우려면 EasyCut을 종료한 뒤 터미널에서 <code>defaults delete com.contenjoo.easycut YouTubeLiveService.createdBroadcastIDsByChannel</code>을 실행하세요. 이 Mac의 앱 목록에서 기존 예약을 불러오는 연결이 사라집니다. 해당 예약은 YouTube Studio에서 계속 관리할 수 있습니다.</li>
+<li>Mac의 방송 스튜디오에서는 <strong>방송 일정 → 계정 연결 해제</strong>를 누릅니다. Windows에서는 <strong>송출 설정 → 목적지 → YouTube Live</strong>에서 <strong>계정 연결 해제</strong>를 누릅니다. 앱이 해당 사용자의 인증 정보를 지우고 Google에 접근 권한 철회를 요청합니다. Google 계정에서도 직접 권한을 취소할 수 있습니다. <a href="https://myaccount.google.com/connections">서드 파티 연결 관리</a></li>
+<li>이미 생성한 예약과 다시보기는 YouTube Studio에서 삭제합니다. 녹화 원본과 편집 프로젝트는 Mac의 Finder 또는 Windows 파일 탐색기에서 삭제할 수 있습니다. <a href="https://studio.youtube.com/">YouTube Studio 열기</a></li>
+<li>Mac에 저장된 예약 목록을 지우려면 EasyCut을 종료하고 터미널에서 <code>defaults delete com.contenjoo.easycut YouTubeLiveService.createdBroadcastIDsByChannel</code>을 실행하세요.</li>
+<li>Windows에 저장된 예약 목록을 지우려면 EasyCut을 종료하고 파일 탐색기 주소창에 <code>%LOCALAPPDATA%\com.contenjoo.easycut.windows</code>를 입력한 뒤 <code>youtube-broadcasts.json</code>을 삭제하세요. 어느 기기에서든 로컬 예약 목록을 지우면 해당 기기에서 이전 예약을 다시 불러올 수 없습니다. YouTube에 남은 예약은 YouTube Studio에서 관리할 수 있습니다.</li>
 <li>이 기능의 데이터 처리에 관한 문의는 <a href="mailto:joo@learntoday.kr">joo@learntoday.kr</a>로 보내 주세요.</li>
 </ul>
 <h2>관련 약관과 정책</h2>

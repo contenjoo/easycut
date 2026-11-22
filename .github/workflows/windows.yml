@@ -11,6 +11,10 @@ on:
         description: Publish the tested Windows installer as a stable release
         type: boolean
         default: false
+      privateLiveTest:
+        description: Verify a separately authorized single-use private YouTube destination with synthetic devices
+        type: boolean
+        default: false
       generationOnly:
         description: Run focused video creation checks with a debug app or supplied installer
         type: boolean
@@ -256,10 +260,46 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit 1 }
             node windows/app/tests/studio-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
+            $env:EASYCUT_CHROME = (Get-Command chrome.exe -ErrorAction SilentlyContinue).Source
+            if (-not $env:EASYCUT_CHROME) { $env:EASYCUT_CHROME = "$env:ProgramFiles/Google/Chrome/Application/chrome.exe" }
+            node windows/app/tests/broadcast-ui.cjs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
             node windows/app/tests/broadcast-native.cjs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } finally {
             Get-CimInstance Win32_Process | Where-Object { $_.Name -match "easycut|msedgewebview2" } | Select-Object Name,ProcessId,ParentProcessId,CommandLine | Format-List
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Send synthetic scenes to the authorized private YouTube event
+        if: github.event_name == 'workflow_dispatch' && inputs.privateLiveTest
+        timeout-minutes: 6
+        env:
+          EASYCUT_PRIVATE_LIVE_TEST_KEY: ${{ secrets.EASYCUT_PRIVATE_LIVE_TEST_KEY }}
+        run: |
+          $eventKey = $env:EASYCUT_PRIVATE_LIVE_TEST_KEY
+          if (-not $eventKey) { throw "Private test requires a separate one-event destination" }
+          Remove-Item Env:EASYCUT_PRIVATE_LIVE_TEST_KEY
+          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
+          $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP/private-broadcast-webview"
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222 --autoplay-policy=no-user-gesture-required"
+          $env:EASYCUT_NATIVE_OUTPUT = "$env:RUNNER_TEMP/native-evidence"
+          $app = Start-Process windows/target/release/easycut-windows.exe -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 45; $i++) {
+              try {
+                $pages = Invoke-RestMethod 'http://127.0.0.1:9222/json/list' -TimeoutSec 1
+                if ($pages | Where-Object { $_.type -eq 'page' -and $_.url -match 'tauri' }) { $ready = $true; break }
+              } catch { }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $ready) { throw "Private test studio did not open" }
+            $env:EASYCUT_PRIVATE_LIVE_TEST_KEY = $eventKey
+            node windows/app/tests/broadcast-native.cjs --private-youtube
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally {
+            Remove-Item Env:EASYCUT_PRIVATE_LIVE_TEST_KEY -ErrorAction SilentlyContinue
             Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           }
 

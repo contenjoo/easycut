@@ -9,8 +9,8 @@ export function mountYouTube(invoke, refresh) {
     const list = $("broadcasts");
     list.replaceChildren();
     for (const item of broadcasts) {
-      const when = item.scheduledAt ? new Date(item.scheduledAt).toLocaleString(document.documentElement.lang) + " · " : "";
-      list.add(new Option(item.title+" · "+privacyName(item.privacy)+" · "+when.replace(/ · $/,""),item.id));
+      const when = item.scheduledAt ? new Date(item.scheduledAt).toLocaleString(document.documentElement.lang) : "";
+      list.add(new Option([item.title,privacyName(item.privacy),when].filter(Boolean).join(" · "),item.id));
     }
     if (!broadcasts.length) list.add(new Option(L("예약된 방송이 없습니다"),""));
     if (broadcasts.some(b => b.id === id)) list.value = id;
@@ -34,17 +34,26 @@ export function mountYouTube(invoke, refresh) {
     broadcasts = [item,...broadcasts.filter(b => b.id !== item.id)];
     $("broadcast-mode").value = "existing"; drawOptions(item.id);
   }
+  async function syncAccount() {
+    const previous = account;
+    account = await invoke("youtube_account_status");
+    if (!account.connected || previous?.channelTitle !== account.channelTitle) {
+      broadcasts = []; drawOptions(); $("broadcast-mode").value = "now";
+    }
+  }
   async function task(fn) {
     if (busy) return;
     busy = true; setNotice(""); refresh();
     try { await fn(); }
-    catch (error) { setNotice(L(String(error.message || error))); }
+    catch (error) {
+      setNotice(L(String(error.message || error)));
+      await syncAccount().catch(() => {});
+    }
     finally { busy = false; refresh(); }
   }
   $("connect").onclick = () => task(async () => { account = await invoke("youtube_connect"); });
   $("disconnect").onclick = () => task(async () => {
-    await invoke("youtube_disconnect"); account = await invoke("youtube_account_status");
-    broadcasts = []; drawOptions(); $("broadcast-mode").value = "now";
+    await invoke("youtube_disconnect"); await syncAccount();
   });
   $("broadcast-mode").onchange = () => {
     if ($("broadcast-mode").value === "existing") task(() => load());
@@ -61,7 +70,7 @@ export function mountYouTube(invoke, refresh) {
     get pendingEnd() { return pendingEnd; },
     selected,
     async inspect() {
-      await task(async () => { account = await invoke("youtube_account_status"); });
+      await task(syncAccount);
     },
     render() {
       const connected = account?.connected === true;

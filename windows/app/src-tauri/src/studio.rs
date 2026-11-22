@@ -152,7 +152,7 @@ struct Encoder {
     input: Option<SyncSender<Vec<u8>>>,
     connected: Arc<AtomicBool>,
     // FFmpeg reads this after parsing the input stream, not when it spawns.
-    key: Option<tempfile::NamedTempFile>,
+    key: Option<tempfile::TempPath>,
 }
 impl Drop for Encoder {
     fn drop(&mut self) {
@@ -185,6 +185,14 @@ pub fn studio_live_start(app: AppHandle, server: String, key: String) -> Result<
     Ok(())
 }
 
+fn tls_options(url: &tauri::Url) -> &'static [&'static str] {
+    if url.scheme() == "rtmps" {
+        &["-tls_verify", "1"]
+    } else {
+        &[]
+    }
+}
+
 impl Encoder {
     fn start(ffmpeg: &std::path::Path, url: &tauri::Url, key: &str) -> Result<Self, String> {
         if key.chars().any(char::is_control) || key.trim().is_empty() || key.len() >= 2048 {
@@ -195,18 +203,20 @@ impl Encoder {
             tempfile::NamedTempFile::new().map_err(|_| "임시 송출 설정을 만들 수 없습니다.")?;
         // FFmpeg's preset reader supports protocol AVOptions on native RTMP as well.
         writeln!(secret, "rtmp_playpath={key}").map_err(|_| "송출 설정을 쓸 수 없습니다.")?;
-        let verify_tls: &[&str] = if url.scheme() == "rtmps" {
-            &["-tls_verify", "1"]
-        } else {
-            &[]
-        };
         let application = url.path().trim_matches('/');
-        let app_args: Vec<&str> = if application.is_empty() {
-            vec![]
-        } else {
-            vec!["-rtmp_app", application]
-        };
+        if !application.is_empty() {
+            writeln!(secret, "rtmp_app={application}")
+                .map_err(|_| "송출 설정을 쓸 수 없습니다.")?;
+        }
+        // Close the writing handle before FFmpeg reopens the preset on Windows.
+        // TempPath still removes it on startup failure, disconnect or encoder drop.
+        let secret = secret.into_temp_path();
+        // Some custom servers include a per-user token in their application path.
+        // Only the public server origin belongs in the process command line.
+        let mut origin = url.clone();
+        origin.set_path("/");
         let mut child = tools::command(ffmpeg)
+            .env_remove("FFREPORT") // An inherited debug report could log the resolved playpath.
             .args([
                 "-nostdin",
                 "-v",
@@ -247,10 +257,9 @@ impl Encoder {
                 "pipe:1",
                 "-fpre",
             ])
-            .arg(secret.path())
-            .args(app_args)
-            .args(verify_tls)
-            .arg(url.as_str())
+            .arg(&*secret)
+            .args(tls_options(url))
+            .arg(origin.as_str())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -607,6 +616,144 @@ mod tests {
         }
     }
 
+    // A read-only RTMP handshake uses no account, stream key or broadcast.
+    fn probe_rtmps(ffmpeg: &std::path::Path, url: &tauri::Url) -> String {
+        let output = tools::command(ffmpeg)
+            .env_remove("FFREPORT")
+            .args(["-nostdin", "-v", "debug", "-rw_timeout", "5000000"])
+            .args(tls_options(url))
+            .args(["-i", url.as_str(), "-t", "0", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    }
+
+    #[test]
+    #[ignore = "requires network access to the public YouTube RTMPS ingest endpoint"]
+    fn bundled_ffmpeg_verifies_youtube_rtmps_and_receives_handshake() {
+        let url = tauri::Url::parse("rtmps://a.rtmps.youtube.com:443/live2").unwrap();
+        let log = probe_rtmps(&tools::find_tool("ffmpeg").unwrap(), &url);
+        // The server may refuse playback after acknowledging RTMP. Its version in
+        // the response demonstrates both a verified TLS session and native RTMP.
+        assert!(
+            log.contains("Type answer 3") && log.contains("Server version"),
+            "{log}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg, OpenSSL and permission to listen on localhost"]
+    fn bundled_ffmpeg_rejects_untrusted_rtmps_before_handshake() {
+        use std::net::{TcpListener, TcpStream};
+        use std::time::{Duration, Instant};
+        let openssl = tools::find_tool("openssl")
+            .or_else(|| {
+                std::env::var_os("ProgramFiles")
+                    .map(std::path::PathBuf::from)
+                    .map(|root| root.join("Git/usr/bin/openssl.exe"))
+                    .filter(|p| p.is_file())
+            })
+            .expect("OpenSSL is required for the isolated certificate fixture");
+        let dir = tempfile::tempdir().unwrap();
+        let generate = tools::command(&openssl)
+            .current_dir(dir.path())
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                "key.pem",
+                "-out",
+                "cert.pem",
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            generate.status.success(),
+            "{}",
+            String::from_utf8_lossy(&generate.stderr)
+        );
+        let addr = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let mut server = tools::command(&openssl)
+            .current_dir(dir.path())
+            .args([
+                "s_server",
+                "-quiet",
+                "-www",
+                "-accept",
+                &addr.to_string(),
+                "-cert",
+                "cert.pem",
+                "-key",
+                "key.pem",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let ready = Instant::now() + Duration::from_secs(5);
+        while TcpStream::connect(addr).is_err() {
+            if Instant::now() > ready || server.try_wait().unwrap().is_some() {
+                let _ = server.kill();
+                let _ = server.wait();
+                panic!("Local TLS fixture did not start");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let url = tauri::Url::parse(&format!("rtmps://{addr}/live")).unwrap();
+        // This is an FLV output, as in the real encoder. FFmpeg must refuse the
+        // untrusted peer before sending an RTMP handshake or publishing any data.
+        let output = tools::command(&tools::find_tool("ffmpeg").unwrap())
+            .env_remove("FFREPORT")
+            .args([
+                "-nostdin",
+                "-v",
+                "debug",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=s=16x16:d=0.1",
+                "-c:v",
+                "libx264",
+                "-f",
+                "flv",
+                "-rw_timeout",
+                "5000000",
+            ])
+            .args(tls_options(&url))
+            .arg(url.as_str())
+            .output()
+            .unwrap();
+        let log = String::from_utf8_lossy(&output.stderr);
+        let _ = server.kill();
+        let _ = server.wait();
+        let diagnostic = log.to_ascii_lowercase();
+        assert!(
+            diagnostic.contains("certificate")
+                && (diagnostic.contains("not trusted")
+                    || diagnostic.contains("verification failed")
+                    || diagnostic.contains("unable to verify")
+                    || diagnostic.contains("not verified")
+                    || diagnostic.contains("failed to verify")
+                    || diagnostic.contains("failed verification")),
+            "Expected a TLS trust failure: {log}"
+        );
+        assert!(
+            !output.status.success() && !log.contains("Handshaking..."),
+            "{log}"
+        );
+    }
+
     /// Requires FFmpeg and ffprobe on PATH and permission to listen on localhost.
     #[test]
     #[ignore]
@@ -692,11 +839,25 @@ mod tests {
             assert!(Encoder::start(&ffmpeg, &url, bad_key).is_err());
         }
         let mut sender = Encoder::start(&ffmpeg, &url, "fixture").unwrap();
-        let preset = sender.key.as_ref().unwrap().path().to_owned();
+        let preset = sender.key.as_ref().unwrap().to_path_buf();
         assert_eq!(
             std::fs::read_to_string(&preset).unwrap(),
-            "rtmp_playpath=fixture\n"
+            "rtmp_playpath=fixture\nrtmp_app=live\n"
         );
+        #[cfg(windows)]
+        {
+            let inspect = format!(
+                "(Get-CimInstance Win32_Process -Filter 'ProcessId = {}').CommandLine",
+                sender.child.id()
+            );
+            let output = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &inspect])
+                .output()
+                .unwrap();
+            let command = String::from_utf8_lossy(&output.stdout);
+            assert!(output.status.success() && command.contains("-fpre"));
+            assert!(!command.contains("fixture") && !command.contains("/live"));
+        }
         for chunk in fixture.stdout.chunks(16 * 1024) {
             sender.send(chunk.to_vec()).unwrap();
             sleep(Duration::from_millis(80));
