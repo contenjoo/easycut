@@ -1,9 +1,13 @@
 // 화면·얼굴 녹화 (맥 RecordController.swift / RecordViews.swift)
 // 화면: getDisplayMedia, 카메라·마이크: getUserMedia, 기록: MediaRecorder(1초마다 조각을 앱에 넘겨 파일로 쓴다)
+import { mountCameraBackgroundPicker } from "./camera-backgrounds/picker.js";
+import { createCameraBackgroundStream } from "./camera-backgrounds/processor.js";
+
 const tauri = window.__TAURI__;
 const invoke = (cmd, args, opts) => tauri.core.invoke(cmd, args, opts);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+let closeRecordPreview = () => {};
 let api; // { toast, modal: {box, show, hide}, run, transcribe, S }
 const R = {
   phase: "idle", // idle | countdown | recording | paused | saving
@@ -17,10 +21,25 @@ const R = {
   cancelCountdown: false,
   circle: true,
   writeError: null, // 녹화 조각 쓰기 실패 (첫 번째 오류)
+  cameraProcessor: null,
+  closePanelPreview: null,
 };
 
 // 권한 창을 닫지 않고 두면 끝나지 않으므로 정해진 시간까지만 기다린다
-const within = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(L("시간이 초과되었습니다."))), ms))]);
+async function within(request, ms) {
+  let timer, expired = false;
+  try {
+    return await Promise.race([
+      request.then(stream => {
+        if (expired) stream.getTracks().forEach(track => track.stop());
+        return stream;
+      }),
+      new Promise((_,reject) => {
+        timer = setTimeout(() => { expired = true; reject(Error(L("시간이 초과되었습니다."))); }, ms);
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
 
 const pref = (k, d) => { try { const v = localStorage.getItem("rec." + k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem("rec." + k, JSON.stringify(v)); } catch (_) {} };
@@ -41,6 +60,7 @@ export const isRecording = () => R.phase !== "idle";
 
 export async function openRecordDialog() {
   if (isRecording()) return;
+  closeRecordPreview();
   const box = api.modal.box;
   box.innerHTML = `<h2>🔴 ${L("화면·얼굴 녹화")}</h2><p class="hint">${L("장치 확인 중…")}</p>`;
   api.modal.show();
@@ -76,6 +96,9 @@ export async function openRecordDialog() {
     <div class="row"><label><input type="checkbox" id="r-cam" ${o.useCamera ? "checked" : ""} ${cams.length ? "" : "disabled"}/> ${L("카메라")}</label>
       <select id="r-cam-id" ${cams.length ? "" : "disabled"}>${cams.length ? opt(cams, o.cameraId) : `<option>${L("카메라 없음")}</option>`}</select></div>
     <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-circle" ${o.circle ? "checked" : ""}/> ${L("얼굴을 원 모양으로")}</label></div>
+    <fieldset id="r-background"></fieldset>
+    <div id="r-preview"><button id="r-preview-toggle" type="button"></button>
+      <video id="r-preview-video" autoplay muted playsinline hidden></video></div>
     <div class="row"><label><input type="checkbox" id="r-mic" ${o.useMic ? "checked" : ""} ${mics.length ? "" : "disabled"}/> ${L("마이크")}</label>
       <select id="r-mic-id" ${mics.length ? "" : "disabled"}>${mics.length ? opt(mics, o.micId) : `<option>${L("마이크 없음")}</option>`}</select></div>
     <div class="row"><label></label><label class="hint"><input type="checkbox" id="r-sys" ${o.systemAudio ? "checked" : ""}/> ${L("컴퓨터 소리도 녹음 (전체 화면일 때)")}</label></div>
@@ -85,6 +108,59 @@ export async function openRecordDialog() {
     <p class="hint">${L("녹화 중 단축키: Ctrl+Alt+P 일시정지 · Ctrl+Alt+S 정지")}<br>${L("녹화 파일은 동영상 폴더의 'EasyCut 녹화'에 저장됩니다.")}</p>
     <div class="btns"><button id="r-cancel">${L("취소")}</button><button class="danger" id="r-go">● ${L("녹화 시작")}</button></div>`;
   const q = (s) => box.querySelector(s);
+  const previewButton = q("#r-preview-toggle"), previewVideo = q("#r-preview-video");
+  let previewCam = null, previewProcessor = null, previewPending = false, generation = 0;
+  const backgroundError = error => api.toast(L("카메라 배경을 적용하지 못했습니다: {}", L(error?.message || String(error))));
+  const background = mountCameraBackgroundPicker(q("#r-background"), {
+    apply: async effect => { await previewProcessor?.setEffect(effect); },
+    onError: backgroundError, onBusy: updateControls,
+  });
+  function updateControls() {
+    const enabled = q("#r-cam").checked;
+    q("#r-background").hidden = !enabled;
+    q("#r-preview").hidden = !enabled;
+    background.setEnabled(enabled && !previewPending);
+    previewButton.disabled = previewPending || background.busy;
+    previewButton.textContent = L(previewCam ? "미리보기 닫기" : "카메라 미리보기");
+    q("#r-go").disabled = previewPending || background.busy;
+    q("#r-cam-id").disabled = !enabled;
+  }
+  function stopPreview() {
+    generation++;
+    previewProcessor?.stop(); previewProcessor = null;
+    previewCam?.getTracks().forEach(track => track.stop()); previewCam = null;
+    previewVideo.srcObject = null; previewVideo.hidden = true; previewPending = false;
+  }
+  closeRecordPreview = () => {
+    window.removeEventListener("easycut-modal-hidden", closeRecordPreview);
+    stopPreview(); closeRecordPreview = () => {};
+  };
+  window.addEventListener("easycut-modal-hidden", closeRecordPreview, {once:true});
+  previewButton.onclick = async () => {
+    if (previewCam) { stopPreview(); updateControls(); return; }
+    const request = ++generation;
+    let raw, processor;
+    previewPending = true; updateControls();
+    try {
+      raw = await openCamera(q("#r-cam-id").value);
+      if (request !== generation) return;
+      previewCam = raw;
+      processor = await createCameraBackgroundStream(raw, background.effect(), {onError: backgroundError});
+      if (request !== generation) return;
+      previewProcessor = processor;
+      previewVideo.srcObject = processor.stream;
+      previewVideo.hidden = false;
+      await previewVideo.play();
+    } catch (error) {
+      if (request === generation) { stopPreview(); backgroundError(error); }
+    } finally {
+      if (request !== generation) { processor?.stop(); raw?.getTracks().forEach(track => track.stop()); }
+      if (request === generation) previewPending = false;
+      if (previewButton.isConnected) updateControls();
+    }
+  };
+  q("#r-cam").onchange = q("#r-cam-id").onchange = () => { stopPreview(); updateControls(); };
+  updateControls();
   q("#r-spoken").onchange = e => localStorage.setItem("spokenEditEnabled", e.target.checked ? "1" : "0");
   q("#r-cancel").onclick = api.modal.hide;
   q("#r-target").onchange = (e) => { setPref("target", e.target.value); openRecordDialog(); };
@@ -105,7 +181,7 @@ export async function openRecordDialog() {
     for (const [k, v] of Object.entries(opts)) setPref(k, v);
     api.modal.hide();
     // 화면 고르기는 사용자가 누른 바로 그때 불러야 한다
-    start(opts);
+    start({...opts, background: background.effect()});
   };
 }
 
@@ -132,7 +208,14 @@ function pickMime(kind, resizable = false) {
   return { mime: found, ext: found.startsWith("video/mp4") || found.startsWith("audio/mp4") ? "mp4" : "webm" };
 }
 
+function openCamera(deviceId) {
+  return within(navigator.mediaDevices.getUserMedia({ video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }), 10000);
+}
+
 async function start(o) {
+  if (R.phase !== "idle") return;
+  R.phase = "preparing";
+  R.clicks = false; R.startedAt = 0;
   R.circle = o.circle;
   R.area = o.target === "area" ? o.area : null;
   if (o.target === "area") o.target = "monitor";
@@ -148,6 +231,7 @@ async function start(o) {
       monitorTypeSurfaces: "include",
     });
   } catch (e) {
+    R.phase = "idle";
     if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") api.toast(L("화면을 녹화할 수 없습니다: {}", e?.message || e));
     return;
   }
@@ -157,9 +241,28 @@ async function start(o) {
     if (o.useMic) { mic = await within(navigator.mediaDevices.getUserMedia({ audio: { deviceId: o.micId ? { exact: o.micId } : undefined, echoCancellation: false, noiseSuppression: true } }), 10000); streams.push(mic); }
   } catch (e) { api.toast(L("마이크를 켜지 못했습니다: {}", e?.message || e)); }
   try {
-    if (o.useCamera) { cam = await within(navigator.mediaDevices.getUserMedia({ video: { deviceId: o.cameraId ? { exact: o.cameraId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }), 10000); streams.push(cam); }
-  } catch (e) { api.toast(L("카메라를 켜지 못했습니다: {}", e?.message || e)); }
+    if (o.useCamera) { cam = await openCamera(o.cameraId); streams.push(cam); }
+  } catch (e) {
+    api.toast(L("카메라를 켜지 못했습니다: {}", e?.message || e));
+    if (o.background.mode !== "off") {
+      streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
+      R.phase = "idle"; return;
+    }
+  }
   R.streams = streams;
+  if (cam && o.background.mode !== "off") {
+    const backgroundError = error => {
+      const message = L("카메라 배경을 적용하지 못했습니다: {}", L(error?.message || String(error)));
+      api.toast(message);
+      if (R.phase !== "preparing") tauri.event.emitTo("recpanel", "rec-camera-error", message).catch(() => {});
+    };
+    try {
+      R.cameraProcessor = await createCameraBackgroundStream(cam, o.background, {onError: backgroundError});
+      cam = R.cameraProcessor.stream;
+    } catch (e) {
+      stopStreams(); R.phase = "idle"; backgroundError(e); return;
+    }
+  }
 
   // 화면 파일: 화면 영상 + 마이크. 컴퓨터 소리는 따로(트랙 3)
   const screenStream = new MediaStream([...display.getVideoTracks(), ...(mic ? mic.getAudioTracks() : [])]);
@@ -170,11 +273,11 @@ async function start(o) {
   try {
     await invoke("rec_begin", { kinds: plan.map((p) => [p.kind, p.ext]) });
   } catch (e) {
-    stopStreams();
+    stopStreams(); R.phase = "idle";
     return api.toast(L(String(e)));
   }
   R.writeError = null;
-  R.recorders = plan.map((p) => {
+  function makeRecorder(p) {
     const rec = new MediaRecorder(p.stream, { mimeType: p.mime || undefined, videoBitsPerSecond: p.kind === "screen" ? 8_000_000 : 3_000_000, audioBitsPerSecond: 160_000 });
     rec.ondataavailable = (ev) => {
       if (!ev.data?.size) return;
@@ -194,12 +297,15 @@ async function start(o) {
       });
     };
     return { kind: p.kind, rec };
-  });
+  }
+  try { R.recorders = plan.map(makeRecorder); }
+  catch (error) { await cancel(); api.toast(L(String(error))); return; }
   // 공유 중지(브라우저 막대)로 화면이 끊기면 녹화도 끝낸다
   display.getVideoTracks()[0]?.addEventListener("ended", () => { if (R.phase === "recording" || R.phase === "paused") stop(); });
 
   // 정지 창을 띄우고, EasyCut 창을 내린 뒤 3초 세기
   await invoke("rec_panel", { open: true, camera: !!cam }).catch(() => {});
+  if (cam) R.closePanelPreview = relayCameraPreview(cam);
   status();
   const win = tauri.window.getCurrentWindow();
   await win.minimize().catch(() => {});
@@ -210,7 +316,8 @@ async function start(o) {
     await new Promise((r) => setTimeout(r, 1000));
     if (R.cancelCountdown) return;
   }
-  for (const r of R.recorders) r.rec.start(1000);
+  try { for (const r of R.recorders) r.rec.start(1000); }
+  catch (error) { await cancel(); api.toast(L(String(error))); return; }
   // 전체 화면 녹화면 클릭 위치도 기록 (녹화 화면 크기로 모니터를 찾는다)
   const vs = display.getVideoTracks()[0]?.getSettings() || {};
   R.clicks = o.target === "monitor";
@@ -231,8 +338,7 @@ function elapsed() {
 
 /// 정지 창에 상태 알림. 창이 내려가 있으면 이쪽 타이머가 느려지므로 경과 시간은 정지 창이 직접 센다 (base = 0초였던 시각)
 function status(count) {
-  const camId = R.streams.find((s) => s !== R.streams[0] && s.getVideoTracks().length)?.getVideoTracks()[0]?.getSettings().deviceId || null;
-  tauri.event.emit("rec-status", { phase: R.phase, elapsed: elapsed(), base: Date.now() - elapsed() * 1000, count: count ?? null, cameraId: camId }).catch(() => {});
+  tauri.event.emit("rec-status", { phase: R.phase, elapsed: elapsed(), base: Date.now() - elapsed() * 1000, count: count ?? null }).catch(() => {});
 }
 
 export function togglePause() {
@@ -250,7 +356,30 @@ export function togglePause() {
   status();
 }
 
+// The floating panel is a separate WebView. Share a small preview of the exact
+// recorded camera track so it never needs to open a second, unfiltered camera.
+function relayCameraPreview(stream) {
+  const video = document.createElement("video");
+  video.muted = true; video.playsInline = true; video.srcObject = stream;
+  video.play().catch(() => {});
+  const thumbnail = document.createElement("canvas");
+  const ctx = thumbnail.getContext("2d", {alpha:false});
+  let sending = false;
+  const timer = setInterval(async () => {
+    if (sending || !video.videoWidth || video.readyState < 2) return;
+    const scale = Math.min(240 / video.videoWidth, 180 / video.videoHeight, 1);
+    const w = Math.round(video.videoWidth * scale), h = Math.round(video.videoHeight * scale);
+    if (thumbnail.width !== w || thumbnail.height !== h) { thumbnail.width = w; thumbnail.height = h; }
+    ctx.drawImage(video, 0, 0, w, h); sending = true;
+    try { await tauri.event.emitTo("recpanel", "rec-camera-preview", thumbnail.toDataURL("image/jpeg", 0.65)); }
+    catch {} finally { sending = false; }
+  }, 200);
+  return () => { clearInterval(timer); video.pause(); video.srcObject = null; };
+}
+
 function stopStreams() {
+  R.closePanelPreview?.(); R.closePanelPreview = null;
+  R.cameraProcessor?.stop(); R.cameraProcessor = null;
   R.streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   R.streams = [];
 }

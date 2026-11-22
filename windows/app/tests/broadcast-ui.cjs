@@ -58,10 +58,11 @@ function fixture() {
     const errors=[]; page.on("pageerror",e=>errors.push(String(e)));
     await page.addInitScript(fixture);
     await page.route("**/*",r => {
-      const u = new URL(r.request().url()), name=path.basename(u.pathname);
-      if (u.hostname !== "localhost" || !/^(studio([a-z-]+)?\.(html|js|css)|i18n\.js|style\.css|strings\.js)$/.test(name)) return r.abort();
-      const contentType = name.endsWith(".html") ? "text/html" : name.endsWith(".css") ? "text/css" : "text/javascript";
-      return r.fulfill({body:fs.readFileSync(path.join(ui,name)),contentType});
+      const u = new URL(r.request().url());
+      const file = path.resolve(ui, "." + decodeURIComponent(u.pathname));
+      if (u.origin !== "http://localhost" || !file.startsWith(ui + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return r.abort();
+      const types = {".html":"text/html",".css":"text/css",".js":"text/javascript",".mjs":"text/javascript",".wasm":"application/wasm",".jpg":"image/jpeg"};
+      return r.fulfill({body:fs.readFileSync(file),contentType:types[path.extname(file)] || "application/octet-stream"});
     });
     await page.goto("http://localhost/studio.html");
     await page.waitForSelector('body[data-phase=setup]');
@@ -92,7 +93,12 @@ function fixture() {
     assert.equal(await $("#broadcasts").inputValue(),"scheduled-0");
     assert.match(await $("#broadcasts").innerText(),/비공개 방송 점검/);
     await $("#reload").click();
+    assert(await $("#camera-background").isHidden());
     await $("#camera").check();
+    assert.equal(await $(".camera-background-presets button").count(),4);
+    await page.getByRole("button",{name:"스튜디오",exact:true}).click();
+    assert.equal(await page.getByRole("button",{name:"스튜디오",exact:true}).getAttribute("aria-pressed"),"true");
+    await page.getByRole("button",{name:"원본",exact:true}).click();
     await $("#prepare").click();
     await page.waitForSelector("body[data-phase=ready]");
     await page.evaluate(()=>{window.declineReview=true;});

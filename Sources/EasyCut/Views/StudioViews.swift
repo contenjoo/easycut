@@ -341,6 +341,10 @@ struct StudioMonitor: View {
                 Label("방송 스튜디오", systemImage: "rectangle.on.rectangle").fontWeight(.semibold)
                 Spacer(minLength: 4)
                 if rec.liveEnabled { Text(verbatim: L(rec.liveStatus)).lineLimit(2).multilineTextAlignment(.trailing) }
+                if rec.studioCameraAvailable {
+                    CameraBackdropControl(rec: rec, compact: true)
+                        .disabled(rec.phase != .recording && rec.phase != .paused)
+                }
                 StudioLayoutEditButton(rec: rec, compact: true)
                     .disabled(rec.phase != .recording && rec.phase != .paused)
             }

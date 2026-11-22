@@ -285,6 +285,7 @@ struct RecordSheet: View {
                 Picker("카메라", selection: $rec.cameraID) {
                     ForEach(rec.cameras, id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
                 }
+                CameraBackdropControl(rec: rec)
             }
         }
     }
@@ -332,11 +333,11 @@ struct RecordPanelView: View {
         VStack(spacing: 8) {
             if controller.studioMode {
                 StudioMonitor(rec: controller)
-            } else if controller.useCamera, let rec = controller.recorder {
-                CameraPreview(session: rec.session)
-                    .frame(width: 150, height: 150)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 2))
+            } else if controller.useCamera, let frames = controller.recorder?.cameraFeed.preview {
+                CameraFrameView(frames: frames)
+                    .frame(width: controller.cameraCircle ? 150 : 208, height: controller.cameraCircle ? 150 : 117)
+                    .clipShape(RoundedRectangle(cornerRadius: controller.cameraCircle ? 75 : 5))
+                    .overlay(RoundedRectangle(cornerRadius: controller.cameraCircle ? 75 : 5).stroke(.white.opacity(0.8), lineWidth: 2))
             }
             if !controller.studioMode, !controller.deviceWarning.isEmpty {
                 Label(L(controller.deviceWarning), systemImage: "exclamationmark.triangle.fill")
@@ -357,6 +358,9 @@ struct RecordPanelView: View {
                     Text(L(paused ? "일시정지" : String(TimeFormat.clock(controller.elapsed).prefix(8))))
                         .font(.body.monospacedDigit()).foregroundStyle(.white)
                     Spacer()
+                    if !controller.studioMode && controller.studioCameraAvailable {
+                        CameraBackdropControl(rec: controller, compact: true)
+                    }
                     if !(controller.studioMode && controller.liveEnabled) {
                         Button { controller.togglePause() } label: {
                             Image(systemName: paused ? "record.circle" : "pause.fill")
@@ -386,23 +390,4 @@ struct RecordPanelView: View {
         }
         .padding(8)
     }
-}
-
-/// 카메라 미리보기 (AVCaptureVideoPreviewLayer)
-struct CameraPreview: NSViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        v.wantsLayer = true
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
-        layer.frame = v.bounds
-        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        v.layer = CALayer()
-        v.layer?.addSublayer(layer)
-        return v
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
