@@ -1,5 +1,7 @@
 import { mountLayoutEditor, sceneFrames, sceneNames, readLayout, order, paint } from "./studio-layout.js";
 import { mountYouTube } from "./studio-youtube.js";
+import { mountCameraBackgroundPicker } from "./camera-backgrounds/picker.js";
+import { createCameraBackgroundStream } from "./camera-backgrounds/processor.js";
 
 const { core: { invoke }, window: appWindows } = window.__TAURI__;
 const $ = id => document.getElementById(id);
@@ -10,6 +12,21 @@ let liveRecorder = null, liveStream = null, audioContext = null, encoderStarted 
 let liveState = "", liveWrites = Promise.resolve(), liveFailed = false, rawError = "";
 let connectTimer, statusTimer, lastStatusCheck = 0, statusPending = false, ownsFiles = false, completedMessage = "";
 let ending = null;
+let cameraProcessor = null;
+let cameraFailure = "";
+const background = mountCameraBackgroundPicker($("camera-background"), {
+  apply: async effect => {
+    await cameraProcessor?.setEffect(effect);
+    cameraFailure = ""; $("notice").textContent = "";
+  },
+  onBusy: refresh,
+  onError: cameraError,
+});
+function cameraError(error) {
+  cameraFailure = L("카메라 배경을 적용하지 못했습니다: {}", L(error?.message || String(error)));
+  $("notice").textContent = cameraFailure;
+  refresh();
+}
 const youtube = mountYouTube(invoke,refresh);
 const failText = error => L(String(error?.message || error));
 const canSwitch = () => ["setup","ready","recording"].includes(phase);
@@ -22,14 +39,16 @@ const names = {setup:"입력 대기",preparing:"장치 연결 중…",ready:"미
 function refresh() {
   document.body.dataset.phase = phase;
   const configurable = ["setup","ready"].includes(phase);
-  $("devices").disabled = phase !== "setup";
+  $("devices").disabled = phase !== "setup" || background.busy;
+  $("camera-background").hidden = !$("camera").checked;
+  background.setEnabled($("camera").checked && canSwitch());
   $("live-options").disabled = !configurable;
   $("output").disabled = youtube.busy;
   $("prepare").hidden = !configurable;
   $("prepare").classList.toggle("primary",phase === "setup");
-  $("prepare").disabled = youtube.busy;
+  $("prepare").disabled = youtube.busy || background.busy;
   $("go").hidden = phase !== "ready";
-  $("go").disabled = youtube.busy;
+  $("go").disabled = youtube.busy || background.busy || Boolean(cameraFailure);
   $("go").textContent = L(output() === "local" ? "녹화 시작" : "녹화·송출 시작");
   $("stop").hidden = phase !== "recording";
   $("return-editor").hidden = phase !== "done";
@@ -100,6 +119,7 @@ async function video(stream) {
 }
 function releaseSources() {
   clearInterval(frameTimer);
+  cameraProcessor?.stop(); cameraProcessor = null; cameraFailure = "";
   for (const stream of streams) for (const track of stream.getTracks()) track.stop();
   streams = []; sources = {};
 }
@@ -110,7 +130,9 @@ async function prepare() {
     streams.push(display); sources.screen = await video(display);
     if ($("camera").checked) {
       const cam = await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}});
-      streams.push(cam); sources.camera = await video(cam);
+      streams.push(cam);
+      cameraProcessor = await createCameraBackgroundStream(cam, background.effect(), {onError: cameraError});
+      sources.camera = await video(cameraProcessor.stream);
     }
     if ($("mic").checked) {
       sources.mic = await navigator.mediaDevices.getUserMedia({audio:true}); streams.push(sources.mic);
@@ -224,7 +246,7 @@ async function stopLive() {
   await audioContext?.close(); audioContext = null; liveRecorder = null; liveState = "";
 }
 async function start() {
-  if (phase !== "ready" || youtube.busy) return;
+  if (phase !== "ready" || youtube.busy || background.busy || cameraFailure) return;
   $("notice").textContent = "";
   try {
     if (output() === "youtube") youtube.validate();

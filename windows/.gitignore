@@ -6,3 +6,6 @@ app/src-tauri/resources/bin/*
 !app/src-tauri/resources/bin/README.txt
 app/src-tauri/resources/licenses/*
 !app/src-tauri/resources/licenses/README.txt
+app/ui/camera-backgrounds/runtime/
+!app/src-tauri/resources/licenses/MediaPipe-Apache-2.0.txt
+!app/src-tauri/resources/licenses/MediaPipe-notice.txt

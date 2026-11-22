@@ -6,7 +6,7 @@ import AppKit
 /// 화면 파일에는 마이크 소리가 함께 들어가고, 카메라 파일은 영상만 담는다.
 /// 모든 파일은 같은 시작 시각(호스트 시계)에서 시작해 같은 시각에 끝나므로 타임라인 0초에 나란히 놓으면 맞는다.
 final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
-    AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+    AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
 
     /// 녹화 범위
     enum Target {
@@ -21,6 +21,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         var target: Target = .display
         var excludeApp: SCRunningApplication?
         var camera: AVCaptureDevice?
+        var cameraBackdrop: CameraBackdrop = .off
+        var showCameraPreview = false
         var microphone: AVCaptureDevice?
         /// 컴퓨터 소리 (별도 파일)
         var systemAudio = false
@@ -44,6 +46,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
 
     /// 카메라 미리보기용 (녹화 중 떠 있는 작은 창에 쓴다)
     let session = AVCaptureSession()
+    let cameraFeed: CameraFeed
     var onError: ((String) -> Void)?
 
     private let queue = DispatchQueue(label: "easycut.recorder")
@@ -69,10 +72,20 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
 
     init(options: Options) {
         self.options = options
+        cameraFeed = CameraFeed(backdrop: options.cameraBackdrop, preview: options.showCameraPreview)
         sceneChanges = options.initialScene.map {
             [StudioSceneChange(time: 0, scene: $0, customLayout: options.initialCustomLayout)]
         } ?? []
         super.init()
+        cameraFeed.onFrame = { [weak self] sample in
+            guard let self else { return }
+            // Bound in-flight frames; camera inference never blocks screen or audio capture.
+            self.queue.sync { self.recordCamera(sample) }
+        }
+        cameraFeed.onError = { [weak self] error in
+            guard let self else { return }
+            self.queue.async { self.fail(error) }
+        }
     }
 
     static var hostNow: CMTime { CMClockGetTime(CMClockGetHostTimeClock()) }
@@ -203,16 +216,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     func startDevices() throws {
         guard !session.isRunning, options.camera != nil || options.microphone != nil else { return }
         session.beginConfiguration()
-        if let cam = options.camera {
-            if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
-            let input = try AVCaptureDeviceInput(device: cam)
-            if session.canAddInput(input) { session.addInput(input) }
-            let out = AVCaptureVideoDataOutput()
-            out.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
-            out.alwaysDiscardsLateVideoFrames = true
-            out.setSampleBufferDelegate(self, queue: queue)
-            if session.canAddOutput(out) { session.addOutput(out) }
+        do {
+            if let cam = options.camera { try cameraFeed.addCamera(cam, to: session) }
+            try addMicrophone()
+        } catch {
+            session.commitConfiguration()
+            throw error
         }
+        session.commitConfiguration()
+        session.startRunning()
+    }
+
+    private func addMicrophone() throws {
         if let mic = options.microphone {
             let input = try AVCaptureDeviceInput(device: mic)
             if session.canAddInput(input) { session.addInput(input) }
@@ -225,8 +240,6 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
             out.setSampleBufferDelegate(self, queue: queue)
             if session.canAddOutput(out) { session.addOutput(out) }
         }
-        session.commitConfiguration()
-        session.startRunning()
     }
 
     /// 지금이 녹화 파일의 몇 초인지 (멈춤 중이거나 녹화 전후면 nil)
@@ -360,16 +373,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let t0 = startTime, endTime == nil, !paused, let buf = shifted(sb, clock: session.synchronizationClock),
               buf.presentationTimeStamp >= t0 else { return }
-        if output is AVCaptureAudioDataOutput {
-            options.studio?.microphone(buf)
-            guard let a = screenAudio, a.isReadyForMoreMediaData, screenWriter?.status == .writing else { return }
-            if !a.append(buf) { fail(screenWriter?.error) }
-        } else {
-            options.studio?.camera(buf)
-            if camWriter == nil { makeCameraWriter(from: buf, start: t0) }
-            guard let v = camVideo, v.isReadyForMoreMediaData, camWriter?.status == .writing else { return }
-            v.append(buf)
-        }
+        options.studio?.microphone(buf)
+        guard let a = screenAudio, a.isReadyForMoreMediaData, screenWriter?.status == .writing else { return }
+        if !a.append(buf) { fail(screenWriter?.error) }
+    }
+
+    private func recordCamera(_ sample: CMSampleBuffer) {
+        guard let t0 = startTime, endTime == nil, !paused, let buf = shifted(sample, clock: session.synchronizationClock),
+              buf.presentationTimeStamp >= t0 else { return }
+        options.studio?.camera(buf)
+        if camWriter == nil { makeCameraWriter(from: buf, start: t0) }
+        guard let v = camVideo, v.isReadyForMoreMediaData, camWriter?.status == .writing else { return }
+        if !v.append(buf) { fail(camWriter?.error) }
     }
 
     /// 카메라 해상도는 첫 프레임을 보고 정한다

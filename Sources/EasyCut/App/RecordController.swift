@@ -18,6 +18,35 @@ final class RecordController: ObservableObject {
     @Published var displayID: CGDirectDisplayID = CGMainDisplayID()
     @Published var cameras: [AVCaptureDevice] = []
     @Published var microphones: [AVCaptureDevice] = []
+    @Published private(set) var backdropChoice: CameraBackdropChoice = .off
+    @Published private(set) var backdrop: CameraBackdrop = .off
+    @Published private(set) var backdropError: String?
+    private(set) var customBackdrop: CGImage?
+    private(set) var customBackdropName: String?
+
+    func selectBackdrop(_ choice: CameraBackdropChoice, imageURL: URL? = nil) {
+        do {
+            let selected: CameraBackdrop
+            switch choice {
+            case .off: selected = .off
+            case .blur: selected = .blur
+            case .custom:
+                if let imageURL {
+                    customBackdrop = try CameraBackdropChoice.loadImage(at: imageURL)
+                    customBackdropName = imageURL.lastPathComponent
+                }
+                guard let customBackdrop else { throw CameraBackdropError.image }
+                selected = .image(customBackdrop)
+            default:
+                guard let url = choice.presetURL else { throw CameraBackdropError.image }
+                selected = .image(try CameraBackdropChoice.loadImage(at: url))
+            }
+            backdropError = nil
+            backdrop = selected
+            backdropChoice = choice
+            recorder?.cameraFeed.setBackdrop(selected)
+        } catch { backdropError = error.localizedDescription }
+    }
     @AppStorage("recUseCamera") var useCamera = true
     @AppStorage("recUseMic") var useMic = true
     @AppStorage("recCameraID") var cameraID = ""
@@ -270,7 +299,7 @@ final class RecordController: ObservableObject {
         }
         let opts = ScreenRecorder.Options(
             display: display, target: recTarget, excludeApp: excludeApp,
-            camera: camera, microphone: mic,
+            camera: camera, cameraBackdrop: backdrop, showCameraPreview: camera != nil && !studioMode, microphone: mic,
             systemAudio: systemAudio,
             screenURL: Self.folder.appendingPathComponent("녹화 \(stamp) 화면.mp4"),
             cameraURL: Self.folder.appendingPathComponent("녹화 \(stamp) 카메라.mp4"),
@@ -280,7 +309,10 @@ final class RecordController: ObservableObject {
         rec.onError = { [weak self, weak rec] (msg: String) in
             Task { @MainActor in
                 guard let self, let rec, self.recorder === rec else { return }
-                if self.phase == .starting { self.startFailure = msg; return }
+                if self.preparing && self.phase != .recording {
+                    self.startFailure = msg
+                    return
+                }
                 guard self.phase == .recording || self.phase == .paused else { return }
                 self.store?.alert = "녹화 중 문제가 생겼습니다: \(msg)"
                 await self.stop()
@@ -313,6 +345,7 @@ final class RecordController: ObservableObject {
         }
         phase = .starting
         do {
+            if let startFailure { throw MediaError.failed(startFailure) }
             try await rec.start()
             if let startFailure { throw MediaError.failed(startFailure) }
             phase = .recording
