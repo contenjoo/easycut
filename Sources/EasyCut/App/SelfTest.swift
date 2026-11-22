@@ -63,6 +63,136 @@ enum SelfTest {
         check(SpeechCheck.looksRepetitive(repeated), "같은 문장 반복은 의심스러운 인식")
         check(!SpeechCheck.looksRepetitive("안녕하세요 오늘은 방송 스튜디오 녹화를 확인합니다 화면과 카메라가 잘 나오는지 봅시다 그리고 끝".split(separator: " ").map(String.init)),
               "보통 문장은 반복 아님")
+        testRecoveryPerInstance()
+        testExternalChange(dir)
+        check(AITools.reviewExportDirectory.path.hasPrefix(dir.path), "구간 확인 영상이 ~/Movies 대신 작업 폴더로: \(AITools.reviewExportDirectory.path)")
+        let notes = Updater.plainNotes("## 새 기능\n**빨라짐** [내려받기](https://example.com/a.dmg) ![그림](a.png) [빈]()")
+        check(notes == "새 기능\n빨라짐 내려받기 그림 빈", "업데이트 안내에서 마크다운 링크는 글만 남김: \(notes)")
+    }
+
+    private static func fileDate(_ url: URL, _ d: Date) {
+        try? FileManager.default.setAttributes([.modificationDate: d], ofItemAtPath: url.path)
+    }
+
+    private static func projectData(width: Double) -> Data {
+        var p = Project()
+        p.assets = [MediaAsset(path: "/tmp/x.mp4", name: "x", kind: .video, duration: 10, width: 1920, height: 1080, hasAudio: true)]
+        p.canvasWidth = width
+        return (try? JSONEncoder().encode(p)) ?? Data()
+    }
+
+    /// 1·3: 실행마다 다른 복구 파일, 자동 저장을 꺼도 복구 파일 보관, 끝난 실행의 파일만 복구 제안
+    @MainActor
+    static func testRecoveryPerInstance() {
+        let fm = FileManager.default
+        let rdir = RecoveryFiles.directory
+        let own = EditorStore.recoveryURL
+        check(own.deletingLastPathComponent().standardizedFileURL.path == rdir.standardizedFileURL.path
+              && own.lastPathComponent.contains(RecoveryFiles.instanceID), "복구 파일이 실행마다 따로: \(own.lastPathComponent)")
+        let ma = MediaAsset(path: "/tmp/x.mp4", name: "x", kind: .video, duration: 10, width: 1920, height: 1080, hasAudio: true)
+        let s1 = EditorStore()
+        s1.clearRecovery()
+        s1.apply { $0.assets = [ma] }
+        s1.autosaveNow()
+        check(!s1.autosaveEnabled && fm.fileExists(atPath: own.path), "자동 저장을 꺼도 저장 안 한 새 프로젝트는 복구 파일에 보관")
+        s1.clearRecovery()
+        s1.saveRecoveryNow()
+        check(fm.fileExists(atPath: own.path), "업데이트 전 보관도 이 실행의 복구 파일에")
+
+        // 실행 중인 다른 EasyCut(잠금을 쥔 파일), 강제 종료된 실행(잠금이 풀린 파일), 예전 버전의 단일 파일
+        let alive = rdir.appendingPathComponent("복구용 프로젝트 1-ALIVE.easycut")
+        let dead = rdir.appendingPathComponent("복구용 프로젝트 2-DEAD.easycut")
+        let legacy = RecoveryFiles.legacyURL
+        let staleLock = rdir.appendingPathComponent("복구용 프로젝트 3-GONE.lock")
+        try? projectData(width: 1001).write(to: alive)
+        try? projectData(width: 1002).write(to: dead)
+        try? projectData(width: 1003).write(to: legacy)
+        fm.createFile(atPath: RecoveryFiles.lockURL(for: dead).path, contents: nil)
+        fm.createFile(atPath: staleLock.path, contents: nil)
+        let aliveLock = Darwin.open(RecoveryFiles.lockURL(for: alive).path, O_RDWR | O_CREAT, 0o644)
+        check(aliveLock >= 0 && flock(aliveLock, LOCK_EX | LOCK_NB) == 0, "다른 실행 흉내: 잠금 쥠")
+        defer { close(aliveLock) }
+        fileDate(alive, Date())
+        fileDate(dead, Date().addingTimeInterval(-60))
+        fileDate(legacy, Date().addingTimeInterval(-3600))
+        fileDate(own, Date().addingTimeInterval(30))
+        let left = RecoveryFiles.leftovers().map(\.lastPathComponent)
+        check(left == [dead.lastPathComponent, legacy.lastPathComponent], "실행 중인 EasyCut의 복구 파일은 빼고 최근 순: \(left)")
+        s1.clearRecovery()
+        check(!fm.fileExists(atPath: own.path) && fm.fileExists(atPath: alive.path) && fm.fileExists(atPath: dead.path) && fm.fileExists(atPath: legacy.path),
+              "복구 파일 지우기는 이 실행의 파일만")
+
+        var offered: [String] = []
+        let s2 = EditorStore()
+        s2.recoveryResponder = { u, _ in offered.append(u.lastPathComponent); return true }
+        s2.offerRecovery()
+        check(offered == [dead.lastPathComponent], "끝난 실행의 가장 최근 작업 하나만 물음: \(offered)")
+        check(s2.project.canvasWidth == 1002 && s2.dirty && s2.projectURL == nil, "복구한 작업이 열림 (편집됨)")
+        check(!fm.fileExists(atPath: dead.path) && fm.fileExists(atPath: own.path), "복구한 작업은 이 실행의 복구 파일로 옮겨 담음")
+        check(fm.fileExists(atPath: alive.path) && fm.fileExists(atPath: legacy.path), "나머지 복구 파일은 다음 실행까지 남김")
+        check(!fm.fileExists(atPath: staleLock.path) && !fm.fileExists(atPath: RecoveryFiles.lockURL(for: dead).path), "끝난 실행의 잠금 파일 정리")
+
+        offered = []
+        let s3 = EditorStore()
+        s3.recoveryResponder = { u, _ in offered.append(u.lastPathComponent); return false }
+        s3.offerRecovery()
+        check(offered == [legacy.lastPathComponent], "예전 버전의 단일 복구 파일도 읽음: \(offered)")
+        check(!fm.fileExists(atPath: legacy.path) && fm.fileExists(atPath: alive.path) && fm.fileExists(atPath: own.path), "버리기는 고른 파일만 지움")
+
+        try? fm.removeItem(at: alive)
+        try? fm.removeItem(at: RecoveryFiles.lockURL(for: alive))
+        s3.clearRecovery()
+    }
+
+    /// 2: 다른 창·다른 Mac이 저장한 프로젝트 파일을 자동 저장이 덮어쓰지 않는다
+    @MainActor
+    static func testExternalChange(_ dir: URL) {
+        let defaults = UserDefaults.standard
+        let oldArgs = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var args = oldArgs
+        args["autosave"] = true
+        defaults.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(oldArgs, forName: UserDefaults.argumentDomain) }
+
+        let fm = FileManager.default
+        let url = dir.appendingPathComponent("동시 편집.easycut")
+        let other = EditorStore.externalVersionURL(for: url)
+        for u in [url, other, EditorStore.autosaveBackupURL(for: url)] { try? fm.removeItem(at: u) }
+        func width() -> Double? {
+            (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(Project.self, from: $0) }?.canvasWidth
+        }
+        let ma = MediaAsset(path: "/tmp/x.mp4", name: "x", kind: .video, duration: 10, width: 1920, height: 1080, hasAudio: true)
+        let a = EditorStore()
+        var prompts = 0
+        a.externalChangeResponder = { _ in prompts += 1; return .cancel }
+        a.apply { $0.assets = [ma]; $0.canvasWidth = 1100 }
+        a.projectURL = url
+        check(a.save() && width() == 1100, "창 A가 저장")
+        let b = EditorStore()
+        b.open(url)
+        b.apply { $0.canvasWidth = 1200 }
+        usleep(20_000)
+        b.autosaveNow()
+        check(width() == 1200 && !b.dirty, "창 B 자동 저장 (바뀐 것 없으면 묻지 않음)")
+        a.apply { $0.canvasWidth = 1300 }
+        a.autosaveNow()
+        check(width() == 1200 && a.externalChangePending && a.dirty, "창 A 자동 저장은 B가 저장한 파일을 덮어쓰지 않고 멈춤")
+        a.apply { $0.canvasWidth = 1310 }
+        a.autosaveNow()
+        check(width() == 1200, "멈춘 동안 자동 저장 안 함")
+        check(!a.save() && width() == 1200 && prompts == 1, "⌘S는 물어본 뒤 취소하면 저장 안 함")
+        a.externalChangeResponder = { _ in prompts += 1; return .overwrite }
+        check(a.save() && width() == 1310 && !a.externalChangePending, "덮어쓰기를 고르면 저장")
+        let kept = (try? Data(contentsOf: other)).flatMap { try? JSONDecoder().decode(Project.self, from: $0) }?.canvasWidth
+        check(kept == 1200, "덮어쓴 다른 곳의 내용은 .other.bak으로 남김")
+        a.apply { $0.canvasWidth = 1320 }
+        usleep(20_000)
+        a.autosaveNow()
+        check(width() == 1320 && prompts == 2, "다시 자동 저장은 묻지 않고 계속")
+        b.externalChangeResponder = { _ in .reopen }
+        b.apply { $0.canvasWidth = 1400 }
+        check(!b.save() && b.project.canvasWidth == 1320 && !b.dirty && width() == 1320, "다시 열기를 고르면 디스크 내용으로")
+        for u in [url, other, EditorStore.autosaveBackupURL(for: url)] { try? fm.removeItem(at: u) }
     }
 
     /// 실제 앱의 복구 파일·자동 저장을 건드리지 않도록 이 프로세스만 따로 쓴다.
@@ -71,6 +201,9 @@ enum SelfTest {
         if (ProcessInfo.processInfo.environment["EASYCUT_SUPPORT_DIR"] ?? "").isEmpty {
             setenv("EASYCUT_SUPPORT_DIR", dir.appendingPathComponent("support", isDirectory: true).path, 1)
             AppPaths.useRealModels = true
+        }
+        if (ProcessInfo.processInfo.environment["EASYCUT_REVIEW_EXPORT_DIR"] ?? "").isEmpty {
+            setenv("EASYCUT_REVIEW_EXPORT_DIR", dir.appendingPathComponent("review-exports", isDirectory: true).path, 1)
         }
         let defaults = UserDefaults.standard
         var domain = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -412,6 +545,7 @@ enum SelfTest {
         check(snapped.contains("맞춤") && r4.measures.allSatisfy { abs($0.offset) < 0.03 }, "자막마다 맞추기: 모두 ±0.03초 안")
         let ex = await run("export_range", ["start": 1.0, "end": 3.0, "open": false])
         if let path = ex.components(separatedBy: "내보냄: ").last?.trimmingCharacters(in: .whitespaces), FileManager.default.fileExists(atPath: path) {
+            check(path.hasPrefix(AITools.reviewExportDirectory.path) && !path.contains("/Movies/"), "구간 내보내기가 ~/Movies에 쓰지 않음: \(path)")
             let d = try await AVURLAsset(url: URL(fileURLWithPath: path)).load(.duration).seconds
             check(abs(d - 2.0) < 0.1, String(format: "구간 내보내기 %.2f초", d))
             try? FileManager.default.removeItem(atPath: path)

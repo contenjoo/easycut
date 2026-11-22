@@ -3,6 +3,14 @@ import AppKit
 
 /// 편집 결과를 검토하고 고치는 AI 도구: 전체 자막 읽기, 클립 경계·원본 연결 보기, 구간 소리 듣기, 경계 조정·잘린 말 되살리기.
 extension AITools {
+    /// 구간 확인용 영상을 둘 폴더. EASYCUT_REVIEW_EXPORT_DIR로 바꿀 수 있다 (셀프테스트는 작업 폴더를 쓴다).
+    nonisolated static var reviewExportDirectory: URL {
+        if let path = ProcessInfo.processInfo.environment["EASYCUT_REVIEW_EXPORT_DIR"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Movies/EasyCut 확인용", isDirectory: true)
+    }
+
     static let reviewDefinitions: [[String: Any]] = [
         tool("get_captions", "자막 전체를 번호·시작~끝·내용으로 돌려준다(get_project_state는 처음 20개만 보여 준다). 길면 from/to(초)나 start_index로 나눠 읽는다. 번호는 edit_captions·cut_captions에 그대로 쓴다.",
              ["from": num("시작 시간(초), 선택"), "to": num("끝 시간(초), 선택"),
@@ -255,7 +263,7 @@ extension AITools {
             if st > 0 { q.rippleDelete(from: 0, to: st) }
             let len = min(en, total) - st
             if q.duration > len { q.rippleDelete(from: len, to: q.duration + 1) }
-            let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Movies/EasyCut 확인용", isDirectory: true)
+            let dir = AITools.reviewExportDirectory
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let f = DateFormatter(); f.dateFormat = "HHmmss"
             let url = dir.appendingPathComponent(String(format: "구간 %.1f-%.1f초 %@.mp4", st, min(en, total), f.string(from: Date())))

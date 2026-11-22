@@ -4,3 +4,7 @@ dist/
 .DS_Store
 vendor/bin/
 Resources/YouTubeOAuthClient.plist
+output/
+# macOS 폴더 아이콘 파일 "Icon\r" (괄호 안은 보이지 않는 CR 문자. Icon? 는 Icons 폴더까지 무시해서 쓰지 않음)
+Icon[]
+.claude/

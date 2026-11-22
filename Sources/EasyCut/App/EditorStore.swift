@@ -26,7 +26,17 @@ final class EditorStore: ObservableObject {
     @Published var selectedCaption: UUID?
     @Published var markIn: Double?
     @Published var markOut: Double?
-    @Published var projectURL: URL?
+    @Published var projectURL: URL? {
+        didSet {
+            guard projectURL != oldValue else { return }
+            projectFileDate = projectURL.flatMap(RecoveryFiles.modificationDate)
+            externalChangePending = false
+        }
+    }
+    /// 열거나 저장할 때 본 프로젝트 파일의 수정 시각. 디스크의 시각이 달라지면 다른 곳에서 저장한 것으로 본다.
+    private(set) var projectFileDate: Date?
+    /// 다른 곳에서 파일이 바뀌어 자동 저장을 멈춘 상태 (사용자가 고를 때까지)
+    @Published private(set) var externalChangePending = false
     @Published var dirty = false
     @Published var toast: String?
     @Published var alert: String?
@@ -78,7 +88,7 @@ final class EditorStore: ObservableObject {
     @AppStorage("whisperModel") var whisperModelID: String = WhisperModel.all[0].id
     /// 자막을 지우면 그 구간 영상도 함께 잘라낸다
     @AppStorage("captionCutsVideo") var captionCutsVideo = true
-    /// 바뀔 때마다 자동 저장 (저장한 적 없는 프로젝트는 복구용 파일에 보관)
+    /// 바뀔 때마다 프로젝트 파일에 자동 저장 (저장한 적 없는 프로젝트의 복구용 파일은 이 설정과 상관없이 항상 보관)
     @AppStorage("autosave") var autosaveEnabled = true
 
     let player = PlayerController()
@@ -375,12 +385,15 @@ final class EditorStore: ObservableObject {
 
     func open(_ url: URL) {
         do {
+            let date = RecoveryFiles.modificationDate(url)
             let data = try Data(contentsOf: url)
             let p = try JSONDecoder().decode(Project.self, from: data)
             undoStack.removeAll(); redoStack.removeAll()
             project = p
             naturalEditBackup = nil
             projectURL = url
+            projectFileDate = date
+            externalChangePending = false
             dirty = false
             selection = []
             timelineVersion += 1
@@ -420,6 +433,14 @@ final class EditorStore: ObservableObject {
             panel.nameFieldStringValue = L("새 프로젝트.easycut")
             guard panel.runModal() == .OK, let u = panel.url else { return false }
             url = u
+        } else if let u = url, projectFileChangedOnDisk(u) {
+            // 다른 창·다른 Mac에서 저장한 내용을 말없이 덮어쓰지 않는다
+            switch askAboutExternalChange(u) {
+            case .overwrite: keepExternalVersion(u)
+            case .saveAs: return save(as: true)
+            case .reopen: open(u); return false
+            case .cancel: externalChangePending = true; return false
+            }
         }
         guard let url else { return false }
         do {
@@ -427,6 +448,8 @@ final class EditorStore: ObservableObject {
             enc.outputFormatting = [.sortedKeys]
             try enc.encode(project).write(to: url, options: .atomic)
             projectURL = url
+            projectFileDate = RecoveryFiles.modificationDate(url)
+            externalChangePending = false
             dirty = false
             autosaveTask?.cancel()
             clearRecovery()
@@ -1087,12 +1110,12 @@ final class EditorStore: ObservableObject {
 
     private var autosaveTask: Task<Void, Never>?
 
-    /// 저장한 적 없는 프로젝트를 보관하는 복구용 파일
-    nonisolated static var recoveryURL: URL { AppPaths.support.appendingPathComponent("복구용 프로젝트.easycut") }
+    /// 저장한 적 없는 프로젝트를 보관하는 이 실행만의 복구용 파일
+    nonisolated static var recoveryURL: URL { RecoveryFiles.ownURL }
 
-    /// 편집이 멈추고 1.5초 뒤 저장 (연속 조작은 한 번만 저장)
+    /// 편집이 멈추고 1.5초 뒤 저장 (연속 조작은 한 번만 저장).
+    /// 자동 저장을 꺼도 새 프로젝트의 복구용 파일은 계속 보관한다.
     private func scheduleAutosave() {
-        guard autosaveEnabled else { return }
         autosaveTask?.cancel()
         autosaveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -1101,25 +1124,94 @@ final class EditorStore: ObservableObject {
         }
     }
 
-    /// 지금 바로 자동 저장. 파일이 있으면 그 파일에, 없으면 복구용 파일에 쓴다.
+    /// 지금 바로 자동 저장. 파일이 있으면(자동 저장이 켜져 있을 때만) 그 파일에, 없으면 복구용 파일에 쓴다.
     func autosaveNow() {
         autosaveTask?.cancel()
-        guard autosaveEnabled, dirty else { return }
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.sortedKeys]
-        guard let data = try? enc.encode(project) else { return }
+        guard dirty else { return }
         if let url = projectURL {
+            guard autosaveEnabled, !externalChangePending else { return }
+            if projectFileChangedOnDisk(url) {
+                // 다른 곳에서 저장된 파일: 자동 저장을 멈추고 어떻게 할지 묻는다 (⌘S도 같은 질문)
+                externalChangePending = true
+                let asked = externalChangeAsks
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated {
+                        // 그사이 ⌘S·종료 확인에서 이미 물었으면 다시 묻지 않는다
+                        guard let self, self.externalChangePending, self.projectURL == url, self.externalChangeAsks == asked else { return }
+                        self.save()
+                    }
+                }
+                return
+            }
+            guard let data = encodedProject() else { return }
             do {
                 // 백업을 못 남기면 원본을 덮어쓰지 않는다 (창 제목의 '편집됨' 유지, ⌘S로는 저장 가능)
                 guard backupBeforeFirstAutosave(url) else { return }
                 try data.write(to: url, options: .atomic)
+                projectFileDate = RecoveryFiles.modificationDate(url)
                 dirty = false
             } catch {
                 showToast("자동 저장 실패: \(error.localizedDescription)")
             }
-        } else if !project.assets.isEmpty {
-            // 새 프로젝트는 '저장' 전까지 복구용 파일에 보관 (창 제목의 '편집됨'은 유지)
-            try? data.write(to: Self.recoveryURL, options: .atomic)
+        } else {
+            saveRecoveryNow()
+        }
+    }
+
+    /// 새 프로젝트를 이 실행의 복구용 파일에 보관 (창 제목의 '편집됨'은 유지)
+    func saveRecoveryNow() {
+        guard projectURL == nil, !project.assets.isEmpty, let data = encodedProject() else { return }
+        try? RecoveryFiles.write(data)
+    }
+
+    private func encodedProject() -> Data? {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        return try? enc.encode(project)
+    }
+
+    // MARK: 다른 곳에서 바뀐 프로젝트 파일
+
+    enum ExternalChangeChoice { case overwrite, saveAs, reopen, cancel }
+
+    /// 셀프테스트에서 대화상자 대신 답을 고른다
+    var externalChangeResponder: ((URL) -> ExternalChangeChoice)?
+
+    /// 열거나 저장한 뒤 다른 EasyCut·다른 Mac(동기화 폴더)이 파일을 바꿨는지
+    func projectFileChangedOnDisk(_ url: URL) -> Bool {
+        guard let known = projectFileDate, let now = RecoveryFiles.modificationDate(url) else { return false }
+        return abs(now.timeIntervalSince(known)) > 0.000_5
+    }
+
+    nonisolated static func externalVersionURL(for url: URL) -> URL {
+        URL(fileURLWithPath: url.path + ".other.bak")
+    }
+
+    /// 덮어쓰기 전에 다른 곳에서 저장한 내용을 `이름.easycut.other.bak`으로 남긴다
+    private func keepExternalVersion(_ url: URL) {
+        let copy = Self.externalVersionURL(for: url)
+        try? FileManager.default.removeItem(at: copy)
+        try? FileManager.default.copyItem(at: url, to: copy)
+    }
+
+    private var externalChangeAsks = 0
+
+    private func askAboutExternalChange(_ url: URL) -> ExternalChangeChoice {
+        externalChangeAsks += 1
+        if let r = externalChangeResponder { return r(url) }
+        let a = NSAlert()
+        a.alertStyle = .warning
+        a.messageText = "다른 곳에서 프로젝트 파일이 바뀌었습니다"
+        a.informativeText = "\(url.lastPathComponent) 파일을 다른 EasyCut 창이나 다른 Mac(동기화 폴더)에서 저장한 것 같습니다. 덮어쓰지 않도록 자동 저장을 멈췄습니다.\n덮어쓰면 다른 곳의 내용은 .other.bak 파일로 남깁니다. 다시 열면 이 창의 저장하지 않은 변경은 사라집니다."
+        a.addButton(withTitle: "덮어쓰기")
+        a.addButton(withTitle: "다른 이름으로 저장…")
+        a.addButton(withTitle: "다시 열기")
+        a.addButton(withTitle: "취소")
+        switch a.localized().runModal() {
+        case .alertFirstButtonReturn: return .overwrite
+        case .alertSecondButtonReturn: return .saveAs
+        case .alertThirdButtonReturn: return .reopen
+        default: return .cancel
         }
     }
 
@@ -1147,33 +1239,50 @@ final class EditorStore: ObservableObject {
         url.appendingPathExtension("bak")
     }
 
+    /// 이 실행의 복구용 파일만 지운다
     func clearRecovery() {
-        try? FileManager.default.removeItem(at: Self.recoveryURL)
+        RecoveryFiles.clearOwn()
     }
 
-    /// 지난번에 저장하지 않고 끝난 프로젝트가 있으면 복구할지 묻는다
+    /// 셀프테스트에서 복구 대화상자 대신 답한다 (true = 복구)
+    var recoveryResponder: ((URL, Project) -> Bool)?
+
+    /// 끝난 실행(강제 종료 등)이 저장하지 않고 남긴 프로젝트가 있으면 가장 최근 것 하나를 복구할지 묻는다.
+    /// 실행 중인 다른 EasyCut의 복구 파일은 건드리지 않고, 나머지는 다음 실행에 다시 묻는다.
     func offerRecovery() {
-        let url = Self.recoveryURL
-        guard FileManager.default.fileExists(atPath: url.path), projectURL == nil, project.assets.isEmpty,
-              let data = try? Data(contentsOf: url), let p = try? JSONDecoder().decode(Project.self, from: data) else { return }
-        let a = NSAlert()
-        a.messageText = "저장하지 않은 프로젝트가 있습니다"
-        let when = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-            .map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) } ?? ""
-        a.informativeText = "\(when)에 자동으로 보관된 작업(미디어 \(p.assets.count)개, 길이 \(TimeFormat.clock(p.duration)))을 다시 열까요?"
-        a.addButton(withTitle: "복구")
-        a.addButton(withTitle: "버리기")
-        guard a.localized().runModal() == .alertFirstButtonReturn else { clearRecovery(); return }
-        undoStack.removeAll(); redoStack.removeAll()
-        project = p
-        projectURL = nil
-        dirty = true
-        selection = []
-        timelineVersion += 1
-        for a in p.assets { media.prepare(a) }
-        scheduleRebuild(immediate: true)
-        restoreConvertedAssets()
-        showToast("복구했습니다. ⌘S로 저장하세요")
+        guard projectURL == nil, project.assets.isEmpty else { return }
+        RecoveryFiles.removeStaleLocks()
+        for url in RecoveryFiles.leftovers() {
+            // 읽을 수 없는 파일은 지우지 않고 건너뛴다
+            guard let data = try? Data(contentsOf: url), let p = try? JSONDecoder().decode(Project.self, from: data) else { continue }
+            let restore: Bool
+            if let r = recoveryResponder {
+                restore = r(url, p)
+            } else {
+                let a = NSAlert()
+                a.messageText = "저장하지 않은 프로젝트가 있습니다"
+                let when = RecoveryFiles.modificationDate(url)
+                    .map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) } ?? ""
+                a.informativeText = "\(when)에 자동으로 보관된 작업(미디어 \(p.assets.count)개, 길이 \(TimeFormat.clock(p.duration)))을 다시 열까요?"
+                a.addButton(withTitle: "복구")
+                a.addButton(withTitle: "버리기")
+                restore = a.localized().runModal() == .alertFirstButtonReturn
+            }
+            guard restore else { RecoveryFiles.remove(url); return }
+            // 이 실행의 복구 파일로 먼저 옮겨 담은 뒤에 지난 파일을 지운다 (옮기지 못하면 남겨 둔다)
+            if (try? RecoveryFiles.write(data)) != nil { RecoveryFiles.remove(url) }
+            undoStack.removeAll(); redoStack.removeAll()
+            project = p
+            projectURL = nil
+            dirty = true
+            selection = []
+            timelineVersion += 1
+            for a in p.assets { media.prepare(a) }
+            scheduleRebuild(immediate: true)
+            restoreConvertedAssets()
+            showToast("복구했습니다. ⌘S로 저장하세요")
+            return
+        }
     }
 
     var windowTitle: String {
