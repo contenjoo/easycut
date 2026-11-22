@@ -31,6 +31,9 @@ final class RecordController: ObservableObject {
     @Published var windowID: CGWindowID = 0
     @Published private(set) var studioMode = false
     @Published private(set) var studioScene: StudioScene = .pictureInPicture
+    @Published private(set) var studioCustomLayout = StudioCustomLayout.standard
+    private static let customLayoutKey = "EasyCut.studio.customLayout"
+    private static let prefersCustomKey = "EasyCut.studio.prefersCustomLayout"
     private(set) var studioInsetScene: StudioScene = .pictureInPicture
     @Published private(set) var studioPreview: CGImage?
     @Published var liveEnabled = false
@@ -49,10 +52,24 @@ final class RecordController: ObservableObject {
 
     func selectScene(_ scene: StudioScene) {
         guard studioMode else { return }
-        let resolved: StudioScene = useCamera && cameras.contains(where: { $0.uniqueID == cameraID }) ? scene : .screen
+        let hasCamera = useCamera && cameras.contains(where: { $0.uniqueID == cameraID })
+        let resolved: StudioScene = scene == .custom || hasCamera ? scene : .screen
         if resolved.isPictureInPicture { studioInsetScene = resolved }
         studioScene = resolved
-        recorder?.selectScene(resolved)
+        let useCustom = resolved == .custom
+        if UserDefaults.standard.bool(forKey: Self.prefersCustomKey) != useCustom {
+            UserDefaults.standard.set(useCustom, forKey: Self.prefersCustomKey)
+        }
+        recorder?.selectScene(resolved, customLayout: studioCustomLayout)
+    }
+
+    func applyCustomLayout(_ layout: StudioCustomLayout) {
+        guard studioMode else { return }
+        if let data = try? JSONEncoder().encode(layout) {
+            UserDefaults.standard.set(data, forKey: Self.customLayoutKey)
+        }
+        studioCustomLayout = layout
+        selectScene(.custom)
     }
 
     var target: TargetKind {
@@ -108,7 +125,13 @@ final class RecordController: ObservableObject {
         cameras = CaptureDevices.cameras
         microphones = CaptureDevices.microphones
         if !cameras.contains(where: { $0.uniqueID == cameraID }) { cameraID = cameras.first?.uniqueID ?? "" }
-        if studio { selectScene(useCamera && !cameraID.isEmpty ? .pictureInPicture : .screen) }
+        if studio {
+            let defaults = UserDefaults.standard
+            studioCustomLayout = defaults.data(forKey: Self.customLayoutKey)
+                .flatMap { try? JSONDecoder().decode(StudioCustomLayout.self, from: $0) } ?? .standard
+            let initial: StudioScene = useCamera && !cameraID.isEmpty ? .pictureInPicture : .screen
+            selectScene(defaults.bool(forKey: Self.prefersCustomKey) ? .custom : initial)
+        }
         if !microphones.contains(where: { $0.uniqueID == micID }) { micID = (AVCaptureDevice.default(for: .audio) ?? microphones.first)?.uniqueID ?? "" }
         Task {
             // ScreenCaptureKit is authoritative; CoreGraphics preflight can stay false
@@ -225,7 +248,7 @@ final class RecordController: ObservableObject {
             let id = UUID()
             studioSessionID = id
             do {
-                studio = try StudioProgram(initialScene: studioScene, liveURL: liveURL, onPreview: { [weak self] frame in
+                studio = try StudioProgram(initialScene: studioScene, customLayout: studioCustomLayout, liveURL: liveURL, onPreview: { [weak self] frame in
                     Task { @MainActor in
                         guard self?.studioSessionID == id else { return }
                         self?.studioPreview = frame
@@ -251,7 +274,7 @@ final class RecordController: ObservableObject {
             screenURL: Self.folder.appendingPathComponent("녹화 \(stamp) 화면.mp4"),
             cameraURL: Self.folder.appendingPathComponent("녹화 \(stamp) 카메라.mp4"),
             audioURL: Self.folder.appendingPathComponent("녹화 \(stamp) 컴퓨터 소리.m4a"),
-            studio: studio, initialScene: studioMode ? studioScene : nil)
+            studio: studio, initialScene: studioMode ? studioScene : nil, initialCustomLayout: studioCustomLayout)
         let rec = ScreenRecorder(options: opts)
         rec.onError = { [weak self, weak rec] (msg: String) in
             Task { @MainActor in

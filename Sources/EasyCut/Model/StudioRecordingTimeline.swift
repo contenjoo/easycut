@@ -1,8 +1,26 @@
 import Foundation
 
-struct StudioSceneChange {
+struct StudioSceneChange: Codable {
     let time: Double
     let scene: StudioScene
+    let customLayout: StudioCustomLayout
+
+    init(time: Double, scene: StudioScene, customLayout: StudioCustomLayout = .standard) {
+        self.time = time
+        self.scene = scene
+        self.customLayout = customLayout
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(time: try values.decode(Double.self, forKey: .time),
+                  scene: try values.decode(StudioScene.self, forKey: .scene),
+                  customLayout: try values.decodeIfPresent(StudioCustomLayout.self, forKey: .customLayout) ?? .standard)
+    }
+
+    func matches(_ scene: StudioScene, customLayout: StudioCustomLayout) -> Bool {
+        self.scene == scene && (scene != .custom || self.customLayout == customLayout)
+    }
 }
 
 extension Project {
@@ -21,12 +39,15 @@ extension Project {
         let duration = screen.duration
         let cameraAspect = camera.map { $0.width / max(1, $0.height) } ?? 16.0 / 9.0
         // 편집기의 최소 클립 길이보다 짧은 연속 전환은 마지막 배치로 합친다.
-        var cuts = [StudioSceneChange(time: 0, scene: changes.first?.scene ?? .screen)]
+        let first = changes.first
+        var cuts = [StudioSceneChange(time: 0, scene: first?.scene ?? .screen,
+                                      customLayout: first?.customLayout ?? .standard)]
         for change in changes.dropFirst() where change.time.isFinite && change.time >= 0 {
             guard duration - change.time >= Self.minClipDuration, let last = cuts.last else { continue }
             if change.time - last.time < Self.minClipDuration {
-                cuts[cuts.count - 1] = StudioSceneChange(time: last.time, scene: change.scene)
-            } else if change.scene != last.scene {
+                cuts[cuts.count - 1] = StudioSceneChange(time: last.time, scene: change.scene,
+                                                         customLayout: change.customLayout)
+            } else if !last.matches(change.scene, customLayout: change.customLayout) {
                 cuts.append(change)
             }
         }
@@ -48,8 +69,9 @@ extension Project {
 
         for (index, change) in cuts.enumerated() {
             let end = index + 1 < cuts.count ? cuts[index + 1].time : duration
-            let scene = camera == nil ? StudioScene.screen : change.scene
-            let frames = scene.frames(screenAspect: screen.width / max(1, screen.height), cameraAspect: cameraAspect)
+            let scene: StudioScene = camera == nil && change.scene != .custom ? .screen : change.scene
+            let frames = scene.frames(screenAspect: screen.width / max(1, screen.height), cameraAspect: cameraAspect,
+                                      customLayout: change.customLayout)
             if var base = clip(screen, from: change.time, to: end, frame: frames.screen) {
                 base.showClicks = showClicks
                 tracks[0].clips.append(base)

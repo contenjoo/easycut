@@ -465,6 +465,7 @@
 "글자" = "Text";
 "글자 크기" = "Font size";
 "기본" = "Default";
+"기본 배치로" = "Reset layout";
 "기존 대본 수정 내용은 사라집니다." = "Your edits to the current transcript will be lost.";
 "기존 자막을 대본으로 다시 만들까요?" = "Rebuild captions from the transcript?";
 "기준" = "Method";
@@ -495,6 +496,8 @@
 "나중에" = "Later";
 "날짜 지정" = "Schedule";
 "낮음 · 빠름" = "Low · fast";
+"내 배치" = "Custom layout";
+"내 배치 편집" = "Edit Custom Layout";
 "내려받기" = "Download";
 "내려오기" = "Drop down";
 "내보내기" = "Export";
@@ -721,10 +724,12 @@
 "방송할 예약을 선택하거나 새 방송을 만드세요." = "Choose an upcoming broadcast or create a new one.";
 "방식" = "Style";
 "방식 모두 바꾸기" = "Change all styles";
+"방향키로 이동하고 더하기와 빼기 키로 크기를 조절합니다." = "Move with the arrow keys and resize with the plus and minus keys.";
 "배경" = "Background";
 "배경색" = "Background color";
 "배치" = "Layout";
 "배치 미리보기" = "Layout preview";
+"배치 캔버스" = "Layout canvas";
 "버리기" = "Discard";
 "버튼 하나로 로그인하면 끝입니다. 필요한 프로그램 설치와 연결은 앱이 알아서 합니다." = "One click to log in is all it takes. The app installs and connects everything it needs.";
 "변형" = "Transform";
@@ -815,6 +820,7 @@
 "선택한 공개 범위로 YouTube 방송을 만들까요?" = "Create a YouTube broadcast with this visibility?";
 "선택한 단어 구간을 영상에서 잘라냄 (⌫)" = "Cut the selected words from the video (⌫)";
 "선택한 말을 영상에서 잘라내기" = "Cut the selected words from the video";
+"선택한 소스가 캔버스를 채우고 있습니다. 모서리를 안쪽으로 끌어 줄인 뒤 이동하세요." = "This source fills the canvas. Drag a corner inward to make room before moving it.";
 "선택한 클립 그룹으로 묶기 / 풀기 (묶이면 함께 선택·이동)" = "Group / ungroup selected clips (grouped clips select and move together)";
 "선택할 방송이 없습니다." = "No upcoming broadcasts to select.";
 "설명으로 새 영상 만들기" = "Create a new video from a description";
@@ -839,6 +845,9 @@
 "소리 확인" = "Listen to range";
 "소리가 있는 원본 파일이 필요합니다." = "Needs a source file with sound.";
 "소리만 (M4A)" = "Audio only (M4A)";
+"소스 축소" = "Make source smaller";
+"소스 확대" = "Make source larger";
+"소스를 끌어 이동하고 모서리를 끌어 크기를 조절하세요." = "Drag a source to move it. Drag a corner to resize it.";
 "소음 줄이기 준비 완료" = "Noise reduction ready";
 "소음 줄이기에는 FFmpeg가 필요합니다." = "Noise reduction needs FFmpeg.";
 "속도" = "Speed";
@@ -932,6 +941,7 @@
 "아래" = "Bottom";
 "아래로 슬라이드" = "Slide down";
 "아래로 와이프" = "Wipe down";
+"아래로 이동" = "Move down";
 "아래에서 올라오기" = "Rise up";
 "아직 고르지 않음" = "Not chosen yet";
 "아직 대본이 없습니다" = "No transcript yet";
@@ -1043,6 +1053,7 @@
 "오른쪽으로 나타나기" = "Reveal right";
 "오른쪽으로 슬라이드" = "Slide right";
 "오른쪽으로 와이프" = "Wipe right";
+"오른쪽으로 이동" = "Move right";
 "올라오기" = "Rise up";
 "완료" = "Done";
 "완료:" = "Done:";
@@ -1053,6 +1064,7 @@
 "왼쪽 위" = "Top left";
 "왼쪽으로 슬라이드" = "Slide left";
 "왼쪽으로 와이프" = "Wipe left";
+"왼쪽으로 이동" = "Move left";
 "요약" = "Summary";
 "요청이 거절되었습니다. %@" = "The request was refused. %@";
 "요청이 거절되었습니다. %lf" = "The request was refused. %lf";
@@ -1067,6 +1079,7 @@
 "위로 나타나기" = "Reveal up";
 "위로 슬라이드" = "Slide up";
 "위로 와이프" = "Wipe up";
+"위로 이동" = "Move up";
 "위에서 내려오기" = "Drop down";
 "위치" = "Position";
 "유튜브 도구 설치" = "Install YouTube Tool";
@@ -1238,6 +1251,7 @@
 "저장하지 않은 변경 사항이 있습니다." = "You have unsaved changes.";
 "저장하지 않은 프로젝트가 있습니다" = "There is an unsaved project";
 "저장했습니다" = "Saved";
+"적용" = "Apply";
 "전체" = "Fit";
 "전체 길이: %@" = "Total length: %@";
 "전체 길이: %lf" = "Total length: %lf";
@@ -1344,6 +1358,7 @@
 "카메라·마이크를 켜지 못했습니다: %lld" = "Couldn't turn on the camera/microphone: %lld";
 "카메라를 연결하면 카메라 장면을 선택할 수 있습니다." = "Connect a camera to use camera scenes.";
 "카메라를 찾지 못했습니다" = "No camera found";
+"카메라를 켜면 카메라 배치도 편집할 수 있습니다." = "Turn on the camera to edit its layout.";
 "카메라만" = "Camera only";
 "컴퓨터 소리 (별도 트랙)" = "Computer audio (separate track)";
 "컷 편집" = "Cut editing";
@@ -1419,6 +1434,7 @@
 "페이드 인" = "Fade in";
 "편집 속성" = "Editing controls";
 "편집본에 마우스 클릭 강조" = "Highlight clicks in the edit";
+"편집할 소스" = "Edit source";
 "포장 변환 중…" = "Remuxing…";
 "표시" = "Shown";
 "표시 시간" = "Timing";

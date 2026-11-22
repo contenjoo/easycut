@@ -11,10 +11,12 @@ struct StudioCompositionDesk: View {
                 Text("배치 미리보기").font(.headline)
                 Spacer()
                 Text(verbatim: "1280 × 720").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                StudioLayoutEditButton(rec: rec)
             }
             ZStack {
                 RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: Theme.ruler))
-                StudioSchematic(scene: rec.studioScene, screenAspect: screenAspect, cameraAspect: cameraAspect, guides: true)
+                StudioSchematic(scene: rec.studioScene, screenAspect: rec.studioScreenAspect, cameraAspect: rec.studioCameraAspect,
+                                guides: true, customLayout: rec.studioCustomLayout, showsCamera: rec.studioCameraAvailable)
                     .equatable()
                     .aspectRatio(16 / 9, contentMode: .fit)
                     .padding(12)
@@ -32,7 +34,7 @@ struct StudioCompositionDesk: View {
                 sourceLabel("화면", color: Color(nsColor: Theme.videoClip))
                 sourceLabel("카메라", color: Color(nsColor: Theme.imageClip))
             }
-            StudioSceneStrip(rec: rec, screenAspect: screenAspect, cameraAspect: cameraAspect)
+            StudioSceneStrip(rec: rec, screenAspect: rec.studioScreenAspect, cameraAspect: rec.studioCameraAspect)
             if rec.studioCameraAvailable {
                 StudioCorners(rec: rec)
             } else {
@@ -43,7 +45,7 @@ struct StudioCompositionDesk: View {
             }
         }
         .onChange(of: rec.studioCameraAvailable, initial: true) { _, available in
-            if !available && rec.studioScene != .screen { rec.selectScene(.screen) }
+            if !available && rec.studioScene != .screen && rec.studioScene != .custom { rec.selectScene(.screen) }
         }
     }
 
@@ -54,20 +56,25 @@ struct StudioCompositionDesk: View {
         }
     }
 
-    private var screenAspect: CGFloat {
+}
+
+private extension RecordController {
+    var studioCameraAvailable: Bool { useCamera && cameras.contains { $0.uniqueID == cameraID } }
+
+    var studioScreenAspect: CGFloat {
         let size: CGSize?
-        switch rec.target {
-        case .window: size = rec.windows.first { $0.windowID == rec.windowID }?.frame.size
-        case .area: size = rec.area?.size
+        switch target {
+        case .window: size = windows.first { $0.windowID == windowID }?.frame.size
+        case .area: size = area?.size
         case .display:
-            size = rec.displays.first { $0.displayID == rec.displayID }.map { CGSize(width: $0.width, height: $0.height) }
+            size = displays.first { $0.displayID == displayID }.map { CGSize(width: $0.width, height: $0.height) }
         }
         guard let size, size.width > 0, size.height > 0 else { return 16 / 9 }
         return size.width / size.height
     }
 
-    private var cameraAspect: CGFloat {
-        guard let camera = rec.cameras.first(where: { $0.uniqueID == rec.cameraID }),
+    var studioCameraAspect: CGFloat {
+        guard let camera = cameras.first(where: { $0.uniqueID == cameraID }),
               !camera.supportsSessionPreset(.hd1280x720) else { return 16 / 9 }
         let size = CMVideoFormatDescriptionGetDimensions(camera.activeFormat.formatDescription)
         guard size.width > 0, size.height > 0 else { return 16 / 9 }
@@ -75,26 +82,52 @@ struct StudioCompositionDesk: View {
     }
 }
 
-private extension RecordController {
-    var studioCameraAvailable: Bool { useCamera && cameras.contains { $0.uniqueID == cameraID } }
+private struct StudioLayoutEditButton: View {
+    @ObservedObject var rec: RecordController
+    var compact = false
+    @State private var editing = false
+
+    var body: some View {
+        Button {
+            editing = true
+        } label: {
+            if compact {
+                Image(systemName: "slider.horizontal.below.rectangle")
+            } else {
+                Label("내 배치 편집", systemImage: "slider.horizontal.below.rectangle")
+            }
+        }
+        .controlSize(.small)
+        .accessibilityLabel(Text("내 배치 편집"))
+        .accessibilityIdentifier(compact ? "studio-live-layout-edit" : "studio-layout-edit")
+        .help("내 배치 편집")
+        .sheet(isPresented: $editing) {
+            StudioCustomLayoutEditor(rec: rec, screenAspect: rec.studioScreenAspect, cameraAspect: rec.studioCameraAspect)
+        }
+        .onChange(of: rec.phase) { _, phase in
+            if phase == .saving || phase == .idle { editing = false }
+        }
+    }
 }
 
 /// Uses the normalized rectangles of the live compositor for both the diagram and the scene thumbnails.
-private struct StudioSchematic: View, Equatable {
+struct StudioSchematic: View, Equatable {
     let scene: StudioScene
     var screenAspect: CGFloat = 16 / 9
     var cameraAspect: CGFloat = 16 / 9
     var guides = false
+    var customLayout: StudioCustomLayout = .standard
+    var showsCamera = true
 
     var body: some View {
         Canvas { context, size in
             let canvas = CGRect(origin: .zero, size: size)
             guard size.width > 0, size.height > 0 else { return }
             context.fill(Path(canvas), with: .color(Color(nsColor: Theme.timelineBG)))
-            let layout = scene.frames(screenAspect: screenAspect, cameraAspect: cameraAspect)
+            let layout = scene.frames(screenAspect: screenAspect, cameraAspect: cameraAspect, customLayout: customLayout)
             let transform = CGAffineTransform(scaleX: size.width, y: size.height)
             if let rect = layout.screen { drawScreen(in: rect.applying(transform), context: context) }
-            if let rect = layout.camera { drawCamera(in: rect.applying(transform), context: context) }
+            if showsCamera, let rect = layout.camera { drawCamera(in: rect.applying(transform), context: context) }
             if guides {
                 let safe = canvas.insetBy(dx: size.width * 0.05, dy: size.height * 0.05)
                 var corners = Path()
@@ -173,17 +206,18 @@ private struct StudioSceneStrip: View {
     var cameraAspect: CGFloat = 16 / 9
     var compact = false
     @FocusState private var focused: StudioScene?
-    private let scenes: [StudioScene] = [.screen, .camera, .pictureInPicture, .sideBySide]
+    private let scenes: [StudioScene] = [.screen, .camera, .pictureInPicture, .sideBySide, .custom]
 
     var body: some View {
         HStack(spacing: compact ? 4 : 6) {
             ForEach(scenes, id: \.self) { scene in
                 let target = scene == .pictureInPicture ? rec.studioInsetScene : scene
                 let selected = target == rec.studioScene
-                let available = scene == .screen || rec.studioCameraAvailable
+                let available = scene == .screen || scene == .custom || rec.studioCameraAvailable
                 Button { rec.selectScene(target) } label: {
                     VStack(spacing: compact ? 2 : 4) {
-                        StudioSchematic(scene: target, screenAspect: screenAspect, cameraAspect: cameraAspect)
+                        StudioSchematic(scene: target, screenAspect: screenAspect, cameraAspect: cameraAspect,
+                                        customLayout: rec.studioCustomLayout, showsCamera: scene != .custom || rec.studioCameraAvailable)
                             .equatable()
                             .aspectRatio(16 / 9, contentMode: .fit)
                             .frame(height: compact ? 18 : 27)
@@ -211,15 +245,16 @@ private struct StudioSceneStrip: View {
             }
         }
         .onMoveCommand { direction in
-            guard rec.studioCameraAvailable, let focused, let current = scenes.firstIndex(of: focused) else { return }
+            let availableScenes = rec.studioCameraAvailable ? scenes : [.screen, .custom]
+            guard let focused, let current = availableScenes.firstIndex(of: focused) else { return }
             let next: Int
             switch direction {
             case .left: next = current - 1
             case .right: next = current + 1
             default: return
             }
-            guard scenes.indices.contains(next) else { return }
-            let scene = scenes[next]
+            guard availableScenes.indices.contains(next) else { return }
+            let scene = availableScenes[next]
             self.focused = scene
             rec.selectScene(scene == .pictureInPicture ? rec.studioInsetScene : scene)
         }
@@ -300,6 +335,8 @@ struct StudioMonitor: View {
                 Label("방송 스튜디오", systemImage: "rectangle.on.rectangle").fontWeight(.semibold)
                 Spacer(minLength: 4)
                 if rec.liveEnabled { Text(verbatim: L(rec.liveStatus)).lineLimit(2).multilineTextAlignment(.trailing) }
+                StudioLayoutEditButton(rec: rec, compact: true)
+                    .disabled(rec.phase != .recording && rec.phase != .paused)
             }
             .font(.caption)
             if rec.liveEnabled && rec.useYouTubeAccount && !rec.youtubeStatus.isEmpty {
@@ -321,7 +358,7 @@ struct StudioMonitor: View {
             .accessibilityLabel(Text("현재 장면 미리보기"))
             .accessibilityValue(Text(verbatim: L(rec.studioScene.title)))
             VStack(spacing: 4) {
-                StudioSceneStrip(rec: rec, compact: true)
+                StudioSceneStrip(rec: rec, screenAspect: rec.studioScreenAspect, cameraAspect: rec.studioCameraAspect, compact: true)
                 if rec.studioCameraAvailable { StudioCorners(rec: rec) }
             }
             .disabled(rec.phase != .recording && rec.phase != .paused)

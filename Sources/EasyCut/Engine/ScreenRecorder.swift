@@ -31,6 +31,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         var audioURL: URL
         var studio: StudioProgram?
         var initialScene: StudioScene?
+        var initialCustomLayout: StudioCustomLayout = .standard
     }
 
     struct Result {
@@ -68,7 +69,9 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
 
     init(options: Options) {
         self.options = options
-        sceneChanges = options.initialScene.map { [StudioSceneChange(time: 0, scene: $0)] } ?? []
+        sceneChanges = options.initialScene.map {
+            [StudioSceneChange(time: 0, scene: $0, customLayout: options.initialCustomLayout)]
+        } ?? []
         super.init()
     }
 
@@ -184,14 +187,15 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         try options.studio?.start()
     }
 
-    func selectScene(_ scene: StudioScene) {
+    func selectScene(_ scene: StudioScene, customLayout: StudioCustomLayout = .standard) {
         queue.sync {
-            guard let studio = options.studio, endTime == nil, sceneChanges.last?.scene != scene else { return }
+            guard let studio = options.studio, endTime == nil,
+                  sceneChanges.last?.matches(scene, customLayout: customLayout) != true else { return }
             let now = pauseStart ?? Self.hostNow
             let time = startTime.map { max(0, (now - $0 - pauseOffset).seconds) } ?? 0
             if sceneChanges.last?.time == time { sceneChanges.removeLast() }
-            sceneChanges.append(StudioSceneChange(time: time, scene: scene))
-            studio.setScene(scene)
+            sceneChanges.append(StudioSceneChange(time: time, scene: scene, customLayout: customLayout))
+            studio.setScene(scene, customLayout: customLayout)
         }
     }
 

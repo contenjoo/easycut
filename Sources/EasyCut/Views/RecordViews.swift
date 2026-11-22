@@ -38,7 +38,7 @@ struct RecordSheet: View {
             }
         }
         .onChange(of: rec.useCamera) { _, enabled in
-            if rec.studioMode && !enabled { rec.selectScene(.screen) }
+            if rec.studioMode && !enabled && rec.studioScene != .custom { rec.selectScene(.screen) }
         }
     }
 

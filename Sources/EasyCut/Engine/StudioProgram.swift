@@ -1,13 +1,45 @@
 import AVFoundation
 import CoreImage
 
+/// Source boxes on the 16:9 program canvas, measured from the top left.
+struct StudioCustomLayout: Codable, Equatable {
+    private static let fullScreen = CGRect(x: 0, y: 0, width: 1, height: 1)
+    private static let insetCamera = CGRect(x: 0.70, y: 0.70, width: 0.28, height: 0.28)
+    static let standard = Self(screen: fullScreen, camera: insetCamera)
+
+    let screen: CGRect
+    let camera: CGRect
+
+    init(screen: CGRect, camera: CGRect) {
+        self.screen = Self.bounded(screen, fallback: Self.fullScreen)
+        self.camera = Self.bounded(camera, fallback: Self.insetCamera)
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(screen: try values.decode(CGRect.self, forKey: .screen),
+                  camera: try values.decode(CGRect.self, forKey: .camera))
+    }
+
+    private static func bounded(_ rect: CGRect, fallback: CGRect) -> CGRect {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.size.width.isFinite, rect.size.height.isFinite else { return fallback }
+        let width = min(1, max(0.05, rect.size.width))
+        let height = min(1, max(0.05, rect.size.height))
+        return CGRect(x: min(max(0, rect.origin.x), 1 - width),
+                      y: min(max(0, rect.origin.y), 1 - height),
+                      width: width, height: height)
+    }
+}
+
 enum StudioScene: String, Codable, CaseIterable {
     case screen, camera, pictureInPicture, sideBySide
     case pictureInPictureTopLeft, pictureInPictureTopRight, pictureInPictureBottomLeft
+    case custom
 
     var isPictureInPicture: Bool {
         switch self {
-        case .screen, .camera, .sideBySide: return false
+        case .screen, .camera, .sideBySide, .custom: return false
         case .pictureInPicture, .pictureInPictureTopLeft, .pictureInPictureTopRight, .pictureInPictureBottomLeft: return true
         }
     }
@@ -21,11 +53,13 @@ enum StudioScene: String, Codable, CaseIterable {
         case .pictureInPictureTopLeft: return "화면 속 카메라 (왼쪽 위)"
         case .pictureInPictureTopRight: return "화면 속 카메라 (오른쪽 위)"
         case .pictureInPictureBottomLeft: return "화면 속 카메라 (왼쪽 아래)"
+        case .custom: return "내 배치"
         }
     }
 
     /// Actual image bounds, in normalized coordinates with the top left as origin.
-    func frames(screenAspect: CGFloat, cameraAspect: CGFloat) -> (screen: CGRect?, camera: CGRect?) {
+    func frames(screenAspect: CGFloat, cameraAspect: CGFloat, customLayout: StudioCustomLayout = .standard)
+        -> (screen: CGRect?, camera: CGRect?) {
         let canvas = CGRect(x: 0, y: 0, width: 1, height: 1)
         func fit(_ aspect: CGFloat, _ box: CGRect) -> CGRect {
             let ratio = (aspect > 0 && aspect.isFinite ? aspect : 16 / 9) / (16 / 9)
@@ -36,6 +70,7 @@ enum StudioScene: String, Codable, CaseIterable {
         switch self {
         case .screen: return (fit(screenAspect, canvas), nil)
         case .camera: return (nil, fit(cameraAspect, canvas))
+        case .custom: return (fit(screenAspect, customLayout.screen), fit(cameraAspect, customLayout.camera))
         case .sideBySide:
             return (fit(screenAspect, CGRect(x: 0, y: 0, width: 0.5, height: 1)),
                     fit(cameraAspect, CGRect(x: 0.5, y: 0, width: 0.5, height: 1)))
@@ -61,6 +96,7 @@ final class StudioProgram: @unchecked Sendable {
     private let onPreview: (CGImage) -> Void
     private let onLiveStatus: (String) -> Void
     private var scene: StudioScene
+    private var customLayout: StudioCustomLayout
     private var screenFrame: CVPixelBuffer?
     private var cameraFrame: CVPixelBuffer?
     private var previewPending = false
@@ -71,10 +107,12 @@ final class StudioProgram: @unchecked Sendable {
     private var audioFrame: Int64 = 0
     private let audio = StudioAudioMix()
 
-    init(initialScene: StudioScene, liveURL: URL?, onPreview: @escaping (CGImage) -> Void,
+    init(initialScene: StudioScene, customLayout: StudioCustomLayout = .standard,
+         liveURL: URL?, onPreview: @escaping (CGImage) -> Void,
          onLiveStatus: @escaping (String) -> Void) throws {
         if let liveURL { _ = try StudioEndpoint(liveURL) }
         self.scene = initialScene
+        self.customLayout = customLayout
         self.liveURL = liveURL
         self.onPreview = onPreview
         self.onLiveStatus = onLiveStatus
@@ -119,7 +157,12 @@ final class StudioProgram: @unchecked Sendable {
         }
     }
 
-    func setScene(_ scene: StudioScene) { lock.withLock { self.scene = scene } }
+    func setScene(_ scene: StudioScene, customLayout: StudioCustomLayout = .standard) {
+        lock.withLock {
+            self.scene = scene
+            self.customLayout = customLayout
+        }
+    }
     func screen(_ sample: CMSampleBuffer) { lock.withLock { screenFrame = sample.imageBuffer } }
     func camera(_ sample: CMSampleBuffer) { lock.withLock { cameraFrame = sample.imageBuffer } }
     func microphone(_ sample: CMSampleBuffer) { if liveURL != nil { audio.add(sample) } }
@@ -134,12 +177,12 @@ final class StudioProgram: @unchecked Sendable {
             }
             let previewDue = pts.seconds - lastPreview >= 0.1 && !lock.withLock { previewPending }
             guard previewDue || encoder != nil else { return }
-            let (selected, screen, camera) = lock.withLock { (scene, screenFrame, cameraFrame) }
+            let (selected, custom, screen, camera) = lock.withLock { (scene, customLayout, screenFrame, cameraFrame) }
             func aspect(_ frame: CVPixelBuffer?) -> CGFloat {
                 guard let frame else { return 16 / 9 }
                 return CGFloat(CVPixelBufferGetWidth(frame)) / CGFloat(CVPixelBufferGetHeight(frame))
             }
-            let layout = selected.frames(screenAspect: aspect(screen), cameraAspect: aspect(camera))
+            let layout = selected.frames(screenAspect: aspect(screen), cameraAspect: aspect(camera), customLayout: custom)
             let bounds = CGRect(origin: .zero, size: Self.size)
             var program = CIImage(color: .black).cropped(to: bounds)
             for (source, rect) in [(screen, layout.screen), (camera, layout.camera)] {
