@@ -32,6 +32,7 @@
 "%@ 실패: %lld" = "%@ failed: %lld";
 "%@ 인식을 지원하지 않습니다." = "%@ recognition isn't supported.";
 "%@ 재생" = "Play at %@";
+"%@ 파일을 다른 EasyCut 창이나 다른 Mac(동기화 폴더)에서 저장한 것 같습니다. 덮어쓰지 않도록 자동 저장을 멈췄습니다.\n덮어쓰면 다른 곳의 내용은 .other.bak 파일로 남깁니다. 다시 열면 이 창의 저장하지 않은 변경은 사라집니다." = "%@ seems to have been saved from another EasyCut window or another Mac (synced folder). Auto save is paused so it isn't overwritten.\nIf you overwrite, the other version is kept as a .other.bak file. If you reopen, unsaved changes in this window are lost.";
 "%@ 파일을 열려면 ffmpeg가 필요합니다.\n터미널에서 'brew install ffmpeg'를 실행한 뒤 다시 가져오세요." = "Opening %@ files needs ffmpeg.\nRun 'brew install ffmpeg' in Terminal, then import again.";
 "%@ 파일을 찾을 수 없습니다." = "Cannot find the file %@.";
 "%@: %@개 단어 인식 완료" = "%@: recognized %@ words";
@@ -83,6 +84,7 @@
 "%lf 실패: %lld" = "%lf failed: %lld";
 "%lf 인식을 지원하지 않습니다." = "%lf recognition isn't supported.";
 "%lf 재생" = "Play at %lf";
+"%lf 파일을 다른 EasyCut 창이나 다른 Mac(동기화 폴더)에서 저장한 것 같습니다. 덮어쓰지 않도록 자동 저장을 멈췄습니다.\n덮어쓰면 다른 곳의 내용은 .other.bak 파일로 남깁니다. 다시 열면 이 창의 저장하지 않은 변경은 사라집니다." = "%lf seems to have been saved from another EasyCut window or another Mac (synced folder). Auto save is paused so it isn't overwritten.\nIf you overwrite, the other version is kept as a .other.bak file. If you reopen, unsaved changes in this window are lost.";
 "%lf 파일을 열려면 ffmpeg가 필요합니다.\n터미널에서 'brew install ffmpeg'를 실행한 뒤 다시 가져오세요." = "Opening %lf files needs ffmpeg.\nRun 'brew install ffmpeg' in Terminal, then import again.";
 "%lf 파일을 찾을 수 없습니다." = "Cannot find the file %lf.";
 "%lf: %@개 단어 인식 완료" = "%lf: recognized %@ words";
@@ -133,6 +135,7 @@
 "%lld 실패: %lld" = "%lld failed: %lld";
 "%lld 인식을 지원하지 않습니다." = "%lld recognition isn't supported.";
 "%lld 재생" = "Play at %lld";
+"%lld 파일을 다른 EasyCut 창이나 다른 Mac(동기화 폴더)에서 저장한 것 같습니다. 덮어쓰지 않도록 자동 저장을 멈췄습니다.\n덮어쓰면 다른 곳의 내용은 .other.bak 파일로 남깁니다. 다시 열면 이 창의 저장하지 않은 변경은 사라집니다." = "%lld seems to have been saved from another EasyCut window or another Mac (synced folder). Auto save is paused so it isn't overwritten.\nIf you overwrite, the other version is kept as a .other.bak file. If you reopen, unsaved changes in this window are lost.";
 "%lld 파일을 열려면 ffmpeg가 필요합니다.\n터미널에서 'brew install ffmpeg'를 실행한 뒤 다시 가져오세요." = "Opening %lld files needs ffmpeg.\nRun 'brew install ffmpeg' in Terminal, then import again.";
 "%lld 파일을 찾을 수 없습니다." = "Cannot find the file %lld.";
 "%lld: %@개 단어 인식 완료" = "%lld: recognized %@ words";
@@ -408,6 +411,7 @@
 "강의·팟캐스트 (-16 LUFS)" = "Lectures · Podcasts (-16 LUFS)";
 "강조" = "Emphasis";
 "강조 색" = "Highlight color";
+"같은 말이 반복돼 인식이 의심스러워 자막을 자동으로 만들지 않았습니다" = "The transcript repeats itself and looks unreliable, so captions were not created automatically";
 "개인정보 가리기" = "Hide personal info";
 "개인정보처리방침" = "Privacy policy";
 "검색 지우기" = "Clear search";
@@ -541,6 +545,7 @@
 "녹화를 시작하지 못했습니다: %@" = "Couldn't start recording: %@";
 "녹화를 시작하지 못했습니다: %lf" = "Couldn't start recording: %lf";
 "녹화를 시작하지 못했습니다: %lld" = "Couldn't start recording: %lld";
+"녹화를 어디에 넣을까요?" = "Where should the recording go?";
 "녹화를 타임라인에 넣었습니다" = "Added the recording to the timeline";
 "녹화할 수 있는 창이 없습니다" = "No windows available to record";
 "녹화할 영역을 먼저 고르세요." = "Choose an area to record first.";
@@ -553,6 +558,8 @@
 "느와르" = "Noir";
 "다 받으면 자동으로 음성 인식을 이어서 합니다. 한 번만 받으면 됩니다." = "Transcription continues automatically when the download finishes. You only download it once.";
 "다른 AI 앱에서 EasyCut 조작 (선택)" = "Control EasyCut from other AI apps (optional)";
+"다른 곳에서 프로젝트 파일이 바뀌었습니다" = "The project file was changed elsewhere";
+"다른 앱이 카메라나 마이크를 쓰고 있어 입력이 멈췄습니다." = "Another app is using the camera or microphone, so input has paused.";
 "다른 이름으로 저장…" = "Save As…";
 "다시 고르기…" = "Choose Again…";
 "다시 만들기" = "Rebuild";
@@ -565,6 +572,7 @@
 "다시 실행 (⇧⌘Z)" = "Redo (⇧⌘Z)";
 "다시 연결" = "Reconnect";
 "다시 연결 중…" = "Reconnecting…";
+"다시 열기" = "Reopen";
 "다시 인식" = "Transcribe Again";
 "다음 편집점  (↓)" = "Next Edit Point  (↓)";
 "다음 프레임 (.)" = "Next frame (.)";
@@ -602,6 +610,7 @@
 "대화 지우기" = "Clear Conversation";
 "더 보기" = "More";
 "더 정확하고 빠른 Whisper 음성 인식" = "More accurate, faster Whisper recognition";
+"덮어쓰기" = "Overwrite";
 "도구" = "Tools";
 "독일어" = "German";
 "돌아 나타나기" = "Rotate in";
@@ -638,6 +647,7 @@
 "마우스 클릭 강조 (%lf번)" = "Highlight mouse clicks (%lf)";
 "마우스 클릭 강조 (%lld번)" = "Highlight mouse clicks (%lld)";
 "마이크" = "Microphone";
+"마이크 연결이 끊겼습니다. 지금부터 목소리가 녹음되지 않습니다." = "The microphone was disconnected. Your voice is no longer being recorded.";
 "마이크(목소리)" = "Microphone (voice)";
 "말 삭제" = "Delete words";
 "말 없는 부분 다 잘라줘" = "Cut all the parts with no talking";
@@ -645,6 +655,7 @@
 "말·파일명 편집" = "Edit transcript or filenames";
 "말로 편집하기 (⌘4)" = "Edit by talking (⌘4)";
 "말로 편집하려면 Claude API 키가 필요합니다." = "Editing by voice/text needs a Claude API key.";
+"말소리가 거의 없어 자동 음성 인식을 건너뛰었습니다" = "Little or no speech found, so automatic transcription was skipped";
 "말이 없는 구간을 한 번에 삭제" = "Delete all parts with no talking at once";
 "말이 없는 부분을 찾아 한 번에 잘라냅니다. 잘릴 곳은 타임라인에 빨간색으로 표시됩니다." = "Finds the parts with no talking and cuts them at once. What will be cut is shown in red on the timeline.";
 "말하는 단어 강조 (쇼츠 스타일)" = "Highlight the spoken word (Shorts style)";
@@ -797,6 +808,8 @@
 "새 자막" = "New caption";
 "새 프로젝트" = "New Project";
 "새 프로젝트.easycut" = "New Project.easycut";
+"새 프로젝트로 열기" = "Open as new project";
+"새 프로젝트로 열면 지금 프로젝트는 그대로 둡니다." = "Opening it as a new project leaves the current project unchanged.";
 "새로고침" = "Refresh";
 "색감" = "Color";
 "색상" = "Colors";
@@ -868,6 +881,9 @@
 "송출 설정에서 서버 주소와 스트림 키를 확인하세요." = "Check the server and stream key in Broadcast output.";
 "송출 연결 중" = "Connecting to stream";
 "송출 연결을 확인하세요. 로컬 녹화는 계속됩니다." = "Check the stream connection. Recording continues.";
+"송출이 끊겼습니다. %@초 뒤 다시 연결합니다. 로컬 녹화는 계속됩니다." = "The live stream dropped. Reconnecting in %@ s. Local recording continues.";
+"송출이 끊겼습니다. %lf초 뒤 다시 연결합니다. 로컬 녹화는 계속됩니다." = "The live stream dropped. Reconnecting in %lf s. Local recording continues.";
+"송출이 끊겼습니다. %lld초 뒤 다시 연결합니다. 로컬 녹화는 계속됩니다." = "The live stream dropped. Reconnecting in %lld s. Local recording continues.";
 "송출이 지연되어 중단했습니다. 로컬 녹화는 계속됩니다." = "Streaming stopped after a delay. Recording continues.";
 "순서를 바꿨습니다" = "Reordered";
 "순서를 바꿨습니다 (⌥를 누른 채 끌면 자유 이동)" = "Reordered (hold ⌥ while dragging to move freely)";
@@ -1182,6 +1198,9 @@
 "자동 저장 실패: %@" = "Auto save failed: %@";
 "자동 저장 실패: %lf" = "Auto save failed: %lf";
 "자동 저장 실패: %lld" = "Auto save failed: %lld";
+"자동 저장 전 백업 실패: %@" = "Could not back up before auto save: %@";
+"자동 저장 전 백업 실패: %lf" = "Could not back up before auto save: %lf";
+"자동 저장 전 백업 실패: %lld" = "Could not back up before auto save: %lld";
 "자동으로 바꿀 수 없는 위치에서 실행 중입니다.\n열린 창에서 EasyCut을 응용 프로그램 폴더로 끌어 놓아 바꿔 주세요." = "EasyCut is running from a location it can't replace automatically.\nIn the window that opened, drag EasyCut into the Applications folder to replace it.";
 "자동으로 찾아 가리기" = "Find and hide";
 "자막" = "Captions";
@@ -1257,6 +1276,9 @@
 "저장 실패: %lld" = "Save failed: %lld";
 "저장 안 함" = "Don't Save";
 "저장 중…" = "Saving…";
+"저장된 파일: %@" = "Saved files: %@";
+"저장된 파일: %lf" = "Saved files: %lf";
+"저장된 파일: %lld" = "Saved files: %lld";
 "저장하지 않고 계속할까요?" = "Continue without saving?";
 "저장하지 않은 변경 사항이 있습니다." = "You have unsaved changes.";
 "저장하지 않은 프로젝트가 있습니다" = "There is an unsaved project";
@@ -1298,6 +1320,7 @@
 "지금 쓰는 버전은 %lld입니다. 지금 업데이트할까요?\n작업 중인 프로젝트는 저장한 뒤 앱이 다시 시작됩니다.\n\n%lld" = "You're on version %lld. Update now?\nYour project will be saved and the app will restart.\n\n%lld";
 "지금 쓰는 연결:" = "Current connection:";
 "지금 준비" = "Prepare now";
+"지금 프로젝트 끝에 추가" = "Add to end of current project";
 "지우기" = "Remove";
 "지원하지 않는 링크입니다." = "This link isn't supported.";
 "지원하지 않는 파일 형식입니다: %@" = "Unsupported file format: %@";
@@ -1366,7 +1389,11 @@
 "카메라 배경" = "Camera background";
 "카메라 배경을 처리하지 못했습니다." = "Couldn’t process the camera background.";
 "카메라 연결과 접근 권한을 확인하세요." = "Check your camera connection and access permission.";
+"카메라 연결이 끊겼습니다. 다시 연결하거나 녹화를 정지하세요." = "The camera was disconnected. Reconnect it or stop recording.";
 "카메라(얼굴)" = "Camera (face)";
+"카메라·마이크 오류: %@" = "Camera/microphone error: %@";
+"카메라·마이크 오류: %lf" = "Camera/microphone error: %lf";
+"카메라·마이크 오류: %lld" = "Camera/microphone error: %lld";
 "카메라·마이크를 켜지 못했습니다: %@" = "Couldn't turn on the camera/microphone: %@";
 "카메라·마이크를 켜지 못했습니다: %lf" = "Couldn't turn on the camera/microphone: %lf";
 "카메라·마이크를 켜지 못했습니다: %lld" = "Couldn't turn on the camera/microphone: %lld";
