@@ -318,7 +318,7 @@ fn save_project(app: AppHandle, st: State<AppState>, path: Option<String>) -> Re
         (e.project.to_json(), target)
     });
     let target = target.ok_or("저장할 위치가 없습니다.")?;
-    std::fs::write(&target, json.map_err(|e| e.to_string())?).map_err(|e| format!("저장 실패: {e}"))?;
+    tools::write_atomic(&target, json.map_err(|e| e.to_string())?.as_bytes()).map_err(|e| format!("저장 실패: {e}"))?;
     recovery::add_recent(&target.to_string_lossy());
     with(&st, |e| {
         e.path = Some(target);
@@ -1066,12 +1066,21 @@ async fn check_update() -> Res<Value> {
 /// 업데이트: 작업을 저장(또는 복구용 파일에 보관)하고, 설치 파일을 받아 조용히 설치한 뒤 다시 연다
 #[tauri::command]
 async fn install_update(app: AppHandle, url: String) -> Res<()> {
+    const BUSY: &str = "내보내기나 녹화 정리가 진행 중입니다. 끝난 뒤에 업데이트하세요.";
+    if tools::busy() {
+        return Err(BUSY.into());
+    }
     job(&app, "update", 0.0, "업데이트 받는 중…");
     let a2 = app.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Res<()> {
+    let r = tauri::async_runtime::spawn_blocking(move || -> Res<()> {
         let setup = update::fetch_installer(&url)?;
+        // 받는 동안 내보내기를 시작했을 수 있다
+        if tools::busy() {
+            return Err(BUSY.into());
+        }
         job(&a2, "update", 0.9, "설치 준비 중…");
-        recovery::save_now(&a2);
+        // 프로젝트 파일 → 안 되면 복구용 파일. 둘 다 못 쓰면 끝내지 않는다 (편집 내용을 잃지 않게)
+        recovery::save_now(&a2).map_err(|e| format!("{e}\n업데이트를 멈췄습니다. 다른 위치에 저장한 뒤 다시 시도하세요."))?;
         let reopen = {
             let e = a2.state::<AppState>().inner().editor.lock().unwrap();
             e.path.clone().filter(|_| !e.dirty)
@@ -1079,7 +1088,10 @@ async fn install_update(app: AppHandle, url: String) -> Res<()> {
         update::install_and_relaunch(&setup, reopen.as_ref().map(|p| p.to_string_lossy()).as_deref())
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    job(&app, "update", 1.0, "");
+    r?;
     force_quit(&app);
     Ok(())
 }

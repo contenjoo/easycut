@@ -180,6 +180,8 @@ pub fn out_size(p: &Project, short: u32) -> (i64, i64) {
 }
 
 pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl Fn() -> bool) -> Result<(), String> {
+    // 내보내는 동안은 업데이트 설치를 막는다
+    let _busy = tools::mark_busy();
     #[cfg(test)]
     let ffmpeg = std::env::var_os("EASYCUT_EFFECT_FFMPEG").map(std::path::PathBuf::from).or_else(||tools::find_tool("ffmpeg")).ok_or("ffmpeg를 찾을 수 없습니다.")?;
     #[cfg(not(test))]
@@ -402,6 +404,7 @@ pub fn export(p: &Project, opts: &Options, progress: impl Fn(f64), cancel: impl 
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
+    tools::tie_to_app(&child);
     let stdout = child.stdout.take().unwrap();
     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
         if let Some(us) = line.strip_prefix("out_time_us=").and_then(|v| v.parse::<f64>().ok()) {
@@ -454,9 +457,7 @@ pub fn measure_loudness(ffmpeg: &std::path::Path, path: &str) -> Option<f64> {
 /// 내보낸 파일의 소리를 목표 LUFS로 맞춘다 (2단계 loudnorm, 영상은 그대로 복사). 맥과 같은 설정.
 pub fn normalize_loudness(ffmpeg: &std::path::Path, path: &str, target: f64) -> Result<(), String> {
     let base = format!("I={target}:TP=-1.5:LRA=11");
-    let out = tools::command(ffmpeg)
-        .args(["-nostdin", "-hide_banner", "-nostats", "-i", path, "-vn", "-af", &format!("loudnorm={base}:print_format=json"), "-f", "null", "-"])
-        .output()
+    let out = tools::output_tied(tools::command(ffmpeg).args(["-nostdin", "-hide_banner", "-nostats", "-i", path, "-vn", "-af", &format!("loudnorm={base}:print_format=json"), "-f", "null", "-"]))
         .map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
     let m = parse_loudnorm(&String::from_utf8_lossy(&out.stderr)).ok_or("음량을 재지 못했습니다.")?;
     // 소리가 거의 없으면 키우지 않는다
@@ -475,7 +476,7 @@ pub fn normalize_loudness(ffmpeg: &std::path::Path, path: &str, target: f64) -> 
     let mut args: Vec<&str> = vec!["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-map", "0", "-c", "copy", "-af", &filter];
     args.extend_from_slice(codec);
     args.extend_from_slice(&["-movflags", "+faststart", &tmp_s]);
-    let out = tools::command(ffmpeg).args(&args).output().map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
+    let out = tools::output_tied(tools::command(ffmpeg).args(&args)).map_err(|e| format!("ffmpeg 실행 실패: {e}"))?;
     if !out.status.success() || !tmp.exists() {
         let _ = std::fs::remove_file(&tmp);
         let err = String::from_utf8_lossy(&out.stderr);
