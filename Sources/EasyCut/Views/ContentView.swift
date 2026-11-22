@@ -106,6 +106,10 @@ struct MainToolbar: ToolbarContent {
             EditorToolbarButton(title: "자막", symbol: "captions.bubble") { store.leftTab = .captions }
             EditorToolbarButton(title: "영상 만들기", symbol: "film.badge.plus") { store.showVideoGeneration = true }
             EditorToolbarButton(title: "녹화", symbol: "record.circle") { store.recording.open() }
+            EditorToolbarButton(title: "방송 스튜디오", symbol: "dot.radiowaves.left.and.right") {
+                store.recording.open(studio: true)
+            }
+            .accessibilityIdentifier("open-broadcast-studio")
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { store.undo() } label: { Label("실행 취소", systemImage: "arrow.uturn.backward") }

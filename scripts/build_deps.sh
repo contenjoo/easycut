@@ -20,6 +20,16 @@ build_whisper() {
   cp "$dir/bin/whisper-cli" "$SRC/whisper-cli-$arch"
 }
 
+# FFmpeg 8.0의 SecureTransport에도 RTMP 제어 패킷 확인에 필요한 비차단 모드를 전달한다.
+patch_ffmpeg() (
+  cd "$SRC/ffmpeg"
+  local patch_file="$ROOT/vendor/licenses/ffmpeg-8.0-securetransport-nonblock.patch"
+  if git apply --reverse --check "$patch_file" 2>/dev/null; then
+    return
+  fi
+  git apply "$patch_file"
+)
+
 build_ffmpeg() {
   local arch=$1 dir="$SRC/build-ffmpeg-$1"
   rm -rf "$dir"; mkdir -p "$dir"; cd "$dir"
@@ -35,6 +45,7 @@ build_ffmpeg() {
   cd "$ROOT"
 }
 
+patch_ffmpeg
 for arch in arm64; do  # M시리즈 전용
   echo "▶ whisper-cli ($arch)"; build_whisper $arch
   echo "▶ ffmpeg ($arch)"; build_ffmpeg $arch
@@ -47,5 +58,5 @@ done
 mkdir -p "$ROOT/vendor/licenses"
 cp "$SRC/whisper.cpp/LICENSE" "$ROOT/vendor/licenses/whisper.cpp-MIT.txt"
 cp "$SRC/ffmpeg/COPYING.LGPLv2.1" "$ROOT/vendor/licenses/FFmpeg-LGPL-2.1.txt"
-echo "FFmpeg 8.0 (LGPL). 소스: https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz  구성: scripts/build_deps.sh" > "$ROOT/vendor/licenses/FFmpeg-SOURCE.txt"
+echo "FFmpeg 8.0 (LGPL). 소스: https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz  구성: scripts/build_deps.sh  수정: ffmpeg-8.0-securetransport-nonblock.patch (동봉)" > "$ROOT/vendor/licenses/FFmpeg-SOURCE.txt"
 ls -lh "$OUT"; for b in "$OUT"/*; do lipo -archs "$b"; done

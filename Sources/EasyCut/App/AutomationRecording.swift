@@ -76,7 +76,7 @@ final class AutomationRecording {
             return snapshot()
         }
         guard name == "start_recording" else { throw reject("unknown_tool") }
-        guard !isBusy, owner.phase == .idle else { throw reject("already_recording: 녹화 또는 저장이 진행 중입니다.") }
+        guard !owner.isBusy else { throw reject("already_recording: 녹화 또는 저장이 진행 중입니다.") }
         // 첫 await 전에 잠가 중복 시작과 UI 녹화를 차단한다.
         let previousState = state
         state = "starting"

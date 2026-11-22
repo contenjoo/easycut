@@ -29,6 +29,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         var screenURL: URL
         var cameraURL: URL
         var audioURL: URL
+        var studio: StudioProgram?
+        var initialScene: StudioScene?
     }
 
     struct Result {
@@ -36,6 +38,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         let camera: URL?
         let systemAudio: URL?
         let duration: Double
+        let sceneChanges: [StudioSceneChange]
     }
 
     /// 카메라 미리보기용 (녹화 중 떠 있는 작은 창에 쓴다)
@@ -61,9 +64,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     private var paused = false
     private var pauseStart: CMTime?
     private var pauseOffset = CMTime.zero
+    private var sceneChanges: [StudioSceneChange]
 
     init(options: Options) {
         self.options = options
+        sceneChanges = options.initialScene.map { [StudioSceneChange(time: 0, scene: $0)] } ?? []
         super.init()
     }
 
@@ -176,8 +181,19 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
             sysWriter?.startSession(atSourceTime: t0)
         }
         try await st.startCapture()
+        try options.studio?.start()
     }
 
+    func selectScene(_ scene: StudioScene) {
+        queue.sync {
+            guard let studio = options.studio, endTime == nil, sceneChanges.last?.scene != scene else { return }
+            let now = pauseStart ?? Self.hostNow
+            let time = startTime.map { max(0, (now - $0 - pauseOffset).seconds) } ?? 0
+            if sceneChanges.last?.time == time { sceneChanges.removeLast() }
+            sceneChanges.append(StudioSceneChange(time: time, scene: scene))
+            studio.setScene(scene)
+        }
+    }
 
     /// 카메라·마이크를 먼저 켠다 (카운트다운 동안 얼굴 미리보기가 보이도록)
     func startDevices() throws {
@@ -252,6 +268,7 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
             endTime = raw - pauseOffset
             return raw - pauseOffset
         }
+        options.studio?.stop()
         try? await stream?.stopCapture()
         stream = nil
         if session.isRunning { session.stopRunning() }
@@ -293,12 +310,14 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
             }
         }
         guard sw.status == .completed else { throw MediaError.failed("녹화 파일을 저장하지 못했습니다: \(sw.error?.localizedDescription ?? "")") }
-        return Result(screen: options.screenURL, camera: camURL, systemAudio: sysURL, duration: (t1 - t0).seconds)
+        return Result(screen: options.screenURL, camera: camURL, systemAudio: sysURL,
+                      duration: (t1 - t0).seconds, sceneChanges: sceneChanges)
     }
 
     /// 시작·저장 실패 시 스트림, 장치와 미완료 writer를 해제한다. 파일은 보존한다.
     func cancel() async {
         queue.sync { endTime = Self.hostNow }
+        options.studio?.stop()
         try? await stream?.stopCapture()
         stream = nil
         if session.isRunning { session.stopRunning() }
@@ -312,16 +331,19 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
         guard let t0 = startTime, endTime == nil, !paused, sb.isValid, sb.presentationTimeStamp >= t0 else { return }
         if type == .audio {
+            options.studio?.systemAudio(sb)
             guard let a = sysAudio, a.isReadyForMoreMediaData, sysWriter?.status == .writing,
                   let buf = shifted(sb, clock: nil) else { return }
             if a.append(buf) { sysFrames += 1 }
             return
         }
-        guard type == .screen, let input = screenVideo, input.isReadyForMoreMediaData else { return }
+        guard type == .screen else { return }
         // 화면이 바뀐 프레임만 (idle·blank 프레임은 건너뜀)
         guard let atts = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let raw = atts.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
               let buf = shifted(sb, clock: nil) else { return }
+        options.studio?.screen(buf)
+        guard let input = screenVideo, input.isReadyForMoreMediaData else { return }
         if input.append(buf) { screenFrames += 1 } else { fail(screenWriter?.error) }
     }
 
@@ -335,9 +357,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         guard let t0 = startTime, endTime == nil, !paused, let buf = shifted(sb, clock: session.synchronizationClock),
               buf.presentationTimeStamp >= t0 else { return }
         if output is AVCaptureAudioDataOutput {
+            options.studio?.microphone(buf)
             guard let a = screenAudio, a.isReadyForMoreMediaData, screenWriter?.status == .writing else { return }
             if !a.append(buf) { fail(screenWriter?.error) }
         } else {
+            options.studio?.camera(buf)
             if camWriter == nil { makeCameraWriter(from: buf, start: t0) }
             guard let v = camVideo, v.isReadyForMoreMediaData, camWriter?.status == .writing else { return }
             v.append(buf)

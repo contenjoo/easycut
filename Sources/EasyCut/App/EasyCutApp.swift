@@ -88,6 +88,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let store else { return .terminateNow }
         return MainActor.assumeIsolated {
+            if store.recording.isBusy {
+                let alert = NSAlert()
+                alert.messageText = "녹화를 마친 뒤 EasyCut을 종료하세요."
+                alert.informativeText = "녹화 제어창에서 정지하고 파일 저장이 끝나면 다시 종료할 수 있습니다."
+                alert.addButton(withTitle: "확인")
+                alert.localized().runModal()
+                return false
+            }
             store.autosaveNow()
             return Updater.installing || store.confirmDiscard()
         } ? .terminateNow : .terminateCancel
@@ -167,6 +175,7 @@ struct AppCommands: Commands {
             Button("미디어 가져오기…") { store.importPanel() }.keyboardShortcut("i")
             Button("링크로 가져오기 (유튜브 등)…") { store.showLinkSheet = true }.keyboardShortcut("i", modifiers: [.command, .shift])
             Button("화면·얼굴 녹화…") { store.recording.open() }.keyboardShortcut("r", modifiers: [.command, .option])
+            Button("1인 방송 스튜디오…") { store.recording.open(studio: true) }
             Button("녹화 정지") { Task { await store.recording.stop() } }.keyboardShortcut(".", modifiers: [.command, .option])
         }
         CommandGroup(replacing: .saveItem) {

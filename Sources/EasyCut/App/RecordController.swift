@@ -6,7 +6,7 @@ import ScreenCaptureKit
 /// 화면·카메라 녹화 흐름: 설정 → 3초 카운트다운 → 녹화(EasyCut 창 숨김, 작은 정지 창) → 타임라인에 배치 + 음성 인식
 @MainActor
 final class RecordController: ObservableObject {
-    enum Phase: Equatable { case idle, countdown(Int), recording, paused, saving }
+    enum Phase: Equatable { case idle, countdown(Int), starting, recording, paused, saving }
     enum TargetKind: String, CaseIterable, Identifiable {
         case display = "전체 화면", window = "창", area = "영역"
         var id: String { rawValue }
@@ -29,6 +29,31 @@ final class RecordController: ObservableObject {
     @AppStorage("recArea") private var areaRaw = ""
     @Published var windows: [SCWindow] = []
     @Published var windowID: CGWindowID = 0
+    @Published private(set) var studioMode = false
+    @Published private(set) var studioScene: StudioScene = .pictureInPicture
+    private(set) var studioInsetScene: StudioScene = .pictureInPicture
+    @Published private(set) var studioPreview: CGImage?
+    @Published var liveEnabled = false
+    @Published var liveServer = ""
+    @Published var liveKey = ""
+    @Published private(set) var liveStatus = ""
+    @Published var useYouTubeAccount = true
+    @Published var youtubeEvent: YouTubeEvent?
+    @Published private(set) var resolvingLive = false
+    @Published private(set) var youtubeStatus = ""
+    private var activeYouTubeEvent: YouTubeEvent?
+    private var youtubeMonitor: Task<Void, Never>?
+    private var studioSessionID: UUID?
+    private var preparing = false
+    private var startFailure: String?
+
+    func selectScene(_ scene: StudioScene) {
+        guard studioMode else { return }
+        let resolved: StudioScene = useCamera && cameras.contains(where: { $0.uniqueID == cameraID }) ? scene : .screen
+        if resolved.isPictureInPicture { studioInsetScene = resolved }
+        studioScene = resolved
+        recorder?.selectScene(resolved)
+    }
 
     var target: TargetKind {
         get { TargetKind(rawValue: targetRaw) ?? .display }
@@ -69,14 +94,21 @@ final class RecordController: ObservableObject {
     }
 
     lazy var automation = AutomationRecording(owner: self)
-    var isBusy: Bool { phase != .idle || automation.isBusy }
+    var isBusy: Bool { preparing || phase != .idle || automation.isBusy }
 
     /// 녹화 설정 창을 열기 전에 장치 목록과 화면 녹화 권한을 확인한다
-    func open() {
+    func open(studio: Bool = false) {
         guard !isBusy else { return }
+        studioMode = studio
+        studioInsetScene = .pictureInPicture
+        liveEnabled = false
+        youtubeStatus = ""
+        liveKey = ""
+        liveStatus = ""
         cameras = CaptureDevices.cameras
         microphones = CaptureDevices.microphones
         if !cameras.contains(where: { $0.uniqueID == cameraID }) { cameraID = cameras.first?.uniqueID ?? "" }
+        if studio { selectScene(useCamera && !cameraID.isEmpty ? .pictureInPicture : .screen) }
         if !microphones.contains(where: { $0.uniqueID == micID }) { micID = (AVCaptureDevice.default(for: .audio) ?? microphones.first)?.uniqueID ?? "" }
         Task {
             // ScreenCaptureKit is authoritative; CoreGraphics preflight can stay false
@@ -135,11 +167,41 @@ final class RecordController: ObservableObject {
 
     func begin() async {
         guard let store, !isBusy else { return }
+        preparing = true
+        defer { preparing = false }
+        let accountLive = studioMode && liveEnabled && useYouTubeAccount
+        let event = accountLive ? youtubeEvent : nil
+        let liveURL: URL?
+        if accountLive {
+            guard let event, YouTubeAccount.shared.isConnected else {
+                store.alert = "YouTube 계정을 연결하고 방송을 선택하세요."
+                return
+            }
+            resolvingLive = true
+            defer { resolvingLive = false }
+            do {
+                liveURL = try await YouTubeLiveService.shared.destination(for: event)
+            } catch {
+                store.alert = error.localizedDescription
+                return
+            }
+            guard store.showRecordSheet, liveEnabled, useYouTubeAccount, youtubeEvent?.id == event.id else { return }
+        } else if studioMode && liveEnabled {
+            guard let destination = try? StudioProgram.destination(server: liveServer, key: liveKey) else {
+                store.alert = "RTMP 또는 RTMPS 서버 주소와 스트림 키를 확인하세요."
+                return
+            }
+            liveURL = destination
+        } else {
+            liveURL = nil
+        }
         store.showRecordSheet = false
-        if useCamera, !(await CaptureDevices.requestAccess(.video)) {
+        let camera = useCamera ? cameras.first { $0.uniqueID == cameraID } : nil
+        let mic = useMic ? microphones.first { $0.uniqueID == micID } : nil
+        if camera != nil, !(await CaptureDevices.requestAccess(.video)) {
             permissionAlert("카메라", pane: "Privacy_Camera"); return
         }
-        if useMic, !(await CaptureDevices.requestAccess(.audio)) {
+        if mic != nil, !(await CaptureDevices.requestAccess(.audio)) {
             permissionAlert("마이크", pane: "Privacy_Microphone"); return
         }
         guard let display = displays.first(where: { $0.displayID == displayID }) ?? displays.first else {
@@ -157,25 +219,55 @@ final class RecordController: ObservableObject {
         }
         store.player.pause()
         let stamp = Self.stampFormatter.string(from: Date())
+        let studio: StudioProgram?
+        if studioMode {
+            selectScene(studioScene)
+            let id = UUID()
+            studioSessionID = id
+            do {
+                studio = try StudioProgram(initialScene: studioScene, liveURL: liveURL, onPreview: { [weak self] frame in
+                    Task { @MainActor in
+                        guard self?.studioSessionID == id else { return }
+                        self?.studioPreview = frame
+                    }
+                }, onLiveStatus: { [weak self] status in
+                    Task { @MainActor in
+                        guard self?.studioSessionID == id else { return }
+                        self?.liveStatus = status
+                    }
+                })
+            } catch {
+                studioSessionID = nil
+                store.alert = error.localizedDescription
+                return
+            }
+        } else {
+            studio = nil
+        }
         let opts = ScreenRecorder.Options(
             display: display, target: recTarget, excludeApp: excludeApp,
-            camera: useCamera ? cameras.first { $0.uniqueID == cameraID } : nil,
-            microphone: useMic ? microphones.first { $0.uniqueID == micID } : nil,
+            camera: camera, microphone: mic,
             systemAudio: systemAudio,
             screenURL: Self.folder.appendingPathComponent("녹화 \(stamp) 화면.mp4"),
             cameraURL: Self.folder.appendingPathComponent("녹화 \(stamp) 카메라.mp4"),
-            audioURL: Self.folder.appendingPathComponent("녹화 \(stamp) 컴퓨터 소리.m4a"))
+            audioURL: Self.folder.appendingPathComponent("녹화 \(stamp) 컴퓨터 소리.m4a"),
+            studio: studio, initialScene: studioMode ? studioScene : nil)
         let rec = ScreenRecorder(options: opts)
-        rec.onError = { [weak self] (msg: String) in
+        rec.onError = { [weak self, weak rec] (msg: String) in
             Task { @MainActor in
-                guard let self, self.phase == .recording || self.phase == .paused else { return }
+                guard let self, let rec, self.recorder === rec else { return }
+                if self.phase == .starting { self.startFailure = msg; return }
+                guard self.phase == .recording || self.phase == .paused else { return }
                 self.store?.alert = "녹화 중 문제가 생겼습니다: \(msg)"
                 await self.stop()
             }
         }
         recorder = rec
+        startFailure = nil
 
         do { try rec.startDevices() } catch {
+            await rec.cancel()
+            studioSessionID = nil
             recorder = nil
             store.alert = "카메라·마이크를 켜지 못했습니다: \(error.localizedDescription)"
             return
@@ -195,9 +287,15 @@ final class RecordController: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             if phase == .idle { return } // 카운트다운 중 취소
         }
+        phase = .starting
         do {
             try await rec.start()
+            if let startFailure { throw MediaError.failed(startFailure) }
             phase = .recording
+            if let event {
+                activeYouTubeEvent = event
+                monitorYouTube(event)
+            }
             startedAt = Date()
             pausedTotal = 0
             pauseBegan = nil
@@ -217,8 +315,39 @@ final class RecordController: ObservableObject {
                 }
             }
         } catch {
+            await rec.cancel()
+            recorder = nil
             finishUI()
             store.alert = "녹화를 시작하지 못했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    private func monitorYouTube(_ event: YouTubeEvent) {
+        youtubeStatus = "YouTube 방송 시작 대기 중"
+        youtubeMonitor?.cancel()
+        youtubeMonitor = Task { [weak self] in
+            var attempts = 0
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(attempts < 5 ? 5 : 20))
+                    let status = try await YouTubeLiveService.shared.status(of: event)
+                    guard !Task.isCancelled, self?.activeYouTubeEvent?.id == event.id else { return }
+                    switch status {
+                    case "live":
+                        self?.youtubeStatus = "YouTube 라이브 중"
+                        return
+                    case "complete", "revoked":
+                        self?.youtubeStatus = "YouTube 방송 종료됨"
+                        return
+                    default:
+                        self?.youtubeStatus = attempts >= 5 ? "YouTube에서 송출 수신을 기다리고 있습니다" : "YouTube 방송 시작 대기 중"
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.youtubeStatus = "YouTube 방송 상태 확인 지연"
+                }
+                attempts += 1
+            }
         }
     }
 
@@ -230,7 +359,7 @@ final class RecordController: ObservableObject {
     }
 
     func togglePause() {
-        guard let rec = recorder else { return }
+        guard let rec = recorder, !(studioMode && liveEnabled) else { return }
         switch phase {
         case .recording:
             rec.pause()
@@ -251,16 +380,34 @@ final class RecordController: ObservableObject {
         hotKeys.unregister()
         phase = .saving
         timer?.invalidate(); timer = nil
+        youtubeMonitor?.cancel()
+        youtubeMonitor = nil
+        let event = activeYouTubeEvent
+        activeYouTubeEvent = nil
         do {
             let r = try await rec.stop()
-            finishUI()
             await store?.importRecording(screen: r.screen, camera: r.camera, systemAudio: r.systemAudio,
-                                         clicks: clicks, showClicks: highlightClicks, cameraCircle: cameraCircle)
+                                         clicks: clicks, showClicks: highlightClicks, cameraCircle: cameraCircle,
+                                         sceneChanges: r.sceneChanges)
+            if studioMode && useCamera && !cameraID.isEmpty && r.camera == nil {
+                store?.alert = "카메라 원본을 저장하지 못해 화면 녹화로 복구했습니다. 녹화 폴더를 확인하세요."
+            }
         } catch {
-            finishUI()
+            await rec.cancel()
             store?.alert = error.localizedDescription
         }
         recorder = nil
+        if let event {
+            // YouTube also ends this event on encoder disconnect if the app exits unexpectedly.
+            do {
+                try await YouTubeLiveService.shared.complete(event)
+            } catch {
+                let detail = "YouTube Studio에서 방송 종료 여부를 확인하세요. " + error.localizedDescription
+                store?.alert = [store?.alert, detail].compactMap { $0 }.joined(separator: "\n")
+            }
+            youtubeEvent = nil
+        }
+        finishUI()
     }
 
     /// 녹화 범위 안의 마우스 클릭을 녹화 시간과 함께 기록 (나중에 클릭 강조로 표시)
@@ -278,6 +425,9 @@ final class RecordController: ObservableObject {
     }
 
     private func finishUI() {
+        studioSessionID = nil
+        studioPreview = nil
+        liveKey = ""
         if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
         phase = .idle
         hotKeys.unregister()
@@ -304,7 +454,7 @@ final class RecordController: ObservableObject {
     /// 녹화 중 화면 아래쪽에 떠 있는 작은 창 (녹화에는 찍히지 않음)
     private func showPanel(on display: SCDisplay) {
         let hasCam = useCamera
-        let size = NSSize(width: 290, height: hasCam ? 250 : 84)
+        let size = studioMode ? NSSize(width: 388, height: 350) : NSSize(width: 290, height: hasCam ? 250 : 84)
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.level = .floating
         p.isMovableByWindowBackground = true
@@ -332,7 +482,8 @@ final class RecordController: ObservableObject {
 extension EditorStore {
     /// 녹화 파일을 타임라인에: 화면은 트랙 1, 카메라는 트랙 2 오른쪽 아래 작은 화면. 그리고 음성 인식 시작.
     func importRecording(screen: URL, camera: URL?, systemAudio: URL? = nil,
-                         clicks: [ClickMark] = [], showClicks: Bool = true, cameraCircle: Bool = true) async {
+                         clicks: [ClickMark] = [], showClicks: Bool = true, cameraCircle: Bool = true,
+                         sceneChanges: [StudioSceneChange] = []) async {
         do {
             var sa = try await MediaProbe.probe(screen)
             if !clicks.isEmpty { sa.clicks = clicks }
@@ -341,10 +492,16 @@ extension EditorStore {
             var aa: MediaAsset?
             if let systemAudio { aa = try? await MediaProbe.probe(systemAudio) }
             let wasEmpty = project.duration == 0
+            let previousEnd = project.duration
             apply { p in
                 p.assets.append(sa)
                 if let ca { p.assets.append(ca) }
                 if let aa { p.assets.append(aa) }
+                if !sceneChanges.isEmpty {
+                    p.insertStudioRecording(screen: sa, camera: ca, audio: aa, changes: sceneChanges,
+                                            showClicks: !clicks.isEmpty && showClicks)
+                    return
+                }
                 if wasEmpty, sa.width > 0 { p.canvasWidth = sa.width; p.canvasHeight = sa.height }
                 let t = wasEmpty ? 0 : max(p.trackEnd(0), p.trackEnd(1), p.trackEnd(2))
                 let sid = p.insert(asset: sa, track: 0, at: t)
@@ -371,6 +528,12 @@ extension EditorStore {
                 }
             }
             media.prepare(sa)
+            if !sceneChanges.isEmpty {
+                player.seek(previousEnd)
+                if let first = project.tracks.first?.clips.first(where: { $0.assetID == sa.id }) {
+                    selection = [first.id]
+                }
+            }
             if let ca { media.prepare(ca) }
             if let aa { media.prepare(aa) }
             showToast(ca == nil ? "녹화를 타임라인에 넣었습니다" : "녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)")

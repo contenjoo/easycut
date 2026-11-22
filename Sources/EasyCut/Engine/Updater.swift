@@ -118,6 +118,12 @@ enum Updater {
                   let v = info["CFBundleShortVersionString"] as? String, isNewer(v, than: current) else {
                 throw MediaError.failed("받은 파일이 올바른 오케이컷 새 버전이 아닙니다.")
             }
+            // A recording may have begun while the update was downloading.
+            guard !store.recording.isBusy else {
+                try? FileManager.default.removeItem(at: staged)
+                store.alert = "녹화 파일을 저장한 뒤 업데이트를 다시 실행하세요."
+                return
+            }
             // 작업 저장: 파일이 있으면 그 파일에, 새 프로젝트는 복구용 파일에 (다시 켜면 복구 제안)
             let reopen = store.projectURL
             if store.dirty {

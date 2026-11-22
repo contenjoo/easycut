@@ -4,7 +4,7 @@
 
 OK Cut is a Mac and Windows video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app. From macOS 1.13.0 and Windows 0.7.0, describe an animation, explainer or promo video, review its sample frames, then render it and continue editing on the timeline.
 
-**[⬇︎ Download Mac 1.16.0](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
+**[⬇︎ Download Mac 1.17.0](https://github.com/contenjoo/easycut/releases/download/v1.17.0/OKCut-1.17.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
 
 Windows: [download OK Cut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.10.0/OKCut_0.10.0_x64-setup.exe) · [Windows release notes](https://github.com/contenjoo/easycut/releases/tag/win-v0.10.0) · source in [`windows/`](windows)
 
@@ -32,7 +32,7 @@ The Mac app follows your macOS language: English on English (and any non-Korean)
 
 Requires an **Apple Silicon Mac (M1 or later) with macOS 14 or later**.
 
-1. Download [OKCut-1.16.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.16.0/OKCut-1.16.0.dmg), open it and drag OK Cut into the Applications folder.
+1. Download [OKCut-1.17.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.17.0/OKCut-1.17.0.dmg), open it and drag OK Cut into the Applications folder.
 2. The first time only: the app is not notarized, so if macOS warns you, go to System Settings › Privacy & Security and click **Open Anyway**.
 3. Download the Whisper model (574 MB) with **Turn On Whisper** in the Transcript tab, and the YouTube tool (yt-dlp) with **Install YouTube Tool** in the link window — once each.
 
@@ -58,6 +58,7 @@ Needs Xcode Command Line Tools (Swift 5.10+), `cmake` (`brew install cmake`) and
 
 | Feature | Details |
 |---|---|
+| Solo broadcast studio (macOS 1.17) | Choose **Broadcast Studio** to switch between screen, camera, picture in picture, and side by side. Move the inset to any corner while recording. On macOS, choose **YouTube account** under live streaming to sign in with Google, prepare a broadcast or schedule it for later. At the scheduled time, select the event and start recording and streaming. Other platforms can use an RTMP(S) server and stream key. Finish to edit the original sources and scene changes in the timeline. |
 | Screen & face recording | Record the full screen, a window or a dragged area together with your camera (face), microphone and computer audio. When you stop, the screen goes on Track 1, your face as a small round picture bottom-right on Track 2, computer audio on Track 3, and your voice is transcribed right away. Pause ⌥⌘P, stop ⌥⌘. (work while other apps are in front). Mouse clicks are highlighted. Open with ⌥⌘R; files go to Movies › EasyCut 녹화 |
 | Import | Video (MP4 · MOV · M4V, **MKV · WebM · AVI · FLV · WMV · TS · MTS · MPG** …), audio (MP3 · WAV · M4A · AAC · AIFF), photos (PNG · JPG · HEIC · GIF · TIFF). Drag and drop supported |
 | Multi-track timeline | Move, trim, split, duplicate, copy/paste clips; mute/hide tracks; snapping; thumbnails and waveforms; adjustable track height; resizable timeline area; groups (⌘G) and join (⌘J) |

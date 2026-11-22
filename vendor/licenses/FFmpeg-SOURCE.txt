@@ -1,1 +1,1 @@
-FFmpeg 8.0 (LGPL). 소스: https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz  구성: scripts/build_deps.sh
+FFmpeg 8.0 (LGPL). 소스: https://ffmpeg.org/releases/ffmpeg-8.0.tar.xz  구성: scripts/build_deps.sh  수정: ffmpeg-8.0-securetransport-nonblock.patch (동봉)
