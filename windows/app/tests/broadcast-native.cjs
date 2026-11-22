@@ -44,7 +44,7 @@ function installDevices() {
 }
 
 // Compare the scene seen by a viewer with the edit produced after reopening the file.
-function inspectVideo(file) {
+function inspectVideo(file, expectedCamera) {
   const streams = JSON.parse(execFileSync(ffprobe, ['-v','error','-show_streams','-of','json',file])).streams;
   assert(streams.some(s => s.codec_name === 'h264'));
   assert(streams.some(s => s.codec_name === 'aac'));
@@ -55,23 +55,41 @@ function inspectVideo(file) {
   const frames = execFileSync(ffmpeg, ['-v','error','-i',file,'-an','-vf','fps=4,scale=64:36',
     '-pix_fmt','rgb24','-f','rawvideo','pipe:1'], {maxBuffer:16 * 1024 * 1024});
   const phases = [];
+  const changes = [];
+  let cameraBox;
   const stride = 64 * 36 * 3;
   for (let at = 0; at + stride <= frames.length; at += stride) {
     let orange = 0, blue = 0;
+    let left = 64, top = 36, right = -1, bottom = -1;
     for (let px = at; px < at + stride; px += 3) {
       const r = frames[px], b = frames[px+2];
-      if (r > 140 && r-b > 70) orange++;
+      if (r > 140 && r-b > 70) {
+        orange++;
+        const pixel = (px - at) / 3;
+        const x = pixel % 64, y = Math.floor(pixel / 64);
+        left = Math.min(left,x); right = Math.max(right,x);
+        top = Math.min(top,y); bottom = Math.max(bottom,y);
+      }
       if (b > 120 && b-r > 70) blue++;
     }
     const total = 64 * 36;
     const shape = orange/total > .88 ? 'camera' : blue/total > .88 && orange/total < .01 ? 'screen' : orange > 20 && blue > 20 ? 'combined' : 'other';
-    if (phases.at(-1) !== shape) phases.push(shape);
+    if (phases.at(-1) !== shape) {
+      phases.push(shape);
+      changes.push({scene:shape, seconds:at / stride / 4});
+    }
+    if (shape === 'combined') cameraBox = [left/64,top/36,(right-left+1)/64,(bottom-top+1)/36];
   }
   const screen = phases.indexOf('screen');
   const camera = phases.indexOf('camera', screen + 1);
   assert(screen >= 0 && camera > screen && phases.indexOf('combined', camera + 1) > camera,
     path.basename(file) + ' has unexpected scene order ' + phases.join(','));
-  return {phases, peak};
+  assert.equal(expectedCamera.length, 4);
+  cameraBox.forEach((value, i) => {
+    const pixels = Math.abs(value - expectedCamera[i]) * (i % 2 === 0 ? 64 : 36);
+    assert(pixels <= 2, path.basename(file) + ' changed the custom camera bounds: ' + JSON.stringify(cameraBox));
+  });
+  return {phases, changes, peak, expectedCamera, cameraBox};
 }
 
 async function openStudio(editor) {
@@ -137,6 +155,7 @@ async function privateYouTube(editor) {
   await studio.click('#prepare');
   await studio.waitForSelector('body[data-phase="ready"]');
   await studio.click('#scenes button[value=screen]');
+  let expectedCamera;
   try {
     await studio.click('#go');
     await studio.waitForSelector('body[data-phase="recording"]');
@@ -148,6 +167,7 @@ async function privateYouTube(editor) {
     await studio.selectOption('#layer','camera');
     await studio.click('#shrink');
     await studio.click('#apply-layout');
+    expectedCamera = await studio.evaluate(() => JSON.parse(localStorage.getItem('easycut.studio.customLayout.v1')).camera);
     await delay(25000);
     assert.match(await studio.locator('#status').textContent(), /송출 중$|Streaming$|Live$/i);
   } finally {
@@ -167,7 +187,7 @@ async function privateYouTube(editor) {
     return {clips:reopened.project.tracks.flatMap(t=>t.clips).length};
   },file);
   await editor.evaluate(movie => window.__TAURI__.core.invoke('export_video',{path:movie,height:480,burnCaptions:false,format:'mp4',alsoSrt:false,range:null}),movie);
-  proof.export = inspectVideo(movie);
+  proof.export = inspectVideo(movie, expectedCamera);
   fs.writeFileSync(path.join(output,'youtube-windows.json'),JSON.stringify(proof,null,2));
   console.log('WINDOWS PRIVATE INGEST AND REOPENED EDIT',JSON.stringify(proof));
 }
@@ -224,6 +244,7 @@ async function privateYouTube(editor) {
     await studio.click('#shrink');
     await studio.locator('[data-dx="1"]').first().click();
     await studio.click('#apply-layout');
+    const expectedCamera = await studio.evaluate(() => JSON.parse(localStorage.getItem('easycut.studio.customLayout.v1')).camera);
     await delay(2600);
     await studio.screenshot({path:path.join(output, 'broadcast-custom.png')});
     await studio.click('#stop');
@@ -238,7 +259,7 @@ async function privateYouTube(editor) {
     await state('export_video', {path:movie,height:480,burnCaptions:false,format:'mp4',alsoSrt:false,range:null});
     await Promise.race([received, delay(15000, 'timeout', {ref:false}).then(() => {throw Error('Receiver failed to finish');})]);
     const proof = {accountConfigured:account.configured, clips:clips.length,
-      rtmp:inspectVideo(viewer), reopened:inspectVideo(movie)};
+      rtmp:inspectVideo(viewer, expectedCamera), reopened:inspectVideo(movie, expectedCamera)};
     fs.writeFileSync(path.join(output,'broadcast-results.json'),JSON.stringify(proof,null,2));
     console.log('NATIVE WINDOWS BROADCAST → RTMP → REOPENED EDIT', JSON.stringify(proof));
   } catch (error) {
