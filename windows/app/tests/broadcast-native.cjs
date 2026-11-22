@@ -102,6 +102,25 @@ async function openStudio(editor) {
   throw Error('Studio did not expose a WebView2 page. Native window state: ' + JSON.stringify(diagnostic));
 }
 
+async function waitForEdit(editor, studio) {
+  // rec_finish remuxes the original streams before committing the project. Await
+  // native IPC from Node; a Promise in a browser polling predicate can be truthy.
+  const deadline = Date.now() + 90000;
+  let counts;
+  do {
+    counts = await editor.evaluate(async () => {
+      const {project} = await window.__TAURI__.core.invoke('get_state');
+      return {assets:project.assets.length, clips:project.tracks.flatMap(t => t.clips).length};
+    });
+    if (counts.assets >= 2 && counts.clips >= 4 && studio.isClosed()) return;
+    if (!studio.isClosed() && await studio.locator('body').getAttribute('data-phase').catch(() => '') === 'done') {
+      throw Error('Studio could not finish: ' + await studio.locator('#notice').textContent());
+    }
+    await delay(200);
+  } while (Date.now() < deadline);
+  throw Error('Recording did not reach the editor: ' + JSON.stringify(counts));
+}
+
 // This mode is explicitly dispatched for one already-private, non-reusable event. It
 // exercises the same Windows UI and encoder while the channel owner retains OAuth.
 async function privateYouTube(editor) {
@@ -134,10 +153,7 @@ async function privateYouTube(editor) {
   } finally {
     if (await studio.locator('#stop').isVisible().catch(()=>false)) await studio.click('#stop');
   }
-  await editor.waitForFunction(async () => {
-    const {project} = await window.__TAURI__.core.invoke('get_state');
-    return project.assets.length >= 2 && project.tracks.flatMap(t => t.clips).length >= 4;
-  },null,{timeout:90000});
+  await waitForEdit(editor,studio);
   // Only the verification measurements belong in the CI evidence artifact.
   const privateFiles = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'easycut-private-'));
   const file = path.join(privateFiles,'youtube-reopened.easycut');
@@ -211,10 +227,7 @@ async function privateYouTube(editor) {
     await delay(2600);
     await studio.screenshot({path:path.join(output, 'broadcast-custom.png')});
     await studio.click('#stop');
-    await editor.waitForFunction(async () => {
-      const {project} = await window.__TAURI__.core.invoke('get_state');
-      return project.assets.length >= 2 && project.tracks.flatMap(t => t.clips).length >= 4;
-    }, null, {timeout:90000});
+    await waitForEdit(editor,studio);
     const saved = await state('save_project', {path:projectPath});
     await state('new_project');
     const reopened = await state('open_project', {path:projectPath});
