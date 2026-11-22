@@ -17,13 +17,14 @@ function installFixture() {
   custom.width = 320; custom.height = 180;
   const ctx = custom.getContext("2d");
   ctx.fillStyle = "#df24bf"; ctx.fillRect(0, 0, 320, 180);
+  window.chunks = {camera: [], screen: [], program: []};
   window.__TAURI__ = {
     core: {
       convertFileSrc: () => custom.toDataURL(),
       invoke: async (name, data, options) => {
         if (name === "rec_chunk" || name === "studio_live_chunk") {
           const kind = name === "rec_chunk" ? options.headers["x-kind"] : "program";
-          await window.saveChunk(kind, [...data]);
+          window.chunks[kind].push(data.slice());
           return true;
         }
         if (name === "rec_finish") window.cuts = data.studioCuts;
@@ -54,10 +55,12 @@ function installFixture() {
   });
 }
 
-function frame(file, time = 0) {
-  const out = execFileSync(process.env.FFMPEG || "ffmpeg", ["-v","error","-i",file,"-ss",String(time),"-frames:v","1","-vf","scale=320:180","-pix_fmt","rgb24","-f","rawvideo","pipe:1"]);
-  assert.equal(out.length, 320*180*3, "Missing decoded frame at " + time);
-  return out;
+function decode(file, multiple = false) {
+  const stride = 320*180*3;
+  const frames = multiple ? ["-vf","fps=4,scale=320:180"] : ["-frames:v","1","-vf","scale=320:180"];
+  const raw = execFileSync(process.env.FFMPEG || "ffmpeg", ["-v","error","-i",file,"-map","0:v:0","-an",...frames,"-pix_fmt","rgb24","-f","rawvideo","pipe:1"], {maxBuffer:64*1024*1024});
+  assert(raw.length >= stride && raw.length % stride === 0, "Incomplete decoded video: " + path.basename(file));
+  return Array.from({length:raw.length/stride},(_,i)=>raw.subarray(i*stride,(i+1)*stride));
 }
 function distance(a, b, box) {
   let sum = 0, count = 0;
@@ -96,9 +99,6 @@ function contrast(pixels, box) {
     const page = await browser.newPage({viewport:{width:1220,height:880}});
     const errors = [];
     page.on("pageerror", error => errors.push(String(error)));
-    await page.exposeFunction("saveChunk", (kind, data) => {
-      assert(["screen","camera","program"].includes(kind)); fs.appendFileSync(path.join(tmp,kind+".webm"),Buffer.from(data));
-    });
     await page.addInitScript(installFixture);
     await page.goto("http://127.0.0.1:"+server.address().port+"/studio.html");
     await page.locator("#camera").check();
@@ -107,17 +107,13 @@ function contrast(pixels, box) {
     await page.click("#prepare"); await page.waitForSelector("body[data-phase=ready]");
     await page.click("#scenes [value=camera]");
     await page.click("#go"); await page.waitForSelector("body[data-phase=recording]");
-    await page.evaluate(() => { window.testStart = performance.now(); });
-    const times = {};
     for (const [key,label] of Object.entries({off:"원본",blur:"배경 흐림",preset:"미드나이트",custom:"내 사진…"})) {
       const button = page.getByRole("button",{name:label,exact:true});
       if (key !== "off") {
         await button.click();
         await page.waitForFunction(label => [...document.querySelectorAll("#camera-background button")].some(b=>b.textContent===label && b.getAttribute("aria-pressed")==="true"),label);
       }
-      await page.waitForTimeout(780);
-      times[key] = await page.evaluate(()=>(performance.now()-window.testStart)/1000);
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(1800);
     }
     await page.click("#scenes [value=screen]"); await page.waitForTimeout(1400);
     await page.click("#stop"); await page.waitForFunction(()=>window.finished);
@@ -125,18 +121,35 @@ function contrast(pixels, box) {
     assert(cuts[0].camera && !cuts[0].screen && cuts.at(-1).screen && !cuts.at(-1).camera);
     assert.deepEqual(errors,[]);
     const face = [139,45,178,90], side = [8,15,84,96];
-    const original = frame(portrait);
-    const midnight = frame(path.join(root,"camera-backgrounds/presets/midnight.jpg"));
-    const pink = Buffer.from(Array.from({length:320*180*3},(_,i)=>[223,36,191][i%3]));
+    const [original] = decode(portrait);
+    const [midnight] = decode(path.join(root,"camera-backgrounds/presets/midnight.jpg"));
+    const solid = rgb => Buffer.from(Array.from({length:320*180*3},(_,i)=>rgb[i%3]));
+    const pink = solid([223,36,191]), cyan = solid([128,243,246]), screen = solid([34,116,65]);
     for (const kind of ["program","camera"]) {
+      // Measure actual encoded frames, independent of WebView/encoder start-up latency.
+      const base64 = await page.evaluate(async key => {
+        const reader = new FileReader();
+        const ready = new Promise((resolve,reject) => {reader.onload=()=>resolve(reader.result.split(",")[1]); reader.onerror=reject;});
+        reader.readAsDataURL(new Blob(window.chunks[key],{type:"video/webm"}));
+        return ready;
+      },kind);
       const file = path.join(tmp,kind+".webm");
-      const sampled = Object.fromEntries(Object.entries(times).map(([key,t])=>[key,frame(file,t)]));
-      for (const [key,pixels] of Object.entries(sampled))
-        assert(distance(original,pixels,face)<17,kind+" lost facial details in "+key);
-      assert(distance(original,sampled.off,side)<16,kind+" lost original background");
-      assert(contrast(sampled.blur,side)<contrast(sampled.off,side)*0.55,kind+" did not blur the checkerboard");
-      assert(distance(midnight,sampled.preset,side)<18,kind+" did not record preset");
-      assert(distance(pink,sampled.custom,side)<18,kind+" did not record chosen image");
+      fs.writeFileSync(file,Buffer.from(base64,"base64"));
+      const frames = decode(file,true);
+      const checks = {
+        original: p => distance(p,original,side)<16,
+        blur: p => distance(p,cyan,side)<32 && contrast(p,side)<contrast(original,side)*.55,
+        preset: p => distance(p,midnight,side)<18,
+        custom: p => distance(p,pink,side)<18,
+      };
+      let cursor = 0;
+      for (const [name,matches] of Object.entries(checks)) {
+        const index = frames.findIndex((p,i)=>i>=cursor && matches(p) && distance(original,p,face)<17 &&
+          i+1<frames.length && matches(frames[i+1]) && distance(original,frames[i+1],face)<17);
+        assert(index>=0,kind+" is missing "+name+" with subject preserved ("+frames.length+" frames)");
+        cursor = index+2;
+      }
+      if (kind==="program") assert(frames.slice(cursor).some(p=>distance(p,screen,[4,4,316,176])<12),"Missing final screen scene in program");
     }
     console.log("PASS · encoded program + editor camera track preserve the subject across original, blur, template and custom image; scene cuts handed to editor.");
   } finally {

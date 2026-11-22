@@ -107,7 +107,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Playwright installation failed" }
           ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode local
       - name: Verify camera backgrounds in the installed WebView2 and exported edit
-        run: ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode background
+        run: |
+          ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode background
+          ./windows/scripts/test-camera-backgrounds.ps1
       - name: Check the authorized private YouTube event on the installed app
         if: inputs.privateLiveTest
         env:
@@ -274,14 +276,8 @@ jobs:
         run: |
           npm install --prefix "$env:RUNNER_TEMP/easycut-ui-tests" --no-save playwright-core
           if ($LASTEXITCODE -ne 0) { throw "Playwright installation failed" }
-          $env:NODE_PATH = "$env:RUNNER_TEMP/easycut-ui-tests/node_modules"
-          $env:EASYCUT_CHROME = "$env:ProgramFiles/Google/Chrome/Application/chrome.exe"
-          $env:FFMPEG = "$env:LOCALAPPDATA/EasyCut/resources/bin/ffmpeg.exe"
           ./.github/workflows/test-broadcast-webview.ps1 -Executable "$env:LOCALAPPDATA/EasyCut/easycut-windows.exe" -Mode background
-          foreach ($test in @("camera-background-recording", "record-background", "camera-backgrounds")) {
-            node "windows/app/tests/$test.cjs"
-            if ($LASTEXITCODE -ne 0) { throw "$test failed" }
-          }
+          ./windows/scripts/test-camera-backgrounds.ps1
 
       - name: MCP bridge on Windows (EasyCut.exe --mcp → running app)
         run: |
