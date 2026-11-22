@@ -112,12 +112,17 @@ final class StudioProgram: @unchecked Sendable {
     private var customLayout: StudioCustomLayout
     private var screenFrame: CVPixelBuffer?
     private var cameraFrame: CVPixelBuffer?
+    private var cameraFrameAt = 0.0
     private var previewPending = false
     private var timer: DispatchSourceTimer?
     private var encoder: StudioBroadcast?
     private var epoch = CMTime.zero
     private var lastPreview = -Double.infinity
     private var audioFrame: Int64 = 0
+    /// 송출이 끊기면 이 시각(초)에 다시 연결한다. 간격은 2초부터 두 배씩, 최대 30초.
+    private var reconnectAt: Double?
+    private var reconnectDelay = 2.0
+    private var reconnectAttempts = 0
     private let audio = StudioAudioMix()
 
     init(initialScene: StudioScene, customLayout: StudioCustomLayout = .standard,
@@ -142,11 +147,14 @@ final class StudioProgram: @unchecked Sendable {
             audio.begin(at: epoch)
             audioFrame = 0
             lastPreview = -.infinity
+            reconnectAt = nil
+            reconnectDelay = 2
+            reconnectAttempts = 0
             if let liveURL {
                 do {
                     encoder = try StudioBroadcast(url: liveURL, onStatus: onLiveStatus)
                 } catch {
-                    DispatchQueue.main.async { self.onLiveStatus(StudioBroadcast.connectionError) }
+                    scheduleReconnect(after: 0)
                 }
             }
             let source = DispatchSource.makeTimerSource(queue: queue)
@@ -161,6 +169,7 @@ final class StudioProgram: @unchecked Sendable {
         queue.sync {
             timer?.cancel()
             timer = nil
+            reconnectAt = nil
             encoder?.finish()
             encoder = nil
             lock.withLock {
@@ -177,9 +186,21 @@ final class StudioProgram: @unchecked Sendable {
         }
     }
     func screen(_ sample: CMSampleBuffer) { lock.withLock { screenFrame = sample.imageBuffer } }
-    func camera(_ sample: CMSampleBuffer) { lock.withLock { cameraFrame = sample.imageBuffer } }
+    func camera(_ sample: CMSampleBuffer) {
+        let now = CMClockGetTime(CMClockGetHostTimeClock()).seconds
+        lock.withLock { cameraFrame = sample.imageBuffer; cameraFrameAt = now }
+    }
     func microphone(_ sample: CMSampleBuffer) { if liveURL != nil { audio.add(sample) } }
     func systemAudio(_ sample: CMSampleBuffer) { if liveURL != nil { audio.add(sample) } }
+
+    /// 송출이 끊겼을 때 로컬 녹화는 그대로 두고, 점점 긴 간격으로 다시 연결한다
+    private func scheduleReconnect(after now: Double) {
+        let delay = reconnectDelay
+        reconnectAt = now + delay
+        reconnectDelay = min(30, reconnectDelay * 2)
+        let message = "송출이 끊겼습니다. \(Int(delay))초 뒤 다시 연결합니다. 로컬 녹화는 계속됩니다."  // 화면에서 L()로 번역
+        DispatchQueue.main.async { self.onLiveStatus(message) }
+    }
 
     private func render() {
         autoreleasepool {
@@ -187,10 +208,27 @@ final class StudioProgram: @unchecked Sendable {
             if encoder?.hasFailed == true {
                 encoder?.finish()
                 encoder = nil
+                scheduleReconnect(after: pts.seconds)
+            } else if encoder?.isConnected == true, reconnectAttempts > 0 {
+                reconnectAttempts = 0
+                reconnectDelay = 2
+            }
+            if encoder == nil, let liveURL, let at = reconnectAt, pts.seconds >= at {
+                reconnectAt = nil
+                reconnectAttempts += 1
+                do {
+                    encoder = try StudioBroadcast(url: liveURL, origin: pts, onStatus: onLiveStatus)
+                } catch {
+                    scheduleReconnect(after: pts.seconds)
+                }
             }
             let previewDue = pts.seconds - lastPreview >= 0.1 && !lock.withLock { previewPending }
             guard previewDue || encoder != nil else { return }
-            let (selected, custom, screen, camera) = lock.withLock { (scene, customLayout, screenFrame, cameraFrame) }
+            let hostNow = CMClockGetTime(CMClockGetHostTimeClock()).seconds
+            // 카메라 프레임이 1.5초 넘게 안 오면(분리·다른 앱 점유) 멈춘 얼굴을 계속 내보내지 않는다
+            let (selected, custom, screen, camera) = lock.withLock {
+                (scene, customLayout, screenFrame, hostNow - cameraFrameAt > 1.5 ? nil : cameraFrame)
+            }
             func aspect(_ frame: CVPixelBuffer?) -> CGFloat {
                 guard let frame else { return 16 / 9 }
                 return CGFloat(CVPixelBufferGetWidth(frame)) / CGFloat(CVPixelBufferGetHeight(frame))

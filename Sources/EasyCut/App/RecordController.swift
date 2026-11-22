@@ -28,7 +28,16 @@ final class RecordController: ObservableObject {
     @AppStorage("recTarget") var targetRaw = TargetKind.display.rawValue
     @AppStorage("recArea") private var areaRaw = ""
     @Published var windows: [SCWindow] = []
-    @Published var windowID: CGWindowID = 0
+    @Published var windowID: CGWindowID = 0 {
+        didSet {
+            // 다시 열어도 같은 창을 찾을 수 있게 앱과 창 제목을 기억한다
+            guard windowID != oldValue, let w = windows.first(where: { $0.windowID == windowID }) else { return }
+            windowApp = w.owningApplication?.bundleIdentifier ?? ""
+            windowTitle = w.title ?? ""
+        }
+    }
+    @AppStorage("recWindowApp") private var windowApp = ""
+    @AppStorage("recWindowTitle") private var windowTitle = ""
     @Published private(set) var studioMode = false
     @Published private(set) var studioScene: StudioScene = .pictureInPicture
     @Published private(set) var studioCustomLayout = StudioCustomLayout.standard
@@ -44,6 +53,8 @@ final class RecordController: ObservableObject {
     @Published var youtubeEvent: YouTubeEvent?
     @Published private(set) var resolvingLive = false
     @Published private(set) var youtubeStatus = ""
+    /// 녹화 중 카메라·마이크 문제 (비어 있으면 정상)
+    @Published private(set) var deviceWarning = ""
     private var activeYouTubeEvent: YouTubeEvent?
     private var youtubeMonitor: Task<Void, Never>?
     private var studioSessionID: UUID?
@@ -168,7 +179,16 @@ final class RecordController: ObservableObject {
                 && w.owningApplication?.processID != getpid() && !(w.title ?? "").isEmpty
         }
         .sorted { ($0.owningApplication?.applicationName ?? "") < ($1.owningApplication?.applicationName ?? "") }
-        if !windows.contains(where: { $0.windowID == windowID }) { windowID = windows.first?.windowID ?? 0 }
+        if !windows.contains(where: { $0.windowID == windowID }) {
+            // 기억한 앱·제목의 창을 찾고, 없으면 비워 둔다.
+            // 목록 첫 창(메신저 등)을 대신 고르면 원치 않는 화면이 녹화·송출될 수 있다.
+            let app = windowApp, title = windowTitle
+            let sameApp = windows.filter { !app.isEmpty && $0.owningApplication?.bundleIdentifier == app }
+            let match = sameApp.first { $0.title == title } ?? (sameApp.count == 1 ? sameApp.first : nil)
+            let saved = (windowApp, windowTitle)
+            windowID = match?.windowID ?? 0
+            if match == nil { (windowApp, windowTitle) = saved }   // 창이 잠시 안 보여도 기억은 유지
+        }
         return !displays.isEmpty
     }
 
@@ -242,7 +262,13 @@ final class RecordController: ObservableObject {
             recTarget = .area(a)
         }
         store.player.pause()
-        let stamp = Self.stampFormatter.string(from: Date())
+        // 같은 초에 시작한 다른 녹화(두 번째 실행본 등)의 파일을 지우지 않도록 겹치면 번호를 붙인다
+        var stamp = Self.stampFormatter.string(from: Date())
+        let base = stamp
+        var n = 2
+        while ["화면.mp4", "카메라.mp4", "컴퓨터 소리.m4a"].contains(where: {
+            FileManager.default.fileExists(atPath: Self.folder.appendingPathComponent("녹화 \(stamp) \($0)").path)
+        }) { stamp = "\(base) (\(n))"; n += 1 }
         let studio: StudioProgram?
         if studioMode {
             selectScene(studioScene)
@@ -286,6 +312,13 @@ final class RecordController: ObservableObject {
                 await self.stop()
             }
         }
+        rec.onDeviceWarning = { [weak self, weak rec] msg in
+            Task { @MainActor in
+                guard let self, let rec, self.recorder === rec else { return }
+                self.deviceWarning = msg
+            }
+        }
+        deviceWarning = ""
         recorder = rec
         startFailure = nil
 
@@ -358,8 +391,8 @@ final class RecordController: ObservableObject {
                     guard !Task.isCancelled, self?.activeYouTubeEvent?.id == event.id else { return }
                     switch status {
                     case "live":
+                        // 방송 중에도 계속 확인한다 (YouTube가 방송을 끝내면 바로 알린다)
                         self?.youtubeStatus = "YouTube 라이브 중"
-                        return
                     case "complete", "revoked":
                         self?.youtubeStatus = "YouTube 방송 종료됨"
                         return
@@ -508,6 +541,17 @@ extension EditorStore {
     func importRecording(screen: URL, camera: URL?, systemAudio: URL? = nil,
                          clicks: [ClickMark] = [], showClicks: Bool = true, cameraCircle: Bool = true,
                          sceneChanges: [StudioSceneChange] = []) async {
+        // 열린 프로젝트가 있으면 새 프로젝트로 열지, 끝에 붙일지 묻는다 (기본: 새 프로젝트)
+        if project.duration > 0 || !project.assets.isEmpty {
+            let a = NSAlert()
+            a.messageText = "녹화를 어디에 넣을까요?"
+            a.informativeText = "새 프로젝트로 열면 지금 프로젝트는 그대로 둡니다."
+            a.addButton(withTitle: "새 프로젝트로 열기")
+            a.addButton(withTitle: "지금 프로젝트 끝에 추가")
+            if a.localized().runModal() == .alertFirstButtonReturn {
+                newProject()   // 저장하지 않은 변경이 있으면 여기서 묻는다. 취소하면 끝에 추가한다.
+            }
+        }
         do {
             var sa = try await MediaProbe.probe(screen)
             if !clicks.isEmpty { sa.clicks = clicks }
@@ -561,8 +605,15 @@ extension EditorStore {
             if let ca { media.prepare(ca) }
             if let aa { media.prepare(aa) }
             showToast(sceneChanges.isEmpty && ca != nil ? "녹화를 넣었습니다 (화면 → 트랙 1, 얼굴 → 트랙 2)" : "녹화를 타임라인에 넣었습니다")
-            if sa.hasAudio { transcribe(sa.id) }
-            else if let aa, aa.hasAudio { transcribe(aa.id) }
+            // 말소리가 없는 녹화(무음·시험음)는 자동 음성 인식을 건너뛴다. 대본 탭에서 직접 실행할 수 있다.
+            let target = sa.hasAudio ? sa : (aa?.hasAudio == true ? aa : nil)
+            if let target {
+                if let check = await SpeechCheck.analyze(target.url), !check.likelySpeech {
+                    showToast("말소리가 거의 없어 자동 음성 인식을 건너뛰었습니다")
+                } else {
+                    transcribe(target.id)
+                }
+            }
         } catch {
             alert = "녹화 파일을 가져오지 못했습니다: \(error.localizedDescription)\n파일 위치: \(screen.deletingLastPathComponent().path)"
         }

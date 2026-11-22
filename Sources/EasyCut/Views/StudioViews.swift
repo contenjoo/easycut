@@ -345,6 +345,11 @@ struct StudioMonitor: View {
                     .disabled(rec.phase != .recording && rec.phase != .paused)
             }
             .font(.caption)
+            if !rec.deviceWarning.isEmpty {
+                Label(L(rec.deviceWarning), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if rec.liveEnabled && rec.useYouTubeAccount && !rec.youtubeStatus.isEmpty {
                 Text(verbatim: L(rec.youtubeStatus)).font(.caption).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)

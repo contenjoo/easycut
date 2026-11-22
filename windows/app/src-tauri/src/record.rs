@@ -185,6 +185,7 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f
         let mut c = tools::command(&ffmpeg);
         c.args(["-y", "-v", "error", "-i"]).arg(src).args(args).args(["-progress", "pipe:1", "-nostats"]).arg(out).stdout(Stdio::piped()).stderr(Stdio::null());
         let Ok(mut child) = c.spawn() else { return false };
+        tools::tie_to_app(&child);
         let dur = media::probe(src).map(|a| a.duration).unwrap_or(0.0).max(0.1);
         if let Some(o) = child.stdout.take() {
             use std::io::BufRead;
@@ -234,6 +235,7 @@ pub fn finish(
     app: &AppHandle, camera_circle: bool, clicks: Option<Value>, show_clicks: bool,
     area: Option<(f64, f64, f64, f64)>, studio_cuts: Option<Vec<crate::studio::Cut>>,
 ) -> Result<Value, String> {
+    let _busy = tools::mark_busy();
     if studio_cuts.as_ref().is_some_and(|cuts| !crate::studio::valid(cuts)) {
         return Err("장면 목록이 올바르지 않습니다.".into());
     }

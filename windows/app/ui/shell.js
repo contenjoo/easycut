@@ -288,7 +288,12 @@ export async function checkUpdate(userInitiated) {
     if (choice === "skip") { try { localStorage.setItem("skipUpdate", u.version); } catch (_) {} return; }
     if (choice !== "update") return;
     api.toast(L("업데이트를 받는 중입니다. 받은 뒤 앱이 다시 열립니다."));
-    await invoke("install_update", { url: u.url });
+    try {
+      await invoke("install_update", { url: u.url });
+    } catch (e) {
+      // 설치를 멈춘 이유(내보내기 중, 저장 실패, 파일 확인 실패)는 직접 누른 게 아니어도 알린다
+      await ask(L("업데이트하지 못했습니다"), L(String(e)), [{ label: L("확인"), value: 1, primary: true }]);
+    }
   } catch (e) {
     if (userInitiated) await ask(L("업데이트를 확인하지 못했습니다"), L(String(e)), [{ label: L("확인"), value: 1, primary: true }]);
   } finally {

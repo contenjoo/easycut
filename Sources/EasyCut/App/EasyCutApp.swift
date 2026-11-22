@@ -50,14 +50,18 @@ enum Main {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 창이 뜨기 전에 들어온 파일은 모아 뒀다가 연결되면 연다
     private var pending: [URL] = []
+    /// 복구 제안이 끝나기 전에는 파일을 열지 않고 모아 둔다
+    private var ready = false
     weak var store: EditorStore? {
         didSet {
             guard let store, oldValue == nil else { return }
-            if !pending.isEmpty { let u = pending; pending = []; openURLs(u) }
-            // 파일을 열며 시작한 게 아니면 지난 작업 복구 제안, 그다음 업데이트 확인
+            // 지난 작업 복구 제안을 파일 열기보다 먼저 한다.
+            // 파일을 먼저 열면 open()이 복구 파일을 지워 강제 종료 전 작업이 사라진다.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 MainActor.assumeIsolated {
                     store.offerRecovery()
+                    self.ready = true
+                    if !self.pending.isEmpty { let u = self.pending; self.pending = []; self.openURLs(u) }
                     Updater.checkInBackground(store: store)
                 }
             }
@@ -103,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { store?.videoGenerator.cancel() }
+        RecoveryFiles.releaseOwnLockIfClean()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -114,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 같은 파일이 두 경로(델리게이트·onOpenURL)로 동시에 들어와도 한 번만 연다
     func openURLs(_ urls: [URL]) {
-        guard let store else { pending += urls; return }
+        guard let store, ready else { pending += urls; return }
         let now = Date()
         let urls = urls.filter { u in
             defer { recent[u.path] = now }
@@ -123,7 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !urls.isEmpty else { return }
         MainActor.assumeIsolated {
             let projects = urls.filter { $0.pathExtension.lowercased() == "easycut" }
-            if let p = projects.first { store.open(p) }
+            // 저장하지 않은 작업이 있으면 먼저 묻는다 (Finder 더블클릭·끌어다 놓기도 메뉴 열기와 같게)
+            if let p = projects.first, store.confirmDiscard() { store.open(p) }
             let media = urls.filter { $0.pathExtension.lowercased() != "easycut" }
             if !media.isEmpty { store.importFiles(media) }
         }

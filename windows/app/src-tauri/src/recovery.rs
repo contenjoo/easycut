@@ -46,29 +46,36 @@ pub fn load() -> Option<Project> {
     Project::from_json(&std::fs::read_to_string(path()).ok()?).ok()
 }
 
-/// 바로 저장 (업데이트·종료 직전). 저장했으면 true
-pub fn save_now(app: &AppHandle) -> bool {
+/// 바로 저장 (업데이트·종료 직전). 프로젝트 파일에 쓰지 못하면(읽기 전용·빠진 드라이브) 복구용 파일에라도 보관한다.
+/// 둘 다 못 쓰면 Err — 이때는 앱을 끝내면 안 된다.
+pub fn save_now(app: &AppHandle) -> Result<(), String> {
     let st = app.state::<AppState>();
     let mut e = st.editor.lock().unwrap();
     if !e.dirty {
-        return true;
+        return Ok(());
     }
-    let Ok(json) = e.project.to_json() else { return false };
+    let json = e.project.to_json().map_err(|err| format!("작업을 저장하지 못했습니다: {err}"))?;
+    let mut project_error = None;
     if let Some(p) = e.path.clone().filter(|_| autosave_enabled()) {
-        if std::fs::write(&p, &json).is_ok() {
-            e.dirty = false;
-            drop(e);
-            clear();
-            // 화면 전체를 다시 그리지 않게 (입력 중인 글자가 지워지지 않도록) 저장됨만 알린다
-            let _ = tauri::Emitter::emit(app, "saved", serde_json::json!({ "dirty": false }));
-            return true;
+        match tools::write_atomic(&p, json.as_bytes()) {
+            Ok(()) => {
+                e.dirty = false;
+                drop(e);
+                clear();
+                // 화면 전체를 다시 그리지 않게 (입력 중인 글자가 지워지지 않도록) 저장됨만 알린다
+                let _ = tauri::Emitter::emit(app, "saved", serde_json::json!({ "dirty": false }));
+                return Ok(());
+            }
+            Err(err) => project_error = Some(err),
         }
-        return false;
+    } else if e.project.assets.is_empty() {
+        return Ok(());
     }
-    if !e.project.assets.is_empty() {
-        return std::fs::write(path(), json).is_ok();
-    }
-    true
+    // 프로젝트 파일에 못 썼거나 저장한 적 없는 작업 → 복구용 파일 (dirty는 그대로 두어 다음 실행 때 복구를 묻는다)
+    tools::write_atomic(&path(), json.as_bytes()).map_err(|err| match project_error {
+        Some(pe) => format!("작업을 저장하지 못했습니다. 프로젝트 파일: {pe} / 복구용 파일: {err}"),
+        None => format!("작업을 복구용 파일에 보관하지 못했습니다: {err}"),
+    })
 }
 
 pub fn start(app: AppHandle) {
@@ -86,7 +93,9 @@ pub fn start(app: AppHandle) {
             if changed_at.is_some_and(|t| t.elapsed() >= Duration::from_millis(1500)) {
                 changed_at = None;
                 if autosave_enabled() {
-                    save_now(&app);
+                    if let Err(err) = save_now(&app) {
+                        eprintln!("자동 저장 실패: {err}");
+                    }
                 }
             }
         }

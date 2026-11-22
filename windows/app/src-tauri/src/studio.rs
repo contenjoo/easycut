@@ -274,6 +274,8 @@ impl Encoder {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|_| "송출 인코더를 실행할 수 없습니다.")?;
+        // 앱이 어떻게 끝나든 송출 ffmpeg도 함께 끝나게 한다
+        crate::tools::tie_to_app(&child);
         let connected = Arc::new(AtomicBool::new(false));
         let state = connected.clone();
         let output = child.stdout.take().unwrap();
