@@ -1,7 +1,7 @@
 # Disposable GitHub-hosted Windows runner. The signed/installed app is never rebuilt.
 param(
     [Parameter(Mandatory)][string]$Executable,
-    [Parameter(Mandatory)][ValidateSet("suite", "local", "private")][string]$Mode
+    [Parameter(Mandatory)][ValidateSet("suite", "local", "private", "background")][string]$Mode
 )
 $ErrorActionPreference = "Stop"
 $exe = (Resolve-Path $Executable).Path
@@ -58,7 +58,9 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "$script failed" }
         }
     }
-    if ($Mode -eq "private") {
+    if ($Mode -eq "background") {
+        node windows/app/tests/broadcast-native.cjs --camera-background
+    } elseif ($Mode -eq "private") {
         # The app, browser, FFmpeg and diagnostics never inherit the one-event credential.
         $env:EASYCUT_PRIVATE_LIVE_TEST_KEY = $eventKey
         node windows/app/tests/broadcast-native.cjs --private-youtube

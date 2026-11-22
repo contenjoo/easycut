@@ -1,10 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EasyCut",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "identifier": "com.contenjoo.easycut.windows",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../ui",
+    "beforeBuildCommand": "node scripts/prepare-camera-backgrounds.mjs",
+    "beforeDevCommand": "node scripts/prepare-camera-backgrounds.mjs"
   },
   "app": {
     "withGlobalTauri": true,

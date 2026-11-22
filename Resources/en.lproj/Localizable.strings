@@ -498,6 +498,7 @@
 "낮음 · 빠름" = "Low · fast";
 "내 배치" = "Custom layout";
 "내 배치 편집" = "Edit Custom Layout";
+"내 이미지" = "My image";
 "내려받기" = "Download";
 "내려오기" = "Drop down";
 "내보내기" = "Export";
@@ -623,6 +624,7 @@
 "로그인을 취소했습니다." = "Login cancelled.";
 "로그인하기" = "Log In";
 "로컬 녹화" = "Local recording";
+"로프트" = "Loft";
 "리플 삭제" = "Ripple delete";
 "링크" = "Link";
 "링크 영상" = "Link video";
@@ -679,12 +681,14 @@
 "무음 컷 (원클릭)…" = "Silence Cut (One-Click)…";
 "무음 컷 (원클릭, 음성 인식 불필요)" = "Silence cut (one-click, no transcription needed)";
 "묶을 클립을 2개 이상 선택하세요 (빈 곳을 끌거나 ⇧/⌘+클릭)" = "Select 2 or more clips to group (drag over empty space or ⇧/⌘+click)";
+"미드나이트" = "Midnight";
 "미디어" = "Media";
 "미디어 / 대본 / 자막 / AI 탭" = "Media / Transcript / Captions / AI tab";
 "미디어 가져오기 (⌘I)" = "Import media (⌘I)";
 "미디어 가져오기 / 링크(유튜브)로 가져오기" = "Import media / import from link (YouTube)";
 "미디어 가져오기…" = "Import Media…";
 "미리보기" = "Preview";
+"미리보기 닫기" = "Close preview";
 "미리보기 볼륨" = "Preview volume";
 "미리보기 생성 실패: %@" = "Preview build failed: %@";
 "미리보기 생성 실패: %lf" = "Preview build failed: %lf";
@@ -727,6 +731,8 @@
 "방식 모두 바꾸기" = "Change all styles";
 "방향키로 이동하고 더하기와 빼기 키로 크기를 조절합니다." = "Move with the arrow keys and resize with the plus and minus keys.";
 "배경" = "Background";
+"배경 이미지를 열 수 없습니다. 다른 이미지를 선택하세요." = "Couldn’t open the background image. Choose another image.";
+"배경 흐림" = "Blur background";
 "배경색" = "Background color";
 "배치" = "Layout";
 "배치 미리보기" = "Layout preview";
@@ -804,6 +810,7 @@
 "생성한 영상을 타임라인에 추가했습니다" = "Added the generated video to the timeline";
 "서버 주소" = "Server address";
 "서서히 나타나기" = "Fade in";
+"서재" = "Library";
 "선명하게" = "Vivid";
 "선명해지기" = "Blur in";
 "선택" = "Select";
@@ -870,6 +877,7 @@
 "스냅 끔" = "Snap off";
 "스냅 켬" = "Snap on";
 "스냅(자석) 켜기/끄기" = "Snap (magnet) on/off";
+"스튜디오" = "Studio";
 "스튜디오 설정" = "Studio settings";
 "스트림 키" = "Stream key";
 "스페인어" = "Spanish";
@@ -1151,6 +1159,7 @@
 "이메일" = "Email";
 "이미 인식이 끝났습니다. 다시 인식할까요?" = "Already transcribed. Transcribe again?";
 "이미지" = "Image";
+"이미지 선택…" = "Choose image…";
 "이미지 저장 실패" = "Image save failed";
 "이전 / 다음 편집점" = "Previous / next edit point";
 "이전 / 다음 프레임" = "Previous / next frame";
@@ -1353,6 +1362,10 @@
 "카드 뒤집기" = "Flip";
 "카드번호" = "Card number";
 "카메라" = "Camera";
+"카메라 미리보기" = "Preview camera";
+"카메라 배경" = "Camera background";
+"카메라 배경을 처리하지 못했습니다." = "Couldn’t process the camera background.";
+"카메라 연결과 접근 권한을 확인하세요." = "Check your camera connection and access permission.";
 "카메라(얼굴)" = "Camera (face)";
 "카메라·마이크를 켜지 못했습니다: %@" = "Couldn't turn on the camera/microphone: %@";
 "카메라·마이크를 켜지 못했습니다: %lf" = "Couldn't turn on the camera/microphone: %lf";

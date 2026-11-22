@@ -3,7 +3,6 @@
   const ev = window.__TAURI__.event;
   const $ = (s) => document.querySelector(s);
   let st = { phase: "countdown", base: Date.now(), elapsed: 0 };
-  let camOn = null;
   const fmt = (s) => {
     s = Math.floor(s);
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
@@ -13,16 +12,12 @@
   $("#pause").onclick = () => ev.emit("rec-control", { action: st.phase === "countdown" ? "cancel" : "pause" });
   $("#stop").onclick = () => ev.emit("rec-control", { action: "stop" });
 
-  async function camera(id) {
-    if (!id || camOn === id) return;
-    camOn = id;
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: id } } });
-      const v = $("#cam");
-      v.srcObject = s;
-      v.style.display = "block";
-    } catch (_) {}
-  }
+  ev.listen("rec-camera-error", ({payload}) => { $("#hint").textContent = payload; });
+  ev.listen("rec-camera-preview", ({payload}) => {
+    const image = $("#cam");
+    image.src = payload;
+    image.style.display = "block";
+  });
 
   function draw() {
     const running = st.phase === "recording";
@@ -37,7 +32,6 @@
 
   ev.listen("rec-status", (e) => {
     st = e.payload;
-    if (st.cameraId) camera(st.cameraId);
     draw();
   });
   setInterval(draw, 250);
