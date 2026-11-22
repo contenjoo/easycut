@@ -69,14 +69,19 @@ enum Updater {
         }
     }
 
-    private static func ask(_ rel: Release, store: EditorStore) {
-        let a = NSAlert()
-        a.messageText = "새 버전이 나왔습니다: EasyCut \(rel.version)"
-        // 릴리스 노트의 마크다운 기호는 빼고 보여 준다
-        var notes = rel.notes.replacingOccurrences(of: "\r", with: "")
+    /// 릴리스 노트의 마크다운 기호는 빼고 보여 준다 (`[글](주소)` 링크는 글만)
+    nonisolated static func plainNotes(_ md: String) -> String {
+        md.replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: #"!?\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "## ", with: "")
             .replacingOccurrences(of: "# ", with: "")
+    }
+
+    private static func ask(_ rel: Release, store: EditorStore) {
+        let a = NSAlert()
+        a.messageText = "새 버전이 나왔습니다: EasyCut \(rel.version)"
+        var notes = plainNotes(rel.notes)
         if notes.count > 700 { notes = String(notes.prefix(700)) + "…" }
         a.informativeText = "지금 쓰는 버전은 \(current)입니다. 지금 업데이트할까요?\n작업 중인 프로젝트는 저장한 뒤 앱이 다시 시작됩니다.\n\n\(notes)"
         a.addButton(withTitle: "업데이트")
@@ -127,10 +132,8 @@ enum Updater {
             // 작업 저장: 파일이 있으면 그 파일에, 새 프로젝트는 복구용 파일에 (다시 켜면 복구 제안)
             let reopen = store.projectURL
             if store.dirty {
-                if reopen != nil { store.autosaveNow() } else if !store.project.assets.isEmpty {
-                    let enc = JSONEncoder()
-                    try? enc.encode(store.project).write(to: EditorStore.recoveryURL, options: .atomic)
-                }
+                // 복구용 파일은 이 실행만의 파일이라 함께 켜 둔 다른 EasyCut의 작업을 덮어쓰지 않는다
+                if reopen != nil { store.autosaveNow() } else { store.saveRecoveryNow() }
             }
             try relaunchAfterReplacing(appURL, with: staged, reopen: reopen)
             installing = true
