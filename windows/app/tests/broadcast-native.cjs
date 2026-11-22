@@ -28,18 +28,24 @@ function installDevices() {
     paint(); setInterval(paint, 50);
     return canvas.captureStream(20);
   }
-  async function tone() {
+  async function tone(frequency) {
     const audio = new AudioContext();
     await audio.resume();
     const dest = audio.createMediaStreamDestination();
     const osc = audio.createOscillator();
-    osc.frequency.value = 440;
-    osc.connect(dest); osc.start();
+    osc.frequency.value = frequency;
+    const gain = audio.createGain();
+    gain.gain.value = .15;
+    osc.connect(gain).connect(dest); osc.start();
     return dest.stream;
   }
   Object.defineProperties(navigator.mediaDevices, {
-    getDisplayMedia: { value: async () => camera('#1858ce') },
-    getUserMedia: { value: async opts => opts.video ? camera('#e66020') : tone() }
+    getDisplayMedia: { value: async opts => {
+      const screen = camera('#1858ce');
+      if (opts.audio) screen.addTrack((await tone(880)).getAudioTracks()[0]);
+      return screen;
+    } },
+    getUserMedia: { value: async opts => opts.video ? camera('#e66020') : tone(440) }
   });
 }
 
@@ -51,7 +57,21 @@ function inspectVideo(file, expectedCamera) {
   const pcm = execFileSync(ffmpeg, ['-v','error','-i',file,'-vn','-ac','1','-ar','8000','-t','4','-f','s16le','pipe:1']);
   let peak = 0;
   for (let i = 0; i + 1 < pcm.length; i += 2) peak = Math.max(peak, Math.abs(pcm.readInt16LE(i)));
-  assert(peak > 500, 'Expected synthetic microphone in ' + path.basename(file));
+  const toneLevel = frequency => {
+    let real = 0, imag = 0;
+    const start = 4000, size = 8000;
+    assert(pcm.length >= (start + size) * 2);
+    for (let i = 0; i < size; i++) {
+      const sample = pcm.readInt16LE((start + i) * 2);
+      const angle = 2 * Math.PI * frequency * i / 8000;
+      real += sample * Math.cos(angle);
+      imag += sample * Math.sin(angle);
+    }
+    return Math.round(2 * Math.hypot(real,imag) / size);
+  };
+  const audio = {microphone440:toneLevel(440), computer880:toneLevel(880), reference1100:toneLevel(1100)};
+  assert(Math.min(audio.microphone440,audio.computer880) > Math.max(200,5*audio.reference1100),
+    'Expected independent microphone and computer audio in ' + path.basename(file));
   const frames = execFileSync(ffmpeg, ['-v','error','-i',file,'-an','-vf','fps=4,scale=64:36',
     '-pix_fmt','rgb24','-f','rawvideo','pipe:1'], {maxBuffer:16 * 1024 * 1024});
   const phases = [];
@@ -89,7 +109,7 @@ function inspectVideo(file, expectedCamera) {
     const pixels = Math.abs(value - expectedCamera[i]) * (i % 2 === 0 ? 64 : 36);
     assert(pixels <= 2, path.basename(file) + ' changed the custom camera bounds: ' + JSON.stringify(cameraBox));
   });
-  return {phases, changes, peak, expectedCamera, cameraBox};
+  return {phases, changes, peak, audio, expectedCamera, cameraBox};
 }
 
 async function openStudio(editor) {
@@ -151,7 +171,7 @@ async function privateYouTube(editor) {
   await studio.fill('#server','rtmps://a.rtmps.youtube.com:443/live2');
   await studio.locator('#key').evaluate((input, key) => { input.value = key; }, process.env.EASYCUT_PRIVATE_LIVE_TEST_KEY);
   delete process.env.EASYCUT_PRIVATE_LIVE_TEST_KEY;
-  await studio.check('#camera'); await studio.check('#mic');
+  await studio.check('#camera'); await studio.check('#mic'); await studio.check('#system');
   await studio.click('#prepare');
   await studio.waitForSelector('body[data-phase="ready"]');
   await studio.click('#scenes button[value=screen]');
@@ -225,7 +245,7 @@ async function privateYouTube(editor) {
     await studio.selectOption('#output','rtmp');
     await studio.fill('#server','rtmp://127.0.0.1:' + port + '/live');
     await studio.fill('#key','synthetic');
-    await studio.check('#camera'); await studio.check('#mic');
+    await studio.check('#camera'); await studio.check('#mic'); await studio.check('#system');
     await studio.click('#prepare');
     await studio.waitForSelector('body[data-phase="ready"]');
     await studio.click('#scenes button[value=screen]');
