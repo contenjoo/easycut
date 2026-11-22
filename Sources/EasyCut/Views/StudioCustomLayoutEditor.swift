@@ -1,8 +1,6 @@
 import SwiftUI
 
-private enum LayoutSource: CaseIterable {
-    case screen, camera
-
+private extension StudioSource {
     var title: String { self == .screen ? L("화면") : L("카메라") }
     var symbol: String { self == .screen ? "display" : "video" }
 }
@@ -17,7 +15,7 @@ private enum LayoutCorner: CaseIterable {
 }
 
 private struct LayoutDrag {
-    let source: LayoutSource
+    let source: StudioSource
     let frame: CGRect
     let corner: LayoutCorner?
 }
@@ -59,7 +57,7 @@ struct StudioCustomLayoutEditor: View {
     let cameraAspect: CGFloat
 
     @State private var draft: StudioCustomLayout
-    @State private var source: LayoutSource = .screen
+    @State private var source: StudioSource = .screen
     @State private var drag: LayoutDrag?
     @State private var preferSelectedInOverlap = false
     @FocusState private var canvasFocused: Bool
@@ -73,7 +71,7 @@ struct StudioCustomLayoutEditor: View {
         _draft = State(initialValue: rec.studioCustomLayout)
     }
 
-    private var cameraAvailable: Bool { rec.useCamera && !rec.cameras.isEmpty }
+    private var cameraAvailable: Bool { rec.studioCameraAvailable }
     private var tint: Color { colorScheme == .dark ? Theme.accentColor : Color(nsColor: Theme.videoClip) }
 
     var body: some View {
@@ -90,7 +88,17 @@ struct StudioCustomLayoutEditor: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 7) {
                         Text("편집할 소스").font(.subheadline.weight(.semibold))
-                        ForEach(LayoutSource.allCases, id: \.self) { item in sourceButton(item) }
+                        ForEach(StudioSource.allCases, id: \.self) { item in sourceButton(item) }
+                        Spacer(minLength: 0)
+                        Button {
+                            draft.screenOnTop = source == .screen
+                            preferSelectedInOverlap = true
+                        } label: {
+                            Label("맨 앞으로", systemImage: "square.2.layers.3d.top.filled")
+                        }
+                        .controlSize(.small)
+                        .disabled(!cameraAvailable || StudioScene.custom.frontSource(in: draft) == source)
+                        .accessibilityIdentifier("studio-custom-front")
                     }
                     Color.clear.aspectRatio(16 / 9, contentMode: .fit)
                         .overlay { GeometryReader { proxy in canvas(size: proxy.size) } }
@@ -158,7 +166,7 @@ struct StudioCustomLayoutEditor: View {
         return L("소스를 끌어 이동하고 모서리를 끌어 크기를 조절하세요.")
     }
 
-    private func sourceButton(_ item: LayoutSource) -> some View {
+    private func sourceButton(_ item: StudioSource) -> some View {
         Button {
             source = item
             preferSelectedInOverlap = true
@@ -204,15 +212,15 @@ struct StudioCustomLayoutEditor: View {
         .controlSize(.small).accessibilityLabel(Text(verbatim: L(label))).help(L(label))
     }
 
-    private func frame(for target: LayoutSource) -> CGRect? {
+    private func frame(for target: StudioSource) -> CGRect? {
         let frames = StudioScene.custom.frames(screenAspect: screenAspect, cameraAspect: cameraAspect, customLayout: draft)
         return target == .screen ? frames.screen : (cameraAvailable ? frames.camera : nil)
     }
 
-    private func setBox(_ box: CGRect, for target: LayoutSource) {
+    private func setBox(_ box: CGRect, for target: StudioSource) {
         switch target {
-        case .screen: draft = StudioCustomLayout(screen: box, camera: draft.camera)
-        case .camera: draft = StudioCustomLayout(screen: draft.screen, camera: box)
+        case .screen: draft = StudioCustomLayout(screen: box, camera: draft.camera, screenOnTop: draft.screenOnTop)
+        case .camera: draft = StudioCustomLayout(screen: draft.screen, camera: box, screenOnTop: draft.screenOnTop)
         }
     }
 
@@ -302,12 +310,13 @@ struct StudioCustomLayoutEditor: View {
         return LayoutDrag(source: target, frame: frame, corner: nil)
     }
 
-    private func sourceAt(_ point: CGPoint, size: CGSize, preferSelected: Bool) -> LayoutSource? {
+    private func sourceAt(_ point: CGPoint, size: CGSize, preferSelected: Bool) -> StudioSource? {
         guard size.width > 0, size.height > 0 else { return nil }
         let p = CGPoint(x: point.x / size.width, y: point.y / size.height)
         if preferSelected, frame(for: source)?.contains(p) == true { return source }
-        if frame(for: .camera)?.contains(p) == true { return .camera }
-        if frame(for: .screen)?.contains(p) == true { return .screen }
+        let front = StudioScene.custom.frontSource(in: draft)
+        if frame(for: front)?.contains(p) == true { return front }
+        if frame(for: front.other)?.contains(p) == true { return front.other }
         return nil
     }
 }

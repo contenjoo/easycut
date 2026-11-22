@@ -696,6 +696,7 @@ enum LocTable {
         "개인정보처리방침": "Privacy policy",
         "내 배치": "Custom layout",
         "내 배치 편집": "Edit Custom Layout",
+        "맨 앞으로": "Bring to Front",
         "편집할 소스": "Edit source",
         "배치 캔버스": "Layout canvas",
         "방향키로 이동하고 더하기와 빼기 키로 크기를 조절합니다.": "Move with the arrow keys and resize with the plus and minus keys.",

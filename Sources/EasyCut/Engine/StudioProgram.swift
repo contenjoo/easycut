@@ -1,6 +1,12 @@
 import AVFoundation
 import CoreImage
 
+enum StudioSource: CaseIterable {
+    case screen, camera
+
+    var other: Self { self == .screen ? .camera : .screen }
+}
+
 /// Source boxes on the 16:9 program canvas, measured from the top left.
 struct StudioCustomLayout: Codable, Equatable {
     private static let fullScreen = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -9,16 +15,19 @@ struct StudioCustomLayout: Codable, Equatable {
 
     let screen: CGRect
     let camera: CGRect
+    var screenOnTop: Bool
 
-    init(screen: CGRect, camera: CGRect) {
+    init(screen: CGRect, camera: CGRect, screenOnTop: Bool = false) {
         self.screen = Self.bounded(screen, fallback: Self.fullScreen)
         self.camera = Self.bounded(camera, fallback: Self.insetCamera)
+        self.screenOnTop = screenOnTop
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(screen: try values.decode(CGRect.self, forKey: .screen),
-                  camera: try values.decode(CGRect.self, forKey: .camera))
+                  camera: try values.decode(CGRect.self, forKey: .camera),
+                  screenOnTop: try values.decodeIfPresent(Bool.self, forKey: .screenOnTop) ?? false)
     }
 
     private static func bounded(_ rect: CGRect, fallback: CGRect) -> CGRect {
@@ -55,6 +64,10 @@ enum StudioScene: String, Codable, CaseIterable {
         case .pictureInPictureBottomLeft: return "화면 속 카메라 (왼쪽 아래)"
         case .custom: return "내 배치"
         }
+    }
+
+    func frontSource(in layout: StudioCustomLayout) -> StudioSource {
+        self == .custom && layout.screenOnTop ? .screen : .camera
     }
 
     /// Actual image bounds, in normalized coordinates with the top left as origin.
@@ -185,7 +198,9 @@ final class StudioProgram: @unchecked Sendable {
             let layout = selected.frames(screenAspect: aspect(screen), cameraAspect: aspect(camera), customLayout: custom)
             let bounds = CGRect(origin: .zero, size: Self.size)
             var program = CIImage(color: .black).cropped(to: bounds)
-            for (source, rect) in [(screen, layout.screen), (camera, layout.camera)] {
+            let front = selected.frontSource(in: custom)
+            for layer in [front.other, front] {
+                let (source, rect) = layer == .screen ? (screen, layout.screen) : (camera, layout.camera)
                 guard let source, let rect else { continue }
                 let src = CIImage(cvPixelBuffer: source)
                 let size = CGSize(width: rect.width * bounds.width, height: rect.height * bounds.height)

@@ -72,13 +72,14 @@ extension Project {
             let scene: StudioScene = camera == nil && change.scene != .custom ? .screen : change.scene
             let frames = scene.frames(screenAspect: screen.width / max(1, screen.height), cameraAspect: cameraAspect,
                                       customLayout: change.customLayout)
+            let screenTrack = camera != nil && scene.frontSource(in: change.customLayout) == .screen ? 1 : 0
             if var base = clip(screen, from: change.time, to: end, frame: frames.screen) {
                 base.showClicks = showClicks
-                tracks[0].clips.append(base)
+                tracks[screenTrack].clips.append(base)
             }
             if let camera, var face = clip(camera, from: change.time, to: end, frame: frames.camera) {
                 face.volume = 0
-                tracks[1].clips.append(face)
+                tracks[1 - screenTrack].clips.append(face)
             }
         }
         if let audio { insert(asset: audio, track: 2, at: at) }
