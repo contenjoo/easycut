@@ -217,6 +217,12 @@ async function privateYouTube(editor) {
   const ctx = browser.contexts()[0];
   const editor = ctx.pages().find(page => page.url().includes('tauri'));
   assert(editor, 'Missing editor window');
+  if (process.argv.includes('--camera-background')) {
+    try {
+      await require('./camera-background-native.cjs')({editor,openStudio,waitForEdit,output,ffmpeg});
+    } finally { await browser.close(); }
+    return;
+  }
   if (process.argv.includes('--private-youtube')) {
     try { await privateYouTube(editor); } finally { await browser.close(); }
     return;

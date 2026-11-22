@@ -17,8 +17,7 @@ export async function createCameraBackgroundStream(raw, effect = {mode: "off"}, 
     };
   }
   const worker = new Worker(new URL("./worker.js", import.meta.url), {type: "module"});
-  const input = camera.clone();
-  const output = new MediaStreamTrackGenerator({kind: "video"});
+  let input, output;
   const pending = new Map();
   let sequence = 0, stopped = false;
 
@@ -26,8 +25,8 @@ export async function createCameraBackgroundStream(raw, effect = {mode: "off"}, 
     if (stopped) return;
     stopped = true;
     worker.terminate();
-    input.stop();
-    output.stop();
+    input?.stop();
+    output?.stop();
     for (const request of pending.values()) request.reject(new Error("카메라 배경 처리가 종료되었습니다."));
     pending.clear();
   }
@@ -76,6 +75,8 @@ export async function createCameraBackgroundStream(raw, effect = {mode: "off"}, 
     });
   }
   try {
+    input = camera.clone();
+    output = new MediaStreamTrackGenerator({kind: "video"});
     const {readable} = new MediaStreamTrackProcessor({track: input, maxBufferSize: 1});
     const {writable} = output;
     worker.postMessage({type: "start", readable, writable}, [readable, writable]);

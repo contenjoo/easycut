@@ -33,6 +33,7 @@ async function configure(change) {
     if (change.mode !== "off") {
       modelPromise ??= loadModel();
       await modelPromise;
+      if (request !== change) return;
     }
     if (change.mode === "image") {
       const response = await fetch(change.url);
