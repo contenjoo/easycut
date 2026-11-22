@@ -101,7 +101,7 @@ enum MCPBridge {
                 result = ["protocolVersion": (params["protocolVersion"] as? String) ?? "2025-06-18",
                           "capabilities": ["tools": [String: Any]()],
                           "serverInfo": ["name": "easycut", "version": "1.0.0"],
-                          "instructions": "오케이컷 영상 편집 앱을 조작합니다. 앱이 실행 중이어야 합니다. 먼저 get_project_state로 상태를 확인하세요."]
+                          "instructions": "EasyCut 영상 편집 앱을 조작합니다. 앱이 실행 중이어야 합니다. 먼저 get_project_state로 상태를 확인하세요."]
             case "ping":
                 result = [:]
             case "tools/list":
@@ -127,7 +127,7 @@ enum MCPBridge {
 
     static func call(_ name: String, _ args: [String: Any]) -> (String, Bool) {
         guard let token = try? String(contentsOf: ControlServer.tokenURL, encoding: .utf8) else {
-            return ("오케이컷 앱이 실행 중이 아닙니다. 앱을 먼저 여세요.", true)
+            return ("EasyCut 앱이 실행 중이 아닙니다. 앱을 먼저 여세요.", true)
         }
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(ControlServer.port)/tool")!)
         req.httpMethod = "POST"
@@ -136,7 +136,7 @@ enum MCPBridge {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["name": name, "input": args])
         let sem = DispatchSemaphore(value: 0)
-        var out: (String, Bool) = ("오케이컷 앱에 연결할 수 없습니다. 앱이 실행 중인지 확인하세요.", true)
+        var out: (String, Bool) = ("EasyCut 앱에 연결할 수 없습니다. 앱이 실행 중인지 확인하세요.", true)
         URLSession.shared.dataTask(with: req) { data, _, _ in
             if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let t = obj["text"] as? String { out = (t, (obj["is_error"] as? Bool) ?? false) }

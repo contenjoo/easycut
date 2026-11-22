@@ -821,7 +821,7 @@ final class EditorStore: ObservableObject {
     /// Whisper 모델을 받고(필요하면) 기본 엔진으로 설정. 받은 뒤 이어서 할 일을 실행
     func prepareWhisper(then next: (() -> Void)? = nil) {
         guard Transcriber.whisperBinary != nil else {
-            alert = "Whisper 엔진을 찾을 수 없습니다. 최신 오케이컷을 다시 설치해 주세요."
+            alert = "Whisper 엔진을 찾을 수 없습니다. 최신 EasyCut을 다시 설치해 주세요."
             return
         }
         if Transcriber.whisperReady {
@@ -1074,7 +1074,7 @@ final class EditorStore: ObservableObject {
         if let first = project.tracks.first?.clips.first, let a = project.asset(first.assetID) {
             return (a.name as NSString).deletingPathExtension
         }
-        return "OK Cut"
+        return "EasyCut"
     }
 
     // MARK: 자동 저장

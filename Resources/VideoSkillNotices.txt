@@ -7,7 +7,7 @@ restricted Canvas 2D and React/Remotion rendering contracts. These adaptations
 change the original workflows and do not include upstream source code,
 runtimes, installers, execution scripts, fonts, images or audio assets.
 
-이지컷에 포함된 내용은 제한된 Canvas/Remotion 실행 환경에 맞게 요약·변형한
+EasyCut에 포함된 내용은 제한된 Canvas/Remotion 실행 환경에 맞게 요약·변형한
 제작 지침입니다. 원본 코드·런타임·설치 프로그램·실행 스크립트 및 미디어
 자산을 포함하지 않습니다. 사용자의 요청과 EasyCut의 실행 규칙이 우선합니다.
 

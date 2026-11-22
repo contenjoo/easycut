@@ -60,7 +60,7 @@ enum Updater {
                 return
             }
             guard let rel, isNewer(rel.version, than: current) else {
-                if userInitiated { store.alert = "최신 버전을 쓰고 있습니다. (오케이컷 \(current))" }
+                if userInitiated { store.alert = "최신 버전을 쓰고 있습니다. (EasyCut \(current))" }
                 return
             }
             let skipped = UserDefaults.standard.string(forKey: "skippedUpdateVersion")
@@ -71,7 +71,7 @@ enum Updater {
 
     private static func ask(_ rel: Release, store: EditorStore) {
         let a = NSAlert()
-        a.messageText = "새 버전이 나왔습니다: 오케이컷 \(rel.version)"
+        a.messageText = "새 버전이 나왔습니다: EasyCut \(rel.version)"
         // 릴리스 노트의 마크다운 기호는 빼고 보여 준다
         var notes = rel.notes.replacingOccurrences(of: "\r", with: "")
             .replacingOccurrences(of: "**", with: "")
@@ -102,7 +102,7 @@ enum Updater {
               !appURL.path.contains("/AppTranslocation/"), !appURL.path.hasPrefix("/Volumes/") else {
             store.showToast("업데이트 파일을 받는 중…")
             if let dmg = try? await download(rel.dmg) { NSWorkspace.shared.open(dmg) }
-            store.alert = "자동으로 바꿀 수 없는 위치에서 실행 중입니다.\n열린 창에서 오케이컷을 응용 프로그램 폴더로 끌어 놓아 바꿔 주세요."
+            store.alert = "자동으로 바꿀 수 없는 위치에서 실행 중입니다.\n열린 창에서 EasyCut을 응용 프로그램 폴더로 끌어 놓아 바꿔 주세요."
             return
         }
         store.converting["업데이트 \(rel.version)"] = JobProgress(value: 0.1, message: "업데이트 받는 중…")
@@ -116,7 +116,7 @@ enum Updater {
             guard let info = NSDictionary(contentsOf: staged.appendingPathComponent("Contents/Info.plist")),
                   info["CFBundleIdentifier"] as? String == Bundle.main.bundleIdentifier,
                   let v = info["CFBundleShortVersionString"] as? String, isNewer(v, than: current) else {
-                throw MediaError.failed("받은 파일이 올바른 오케이컷 새 버전이 아닙니다.")
+                throw MediaError.failed("받은 파일이 올바른 EasyCut 새 버전이 아닙니다.")
             }
             // A recording may have begun while the update was downloading.
             guard !store.recording.isBusy else {

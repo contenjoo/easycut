@@ -118,7 +118,7 @@ struct VideoGenerationSheet: View {
             .disabled(generator.busy)
 
             Text(copy("영상 제작 품질을 우선한다면 현재 Claude Opus 5.5를 가장 권장합니다.",
-                      "For the best video creation quality in OK Cut, we currently recommend Claude Opus 5.5."))
+                      "For the best video creation quality in EasyCut, we currently recommend Claude Opus 5.5."))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 

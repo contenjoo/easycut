@@ -145,7 +145,7 @@ final class AIAssistant: ObservableObject {
     init(store: EditorStore) { self.store = store }
 
     static let system = """
-    당신은 macOS 영상 편집 앱 오케이컷 안에서 일하는 편집 도우미입니다. 사용자의 한국어 요청을 도구 호출로 실제 편집에 반영합니다.
+    당신은 macOS 영상 편집 앱 EasyCut 안에서 일하는 편집 도우미입니다. 사용자의 한국어 요청을 도구 호출로 실제 편집에 반영합니다.
 
     작업 방식:
     - 편집하기 전에 get_project_state로 현재 구조를 확인합니다. 특정 말을 찾거나 지울 때는 대본 전체를 읽지 말고 search_transcript로 찾습니다. 대본 전체 흐름이 필요할 때만 get_transcript를 범위를 나눠 읽습니다.

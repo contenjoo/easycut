@@ -48,7 +48,7 @@ enum GeminiClient {
         switch code {
         case 400, 401: return "Gemini 키 또는 요청을 확인해 주세요. 새 키를 발급해 다시 연결할 수 있습니다."
         case 403: return "이 키로 Gemini를 사용할 수 없습니다. Google AI Studio에서 프로젝트 권한과 지원 지역을 확인해 주세요."
-        case 404: return "Gemini 모델을 사용할 수 없습니다. 오케이컷 업데이트를 확인해 주세요."
+        case 404: return "Gemini 모델을 사용할 수 없습니다. EasyCut 업데이트를 확인해 주세요."
         case 429: return "Gemini 사용량 한도에 도달했습니다. 잠시 후 다시 시도하거나 Google AI Studio에서 무료 한도를 확인해 주세요. 유료로 자동 전환하지 않습니다."
         case 500...599: return "Gemini 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요."
         default: return "Gemini 연결에 실패했습니다 (HTTP \(code)). 다시 시도해 주세요."

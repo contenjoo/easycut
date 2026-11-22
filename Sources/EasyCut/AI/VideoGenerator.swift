@@ -308,7 +308,7 @@ struct VideoGenerationJob {
         let browsers = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
                         NSHomeDirectory() + "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
         guard let browser = browsers.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { throw MediaError.failed("샘플과 영상 렌더링에 Google Chrome이 필요합니다. Chrome을 설치한 뒤 다시 시도하세요.") }
-        guard let ffmpeg = Tools.find("ffmpeg") ?? executable("ffmpeg") else { throw MediaError.failed("FFmpeg가 필요합니다. 오케이컷 내장 도구를 확인하세요.") }
+        guard let ffmpeg = Tools.find("ffmpeg") ?? executable("ffmpeg") else { throw MediaError.failed("FFmpeg가 필요합니다. EasyCut 내장 도구를 확인하세요.") }
         let managed = AppPaths.support.appendingPathComponent("video-runtime-v1", isDirectory: true)
         let selected = request.renderer == .remotion ? remotionProject.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let runtime = selected.isEmpty ? managed : URL(fileURLWithPath: (selected as NSString).expandingTildeInPath, isDirectory: true)
@@ -324,7 +324,7 @@ struct VideoGenerationJob {
         }
         let cli = modules.appendingPathComponent("@remotion/cli/remotion-cli.js")
         guard FileManager.default.fileExists(atPath: cli.path), FileManager.default.fileExists(atPath: modules.appendingPathComponent("react/package.json").path) else {
-            throw MediaError.failed("선택한 Remotion 폴더에 설치된 @remotion/cli와 react가 없습니다. 경로를 비우면 오케이컷이 도구를 준비합니다.")
+            throw MediaError.failed("선택한 Remotion 폴더에 설치된 @remotion/cli와 react가 없습니다. 경로를 비우면 EasyCut이 도구를 준비합니다.")
         }
         let directory = AppPaths.support.appendingPathComponent("generated-videos/\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -517,7 +517,7 @@ struct VideoGenerationJob {
         Write one TSX file with a default-exported React component. Import only from react and remotion. Use useCurrentFrame(), useVideoConfig(), interpolate(), spring() and SVG/HTML/CSS to animate. Total frames=\(r.frames), fps=\(r.fps), size=\(r.width)x\(r.height). No Composition or registerRoot (the app owns those). No external assets, staticFile(), remote fonts, network, timers, useEffect or nondeterministic Math.random. Use system Korean fonts. This renderer produces a silent motion graphic; never claim it includes narration, music or recorded audio.
         """
         return """
-        You are the video artist collaborating inside OK Cut. Return ONLY a JSON object {"title":"short title","source":"complete source code"}. Keep the complete source compact, under 150 lines with reusable drawing helpers. No explanation or markdown. Do not call tools or give shell commands. No filesystem, credentials, network, remote libraries or machine access. The source only draws the requested animation\(r.renderer == .canvas ? " and synthesizes original sound" : "").
+        You are the video artist collaborating inside EasyCut. Return ONLY a JSON object {"title":"short title","source":"complete source code"}. Keep the complete source compact, under 150 lines with reusable drawing helpers. No explanation or markdown. Do not call tools or give shell commands. No filesystem, credentials, network, remote libraries or machine access. The source only draws the requested animation\(r.renderer == .canvas ? " and synthesizes original sound" : "").
         Length \(r.duration) seconds; resolution \(r.width)x\(r.height); \(r.fps) fps.
         \(contract)
         Adapt the structure to the brief. For an explainer, use a clear visual sequence that teaches the requested concept. For a promotional video, show the requested product or service and its benefits, with a call to action only when suitable. For a narrative animation, use coherent characters, actions and scene changes. For data, represent the supplied numbers accurately. These are conditional approaches, not mandatory templates. A single-shot or abstract brief need not have slides, a story or a call to action. Match the requested visual medium (for example sketch, minimal typography, flat graphics, isometric illustration or atmospheric abstract motion), rather than imposing one house style. Preserve user-supplied wording, facts and brand names, and do not invent product claims or statistics.
