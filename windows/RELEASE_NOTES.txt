@@ -1,3 +1,25 @@
+EasyCut for Windows 0.12.0
+
+[카메라 배경]
+• 녹화와 방송 스튜디오에서 카메라 배경을 흐리게 하거나 스튜디오·서재·로프트·미드나이트, 내 이미지로 바꿀 수 있습니다. 인물 분리는 PC 안에서 처리합니다.
+
+[안정성]
+• 저장 중 꺼져도 프로젝트 파일이 깨지지 않습니다.
+• 내보내기·녹화 마무리 중에는 업데이트를 미루고, 저장에 실패하면 앱을 닫지 않습니다.
+• 녹화 파일 쓰기에 실패하면 녹화를 멈추고 쓴 부분을 남깁니다.
+• 앱을 닫으면 내보내기·방송용 ffmpeg도 함께 종료됩니다.
+• 업데이트는 공식 설치 파일만 받고 체크섬을 확인합니다.
+
+[Camera background]
+• Blur the camera background or replace it with Studio, Library, Loft, Midnight or your own image while recording or streaming. Segmentation runs on your PC.
+
+[Stability]
+• Saves can no longer corrupt the project if the app stops mid-save.
+• Updates wait for exports and recording finalize, and the app stays open if saving fails.
+• Recording stops and keeps what was written when a chunk cannot be saved.
+• Export and studio ffmpeg processes now close with the app.
+• Updates only accept the official installer and check its checksum.
+
 EasyCut for Windows 0.11.0
 
 방송 스튜디오에서 화면과 카메라를 배치하고 녹화 중 장면을 전환할 수 있습니다.

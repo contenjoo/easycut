@@ -4,9 +4,9 @@
 
 EasyCut is a Mac and Windows video editor that puts simple cut editing, transcript-based editing with speech recognition (STT), captions, screen & face recording and AI editing in one app. From macOS 1.13.0 and Windows 0.7.0, describe an animation, explainer or promo video, review its sample frames, then render it and continue editing on the timeline.
 
-**[⬇︎ Download Mac 1.18.1](https://github.com/contenjoo/easycut/releases/download/v1.18.1/EasyCut-1.18.1.dmg)** · [Website](https://contenjoo.github.io/easycut/)
+**[⬇︎ Download Mac 1.19.0](https://github.com/contenjoo/easycut/releases/download/v1.19.0/EasyCut-1.19.0.dmg)** · [Website](https://contenjoo.github.io/easycut/)
 
-Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.11.0/EasyCut_0.11.0_x64-setup.exe) · [Windows release notes](https://github.com/contenjoo/easycut/releases/tag/win-v0.11.0) · source in [`windows/`](windows)
+Windows: [download EasyCut for Windows](https://github.com/contenjoo/easycut/releases/download/win-v0.12.0/EasyCut_0.12.0_x64-setup.exe) · [Windows release notes](https://github.com/contenjoo/easycut/releases/tag/win-v0.12.0) · source in [`windows/`](windows)
 
 Open **Broadcast Studio** on Mac or Windows to connect your YouTube channel, schedule a broadcast or go live. Move, resize and reorder the screen and camera, then continue editing each scene in the timeline after recording. [Studio guide](docs/youtube-studio.html)
 
@@ -33,7 +33,7 @@ The Mac app follows your macOS language: English on English (and any non-Korean)
 
 Requires an **Apple Silicon Mac (M1 or later) with macOS 14 or later**.
 
-1. Download [EasyCut-1.18.1.dmg](https://github.com/contenjoo/easycut/releases/download/v1.18.1/EasyCut-1.18.1.dmg), open it and drag EasyCut into the Applications folder.
+1. Download [EasyCut-1.19.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.19.0/EasyCut-1.19.0.dmg), open it and drag EasyCut into the Applications folder.
 2. The first time only: the app is not notarized, so if macOS warns you, go to System Settings › Privacy & Security and click **Open Anyway**.
 3. Download the Whisper model (574 MB) with **Turn On Whisper** in the Transcript tab, and the YouTube tool (yt-dlp) with **Install YouTube Tool** in the link window — once each.
 
@@ -44,7 +44,7 @@ Updates are automatic from 1.3.0 on: when a new version is released, the app tel
 
 ### Windows
 
-Run [EasyCut_0.11.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.11.0/EasyCut_0.11.0_x64-setup.exe) on **Windows 10/11 64-bit**. Start a new video from **Create a Video** in the toolbar. Prepare Node.js LTS, npm and Chrome or Edge for video creation. Rendering packages are installed in the app's support folder on first use.
+Run [EasyCut_0.12.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.12.0/EasyCut_0.12.0_x64-setup.exe) on **Windows 10/11 64-bit**. Start a new video from **Create a Video** in the toolbar. Prepare Node.js LTS, npm and Chrome or Edge for video creation. Rendering packages are installed in the app's support folder on first use.
 
 ## Build from source
 
