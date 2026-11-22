@@ -289,6 +289,9 @@
 "Google Cloud 열기" = "Open Google Cloud";
 "Google Cloud에서 YouTube Data API v3를 사용 설정하고 데스크톱 앱용 OAuth 클라이언트 JSON을 가져오세요." = "Enable YouTube Data API v3 in Google Cloud, then import your desktop app OAuth client JSON.";
 "Google로 연결" = "Connect with Google";
+"EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다." = "EasyCut reads your selected YouTube channel and broadcast list to schedule and stream broadcasts. The credentials that keep your account connected are stored in this Mac’s Keychain.";
+"YouTube 연동 개인정보처리방침" = "YouTube integration privacy policy";
+"YouTube 서비스 약관" = "YouTube Terms of Service";
 "In/Out 구간 지우기" = "Clear In/Out range";
 "In~Out 구간 삭제 (⌫)" = "Delete the In–Out range (⌫)";
 "Large v3 Turbo (추천, 정확·빠름)" = "Large v3 Turbo (recommended, accurate & fast)";

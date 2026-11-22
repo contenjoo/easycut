@@ -89,6 +89,16 @@ private struct YouTubeBroadcastManager: View {
                         .controlSize(.small).disabled(loading)
                 }
             }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다.")
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    Link("YouTube 연동 개인정보처리방침", destination: URL(string: "https://learntoday.kr/easycut/youtube-privacy")!)
+                        .accessibilityIdentifier("studio-youtube-privacy")
+                    Link("YouTube 서비스 약관", destination: URL(string: "https://www.youtube.com/t/terms")!)
+                }
+            }
+            .font(.callout)
             if account.isConnected {
                 if let channel = service.channelTitle { YouTubeChannelLabel(title: channel) }
                 Picker("방송 관리", selection: $creating) {
