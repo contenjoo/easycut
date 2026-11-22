@@ -72,7 +72,7 @@ jobs:
           if ($baseline -notmatch '^[0-9a-f]{40}$') { throw "Missing installer source commit" }
           git fetch --no-tags --depth=1 origin $baseline
           if ($LASTEXITCODE -ne 0) { throw "Could not fetch installer source" }
-          git diff --quiet $baseline HEAD -- "windows/app/ui" "windows/app/src-tauri" "windows/crates" "windows/Cargo*" "windows/app/package*" ":(exclude)windows/**/tests/**"
+          git diff --quiet $baseline HEAD -- "windows/app/ui" "windows/app/src-tauri" "windows/crates" "windows/scripts/install-ffmpeg.ps1" "windows/Cargo*" "windows/app/package*" ":(exclude)windows/**/tests/**"
           if ($LASTEXITCODE -ne 0) { throw "The selected installer and the checked-out Windows product code differ" }
 
           $response = gh api "$api/artifacts?per_page=100" | ConvertFrom-Json
@@ -144,13 +144,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $bin = "windows/app/src-tauri/resources/bin"
-          New-Item -ItemType Directory -Force -Path $bin, windows/app/src-tauri/resources/licenses | Out-Null
-          # ffmpeg (gyan.dev essentials build: libx264, libass)
-          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
-          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
-          $ff = Get-ChildItem ffmpeg -Directory | Select-Object -First 1
-          Copy-Item "$($ff.FullName)/bin/ffmpeg.exe", "$($ff.FullName)/bin/ffprobe.exe" $bin
-          Copy-Item "$($ff.FullName)/LICENSE" windows/app/src-tauri/resources/licenses/FFmpeg-LICENSE.txt
+          ./windows/scripts/install-ffmpeg.ps1
           # whisper.cpp v1.9.4 (CPU build, published on build tag b5130)
           gh release download b5130 --repo ggml-org/whisper.cpp --pattern whisper-bin-x64.zip --output whisper.zip
           Expand-Archive whisper.zip -DestinationPath whisper

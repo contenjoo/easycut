@@ -195,15 +195,24 @@ fn tls_options(url: &tauri::Url) -> &'static [&'static str] {
 
 impl Encoder {
     fn start(ffmpeg: &std::path::Path, url: &tauri::Url, key: &str) -> Result<Self, String> {
-        if key.chars().any(char::is_control) || key.trim().is_empty() || key.len() >= 2048 {
+        // FFmpeg 8 reads a preset with fgets(line, 1000): name, '=', UTF-8
+        // value and newline must fit in 999 bytes, leaving room for the NUL.
+        let fits_line = |name: &str, value: &str| name.len() + 1 + value.len() + 1 < 1000;
+        if key.chars().any(char::is_control)
+            || key.trim().is_empty()
+            || !fits_line("rtmp_playpath", key.trim())
+        {
             return Err("스트림 키를 확인하세요.".into());
         }
         let key = key.trim();
+        let application = url.path().trim_matches('/');
+        if !fits_line("rtmp_app", application) {
+            return Err("RTMP 서버 경로가 너무 깁니다.".into());
+        }
         let mut secret =
             tempfile::NamedTempFile::new().map_err(|_| "임시 송출 설정을 만들 수 없습니다.")?;
         // FFmpeg's preset reader supports protocol AVOptions on native RTMP as well.
         writeln!(secret, "rtmp_playpath={key}").map_err(|_| "송출 설정을 쓸 수 없습니다.")?;
-        let application = url.path().trim_matches('/');
         if !application.is_empty() {
             writeln!(secret, "rtmp_app={application}")
                 .map_err(|_| "송출 설정을 쓸 수 없습니다.")?;
@@ -754,11 +763,76 @@ mod tests {
         );
     }
 
+    // All data captured here belongs to the loopback synthetic publisher. The listener
+    // in FFmpeg accepts an empty publish key, so decoding the movie alone cannot catch
+    // versions that discard protocol AVOptions in -fpre.
+    fn assert_publish_commands(wire: &[u8], endpoint: &tauri::Url, key: &str) {
+        fn amf_string(value: &str) -> Vec<u8> {
+            let mut bytes = vec![2]; // AMF0 String
+            bytes.extend((value.len() as u16).to_be_bytes());
+            bytes.extend(value.as_bytes());
+            bytes
+        }
+        fn contains(bytes: &[u8], marker: &[u8]) -> bool {
+            bytes.windows(marker.len()).any(|b| b == marker)
+        }
+        let messages = &wire[3073..]; // C0, C1 and C2 are unchunked.
+        let connect = amf_string("connect");
+        let start = messages
+            .windows(connect.len())
+            .position(|b| b == connect)
+            .expect("RTMP connect command");
+        // A new command stream starts with a 12-byte type-0 RTMP header. At
+        // connection time the negotiated chunk size is still the default 128.
+        let header = &messages[start - 12..start];
+        assert_eq!(header[0] >> 6, 0);
+        assert_eq!(header[7], 20, "Expected an AMF0 command");
+        let size = u32::from_be_bytes([0, header[4], header[5], header[6]]) as usize;
+        let mut command = Vec::new();
+        let mut pos = start;
+        while command.len() < size {
+            let count = 128.min(size - command.len());
+            command.extend_from_slice(&messages[pos..pos + count]);
+            pos += count;
+            if command.len() < size {
+                assert_eq!(messages[pos], 0xc0 | header[0], "RTMP connect continuation");
+                pos += 1;
+            }
+        }
+        for (name, value) in [
+            ("app", endpoint.path().trim_matches('/')),
+            ("tcUrl", endpoint.as_str()),
+        ] {
+            let mut property = (name.len() as u16).to_be_bytes().to_vec();
+            property.extend(name.as_bytes());
+            property.extend(amf_string(value));
+            assert!(
+                contains(&command, &property),
+                "RTMP connect sent the wrong {name}"
+            );
+        }
+        let publish = amf_string("publish");
+        let pos = messages
+            .windows(publish.len())
+            .position(|b| b == publish)
+            .expect("RTMP publish command")
+            + publish.len();
+        assert_eq!(messages[pos], 0, "Publish transaction ID is an AMF0 number");
+        assert_eq!(messages[pos + 9], 5, "Publish command object is AMF0 null");
+        let mut args = amf_string(key);
+        args.extend(amf_string("live"));
+        assert!(
+            messages[pos + 10..].starts_with(&args),
+            "RTMP publish omitted or changed its stream key"
+        );
+    }
+
     /// Requires FFmpeg and ffprobe on PATH and permission to listen on localhost.
     #[test]
     #[ignore]
     fn studio_sender_delivers_webm_as_h264_aac_over_rtmp() {
-        use std::net::TcpListener;
+        use std::io::Read;
+        use std::net::{Shutdown, TcpListener, TcpStream};
         use std::thread::sleep;
         use std::time::{Duration, Instant};
 
@@ -801,7 +875,9 @@ mod tests {
             .unwrap()
             .local_addr()
             .unwrap();
-        let url = tauri::Url::parse(&format!("rtmp://{addr}/live")).unwrap();
+        let relay = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url =
+            tauri::Url::parse(&format!("rtmp://{}/live2", relay.local_addr().unwrap())).unwrap();
         struct Receiver(Child);
         impl Drop for Receiver {
             fn drop(&mut self) {
@@ -818,7 +894,7 @@ mod tests {
                     "-listen",
                     "1",
                     "-i",
-                    &format!("{url}/fixture"),
+                    &format!("rtmp://{addr}/live2/fixture"),
                     "-c",
                     "copy",
                 ])
@@ -835,14 +911,43 @@ mod tests {
             );
             sleep(Duration::from_millis(20));
         }
+        let tap = std::thread::spawn(move || {
+            let (mut client, _) = relay.accept().unwrap();
+            let mut server = TcpStream::connect(addr).unwrap();
+            let mut replies = server.try_clone().unwrap();
+            let mut downstream = client.try_clone().unwrap();
+            let backwards = std::thread::spawn(move || {
+                let _ = std::io::copy(&mut replies, &mut downstream);
+                let _ = downstream.shutdown(Shutdown::Write);
+            });
+            let mut wire = Vec::new();
+            let mut buffer = [0; 8192];
+            while let Ok(n) = client.read(&mut buffer) {
+                if n == 0 {
+                    break;
+                }
+                let keep = n.min((32 * 1024usize).saturating_sub(wire.len()));
+                wire.extend_from_slice(&buffer[..keep]);
+                if server.write_all(&buffer[..n]).is_err() {
+                    break;
+                }
+            }
+            let _ = server.shutdown(Shutdown::Write);
+            backwards.join().unwrap();
+            wire
+        });
         for bad_key in ["first\nsecond", "first\rsecond", "  "] {
             assert!(Encoder::start(&ffmpeg, &url, bad_key).is_err());
         }
+        assert!(Encoder::start(&ffmpeg, &url, &"a".repeat(985)).is_err());
+        let long_path =
+            tauri::Url::parse(&format!("rtmp://127.0.0.1/{}", "a".repeat(990))).unwrap();
+        assert!(Encoder::start(&ffmpeg, &long_path, "fixture").is_err());
         let mut sender = Encoder::start(&ffmpeg, &url, "fixture").unwrap();
         let preset = sender.key.as_ref().unwrap().to_path_buf();
         assert_eq!(
             std::fs::read_to_string(&preset).unwrap(),
-            "rtmp_playpath=fixture\nrtmp_app=live\n"
+            "rtmp_playpath=fixture\nrtmp_app=live2\n"
         );
         #[cfg(windows)]
         {
@@ -883,6 +988,7 @@ mod tests {
             );
             sleep(Duration::from_millis(50));
         }
+        assert_publish_commands(&tap.join().unwrap(), &url, "fixture");
         let probe = tools::command(&ffprobe)
             .args([
                 "-v",
