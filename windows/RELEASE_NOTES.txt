@@ -1,3 +1,13 @@
+EasyCut for Windows 0.10.1
+
+[제품 이름]
+• 창 제목, 시작 메뉴와 바탕화면 바로가기, 설치된 앱 목록에 EasyCut이 표시됩니다.
+• 기존 0.10.0 설치의 바로가기를 업데이트하며, 기존 프로젝트 및 환경설정을 그대로 사용합니다.
+
+[Product name]
+• The window title, Start menu, desktop shortcut and installed apps list now show EasyCut.
+• Existing 0.10.0 shortcuts migrate on update. Existing projects and preferences carry over.
+
 OK Cut for Windows 0.10.0
 
 [이름 변경] EasyCut → 오케이컷(OK Cut)

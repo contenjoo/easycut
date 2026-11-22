@@ -104,7 +104,7 @@ pub fn transcribe(
     partial: impl Fn(&[Word]),
     cancel: impl Fn() -> bool,
 ) -> Result<Vec<Word>, String> {
-    let whisper = tools::find_tool("whisper-cli").ok_or("Whisper 엔진을 찾을 수 없습니다. 오케이컷을 다시 설치해 주세요.")?;
+    let whisper = tools::find_tool("whisper-cli").ok_or("Whisper 엔진을 찾을 수 없습니다. EasyCut을 다시 설치해 주세요.")?;
     if !model_ready() {
         return Err("Whisper 모델이 없습니다. 먼저 모델을 받아 주세요.".into());
     }

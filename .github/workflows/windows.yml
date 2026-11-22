@@ -172,6 +172,10 @@ jobs:
       - name: Silent install (what auto-update runs) and self-test of the installed app
         run: |
           $setup = Get-ChildItem windows/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          $programs = [Environment]::GetFolderPath("Programs")
+          $shellLink = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs "OK Cut.lnk"))
+          $shellLink.TargetPath = Join-Path $env:LOCALAPPDATA "EasyCut/easycut-windows.exe"
+          $shellLink.Save()
           $p = Start-Process $setup.FullName -ArgumentList "/S" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Write-Error "installer exit code $($p.ExitCode)"; exit 1 }
           $dir = Join-Path $env:LOCALAPPDATA "EasyCut"
@@ -184,13 +188,11 @@ jobs:
           $t = Start-Process $exe.FullName -ArgumentList "--selftest", "$env:RUNNER_TEMP\selftest2" -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest2.txt
           Get-Content selftest2.txt | Select-Object -First 6
           if ($t.ExitCode -ne 0 -or -not (Select-String -Path selftest2.txt -Pattern "ALL PASSED" -Quiet)) { exit 1 }
-          # 보이는 이름은 OK Cut (설치 폴더·제거 정보 키는 예전 이름 EasyCut 그대로)
           $programs = [Environment]::GetFolderPath("Programs")
-          Get-ChildItem $programs -Filter *.lnk | Select-Object Name | Format-Table -AutoSize
-          if (-not (Test-Path (Join-Path $programs "OK Cut.lnk"))) { Write-Error "Start menu shortcut 'OK Cut' missing"; exit 1 }
-          if (Test-Path (Join-Path $programs "EasyCut.lnk")) { Write-Error "old Start menu shortcut name left behind"; exit 1 }
+          if (-not (Test-Path (Join-Path $programs "EasyCut.lnk"))) { throw "EasyCut Start menu shortcut is missing" }
+          if (Test-Path (Join-Path $programs "OK Cut.lnk")) { throw "Legacy shortcut was not migrated" }
           $shown = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\EasyCut").DisplayName
-          if ($shown -ne "OK Cut") { Write-Error "Apps & features name is '$shown', expected 'OK Cut'"; exit 1 }
+          if ($shown -ne "EasyCut") { throw "Unexpected Apps & features name: $shown" }
           $testedHash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash
           "TESTED_INSTALLER_SHA256=$testedHash" >> $env:GITHUB_ENV
           Write-Host "Tested installer SHA256: $testedHash"
@@ -280,7 +282,7 @@ jobs:
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
           if ($hash -ne $env:TESTED_INSTALLER_SHA256) { throw "Release installer differs from the tested installer" }
           Write-Host "Release installer SHA256: $hash"
-          $asset = Join-Path $env:RUNNER_TEMP "OKCut_${version}_x64-setup.exe"
+          $asset = Join-Path $env:RUNNER_TEMP "EasyCut_${version}_x64-setup.exe"
           Copy-Item $exe.FullName $asset
-          gh release create $tag $asset --target $env:GITHUB_SHA --latest=false --title "OK Cut for Windows $version" --notes-file windows/RELEASE_NOTES.txt
+          gh release create $tag $asset --target $env:GITHUB_SHA --latest=false --title "EasyCut for Windows $version" --notes-file windows/RELEASE_NOTES.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }

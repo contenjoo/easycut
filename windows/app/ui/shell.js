@@ -165,7 +165,7 @@ export async function buildMenu() {
       item("업데이트 확인…", () => checkUpdate(true)),
       M.Submenu.new({ text: "언어 / Language", items: await Promise.all([langItem("", L("자동 (Windows 언어)")), langItem("ko", "한국어"), langItem("en", "English")]) }),
       sep(),
-      item(`OK Cut ${prefs.version || ""}`, () => invoke("open_url", { url: "https://github.com/contenjoo/easycut" })),
+      item(`EasyCut ${prefs.version || ""}`, () => invoke("open_url", { url: "https://github.com/contenjoo/easycut" })),
     ]),
   });
   const menu = await M.Menu.new({ items: [file, edit, timeline, play, tools, help] });
@@ -275,14 +275,14 @@ export async function checkUpdate(userInitiated) {
   try {
     const u = await invoke("check_update");
     if (!u) {
-      if (userInitiated) await ask(L("최신 버전입니다"), L("지금 쓰는 오케이컷이 가장 새 버전입니다."), [{ label: L("확인"), value: 1, primary: true }]);
+      if (userInitiated) await ask(L("최신 버전입니다"), L("지금 쓰는 EasyCut이 가장 새 버전입니다."), [{ label: L("확인"), value: 1, primary: true }]);
       return;
     }
     let skipped = "";
     try { skipped = localStorage.getItem("skipUpdate") || ""; } catch (_) {}
     if (!userInitiated && skipped === u.version) return;
     const notes = (u.notes || "").slice(0, 700);
-    const choice = await ask(`${L("새 버전이 나왔습니다")}: 오케이컷 ${u.version}`, `${L("지금 쓰는 버전:")} ${u.current}\n\n${notes}`,
+    const choice = await ask(`${L("새 버전이 나왔습니다")}: EasyCut ${u.version}`, `${L("지금 쓰는 버전:")} ${u.current}\n\n${notes}`,
       [{ label: L("이 버전 건너뛰기"), value: "skip" }, { label: L("나중에"), value: "later" }, { label: L("업데이트"), value: "update", primary: true }]);
     if (choice === "skip") { try { localStorage.setItem("skipUpdate", u.version); } catch (_) {} return; }
     if (choice !== "update") return;

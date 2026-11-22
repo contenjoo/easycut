@@ -214,7 +214,7 @@ export async function run(cmd, args) {
 function render() {
   const name = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : T("newProject");
   $("#title").textContent = name + (S.dirty ? " — " + T("edited") : "");
-  document.title = `${name} — OK Cut`;
+  document.title = `${name} — EasyCut`;
   $('[data-cmd="undo"]').disabled = !S.canUndo;
   $('[data-cmd="redo"]').disabled = !S.canRedo;
   $("#empty-hint").style.display = U.clips().length ? "none" : "";
@@ -530,7 +530,7 @@ function importFiles(paths, place = null) {
 async function openProject(path) {
   if (!(await confirmDiscard())) return;
   if (!path) {
-    path = await tauri.dialog.open({ filters: [{ name: "OK Cut", extensions: ["easycut"] }] });
+    path = await tauri.dialog.open({ filters: [{ name: "EasyCut", extensions: ["easycut"] }] });
     if (!path) return;
   }
   S.sel.clear();
@@ -540,7 +540,7 @@ async function openProject(path) {
 async function saveProject(as = false) {
   let path = S.path;
   if (!path || as) {
-    path = await tauri.dialog.save({ defaultPath: `${T("newProject")}.easycut`, filters: [{ name: "OK Cut", extensions: ["easycut"] }] });
+    path = await tauri.dialog.save({ defaultPath: `${T("newProject")}.easycut`, filters: [{ name: "EasyCut", extensions: ["easycut"] }] });
     if (!path) return false;
   }
   if (await run("save_project", { path })) { toast(T("saved")); if (as || !S.path) buildMenu(); return true; }
@@ -734,7 +734,7 @@ const hexColor = (c) => "#" + [c.r, c.g, c.b].map((v) => Math.round(v * 255).toS
 
 /// 재생헤드 위치 장면을 PNG로 (맥 '현재 장면 PNG로 저장')
 async function snapshot() {
-  const base = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : "OK Cut";
+  const base = S.path ? S.path.split(/[\\/]/).pop().replace(/\.easycut$/, "") : "EasyCut";
   const path = await tauri.dialog.save({ defaultPath: `${base} ${U.fmt(S.time).replace(/[:.]/g, "-")}.png`, filters: [{ name: "PNG", extensions: ["png"] }] });
   if (!path) return;
   try { await invoke("snapshot_png", { path, time: S.time }); toast(L("장면을 저장했습니다")); } catch (e) { showError(e); }

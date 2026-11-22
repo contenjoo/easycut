@@ -153,7 +153,7 @@ fn resource(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
         let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
         if p.is_file() { return Ok(p); }
     }
-    Err("영상 생성 도구를 찾을 수 없습니다. 오케이컷을 다시 설치하세요.".into())
+    Err("영상 생성 도구를 찾을 수 없습니다. EasyCut을 다시 설치하세요.".into())
 }
 fn catalog(app: &AppHandle) -> Result<Value, String> {
     let p = resource(app, "skills.json")?;

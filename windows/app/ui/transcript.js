@@ -306,7 +306,7 @@ export async function sttSettings() {
   const draw = () => {
     box.innerHTML = `<h2>${L("음성 인식(STT) 설정")}</h2>
       <div class="row"><label>${L("언어")}</label><select id="st-lang">${LANGS.map(([v, n]) => `<option value="${v}" ${S.language === v ? "selected" : ""}>${L(n)}</option>`).join("")}</select></div>
-      <p class="hint">${st.engine ? "✅ " + L("Whisper 엔진 내장됨") : "⚠ " + L("Whisper 엔진을 찾을 수 없습니다. 오케이컷을 다시 설치해 주세요.")}</p>
+      <p class="hint">${st.engine ? "✅ " + L("Whisper 엔진 내장됨") : "⚠ " + L("Whisper 엔진을 찾을 수 없습니다. EasyCut을 다시 설치해 주세요.")}</p>
       <h3>${L("모델")}</h3>
       ${st.models.map((m) => `<div class="row model-row"><label style="width:auto;flex:1"><input type="radio" name="st-m" value="${m.id}" ${st.selected === m.id ? "checked" : ""}/> ${esc(L(m.label))}
           <span class="hint"> · ${Math.round(m.sizeMB)}MB</span></label>

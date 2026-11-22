@@ -100,9 +100,9 @@ fn read_request(conn: &mut TcpStream) -> Option<(Vec<(String, String)>, Vec<u8>)
 /// 실행 중인 앱으로 도구 호출을 보낸다
 fn call(name: &str, args: &Value) -> (String, bool) {
     let Ok(token) = std::fs::read_to_string(token_path()) else {
-        return ("오케이컷 앱이 실행 중이 아닙니다. 앱을 먼저 여세요.".into(), true);
+        return ("EasyCut 앱이 실행 중이 아닙니다. 앱을 먼저 여세요.".into(), true);
     };
-    let fail = || ("오케이컷 앱에 연결할 수 없습니다. 앱이 실행 중인지 확인하세요.".to_string(), true);
+    let fail = || ("EasyCut 앱에 연결할 수 없습니다. 앱이 실행 중인지 확인하세요.".to_string(), true);
     let Ok(mut s) = TcpStream::connect(("127.0.0.1", port())) else { return fail() };
     let _ = s.set_read_timeout(Some(Duration::from_secs(1500)));
     let body = json!({ "name": name, "input": args }).to_string();
@@ -142,7 +142,7 @@ pub fn run_mcp() {
                     "protocolVersion": params["protocolVersion"].as_str().unwrap_or("2025-06-18"),
                     "capabilities": { "tools": {} },
                     "serverInfo": { "name": "easycut", "version": env!("CARGO_PKG_VERSION") },
-                    "instructions": "오케이컷 영상 편집 앱을 조작합니다. 앱이 실행 중이어야 합니다. 먼저 get_project_state로 상태를 확인하세요.",
+                    "instructions": "EasyCut 영상 편집 앱을 조작합니다. 앱이 실행 중이어야 합니다. 먼저 get_project_state로 상태를 확인하세요.",
                 })
             }
             "ping" => reply["result"] = json!({}),

@@ -9,7 +9,7 @@ const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "heic", "gif", "tif", "tiff",
 const AUDIO_EXT: &[&str] = &["mp3", "wav", "m4a", "aac", "aif", "aiff", "flac", "ogg", "opus", "wma"];
 
 pub fn probe(path: &Path) -> Result<MediaAsset, String> {
-    let ffprobe = tools::find_tool("ffprobe").ok_or("ffprobe를 찾을 수 없습니다. 오케이컷을 다시 설치해 주세요.")?;
+    let ffprobe = tools::find_tool("ffprobe").ok_or("ffprobe를 찾을 수 없습니다. EasyCut을 다시 설치해 주세요.")?;
     let out = tools::command(&ffprobe)
         .args(["-v", "error", "-show_entries", "stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json"])
         .arg(path)
@@ -66,7 +66,7 @@ pub fn name_of(path: &Path) -> String {
 
 /// 모노 16bit PCM으로 오디오를 꺼낸다 (음성 인식 16kHz, 무음 분석 8kHz)
 pub fn pcm(path: &Path, rate: u32) -> Result<Vec<i16>, String> {
-    let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다. 오케이컷을 다시 설치해 주세요.")?;
+    let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다. EasyCut을 다시 설치해 주세요.")?;
     let mut child = tools::command(&ffmpeg)
         .args(["-v", "error", "-nostdin", "-i"])
         .arg(path)
@@ -199,7 +199,7 @@ pub fn strip_tags(s: &str) -> String {
 
 /// 바꾸기. (결과 파일, 안에 들어 있던 첫 텍스트 자막)
 pub fn convert(path: &Path, progress: impl Fn(f64, String), cancel: impl Fn() -> bool) -> Result<(std::path::PathBuf, Vec<easycut_core::Caption>), String> {
-    let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다. 오케이컷을 다시 설치해 주세요.")?;
+    let ffmpeg = tools::find_tool("ffmpeg").ok_or("ffmpeg를 찾을 수 없습니다. EasyCut을 다시 설치해 주세요.")?;
     let i = info(path)?;
     if i.video_codec.is_none() && !i.has_audio {
         return Err(format!("영상/오디오 트랙을 찾을 수 없습니다: {}", name_of(path)));
