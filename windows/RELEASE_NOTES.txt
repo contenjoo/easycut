@@ -1,3 +1,19 @@
+EasyCut for Windows 0.11.1
+
+[안정성]
+• 프로젝트 저장과 자동 저장이 임시 파일에 먼저 쓴 뒤 바꿔치기해서, 저장 중 꺼져도 기존 파일이 깨지지 않습니다.
+• 내보내기나 녹화 마무리 중에는 업데이트 설치를 미룹니다. 저장에 실패하면 앱을 닫지 않고 알려 줍니다.
+• 녹화 파일 쓰기에 실패하면 녹화를 멈추고 그때까지 쓴 부분을 남깁니다.
+• 앱을 닫으면 내보내기·방송 송출용 ffmpeg도 함께 종료됩니다.
+• 업데이트는 공식 릴리스 설치 파일만 받고, 제공되는 경우 체크섬을 확인합니다.
+
+[Stability]
+• Project saves and autosave write to a temp file first, so a crash mid-save no longer corrupts the project.
+• Updates wait while an export or recording finalize is running, and the app stays open if saving fails.
+• Recording stops and keeps what was written when a chunk cannot be saved.
+• Export and studio streaming ffmpeg processes now close with the app.
+• Updates only accept the official release installer and check its checksum when available.
+
 EasyCut for Windows 0.11.0
 
 방송 스튜디오에서 화면과 카메라를 배치하고 녹화 중 장면을 전환할 수 있습니다.
