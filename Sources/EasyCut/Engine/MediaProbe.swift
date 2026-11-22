@@ -123,8 +123,11 @@ enum AppPaths {
         return dir
     }
 
+    /// 셀프테스트처럼 지원 폴더만 따로 쓰는 경우에도 받아 둔 음성 인식 모델은 실제 폴더에서 읽는다
+    nonisolated(unsafe) static var useRealModels = false
+
     static var models: URL {
-        if Self.isNaturalEditTest {
+        if Self.isNaturalEditTest || useRealModels {
             return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("EasyCut/models", isDirectory: true)
         }
         let dir = support.appendingPathComponent("models", isDirectory: true)

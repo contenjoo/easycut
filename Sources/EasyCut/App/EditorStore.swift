@@ -1104,6 +1104,8 @@ final class EditorStore: ObservableObject {
         guard let data = try? enc.encode(project) else { return }
         if let url = projectURL {
             do {
+                // 백업을 못 남기면 원본을 덮어쓰지 않는다 (창 제목의 '편집됨' 유지, ⌘S로는 저장 가능)
+                guard backupBeforeFirstAutosave(url) else { return }
                 try data.write(to: url, options: .atomic)
                 dirty = false
             } catch {
@@ -1113,6 +1115,30 @@ final class EditorStore: ObservableObject {
             // 새 프로젝트는 '저장' 전까지 복구용 파일에 보관 (창 제목의 '편집됨'은 유지)
             try? data.write(to: Self.recoveryURL, options: .atomic)
         }
+    }
+
+    /// 이번 실행에서 자동 저장으로 처음 덮어쓰기 전, 연 파일을 `이름.easycut.bak`으로 한 번 남긴다.
+    /// 녹화 삽입·AI 편집처럼 사용자가 저장하지 않은 변경이 원본을 바로 바꿔도 되돌릴 수 있게.
+    private var autosaveBackedUp: Set<String> = []
+
+    @discardableResult
+    func backupBeforeFirstAutosave(_ url: URL) -> Bool {
+        guard !autosaveBackedUp.contains(url.path) else { return true }
+        guard FileManager.default.fileExists(atPath: url.path) else { autosaveBackedUp.insert(url.path); return true }
+        let bak = Self.autosaveBackupURL(for: url)
+        do {
+            if FileManager.default.fileExists(atPath: bak.path) { try FileManager.default.removeItem(at: bak) }
+            try FileManager.default.copyItem(at: url, to: bak)
+            autosaveBackedUp.insert(url.path)
+            return true
+        } catch {
+            showToast("자동 저장 전 백업 실패: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    nonisolated static func autosaveBackupURL(for url: URL) -> URL {
+        url.appendingPathExtension("bak")
     }
 
     func clearRecovery() {

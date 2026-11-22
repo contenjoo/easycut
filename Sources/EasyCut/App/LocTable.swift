@@ -297,6 +297,8 @@ enum LocTable {
         "대본 저장 완료": "Transcript saved",
         "장면을 PNG로 저장했습니다": "Saved the frame as PNG",
         "자동 저장 실패: {}": "Auto save failed: {}",
+        "자동 저장 전 백업 실패: {}": "Could not back up before auto save: {}",
+        "저장된 파일: {}": "Saved files: {}",
         "저장하지 않은 프로젝트가 있습니다": "There is an unsaved project",
         "{}에 자동으로 보관된 작업(미디어 {}개, 길이 {})을 다시 열까요?": "Reopen the work auto-saved at {} ({} media, length {})?",
         "복구": "Recover",

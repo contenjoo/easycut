@@ -20,6 +20,7 @@ enum SelfTest {
             dir = FileManager.default.temporaryDirectory.appendingPathComponent("easycut-selftest")
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        isolateFromRealApp(dir)
         let sem = DispatchSemaphore(value: 0)
         Task.detached {
             do { try await runAsync(dir) } catch {
@@ -33,6 +34,38 @@ enum SelfTest {
         }
         print(failures == 0 ? "\n모든 검사 통과" : "\n실패 \(failures)건")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// 셀프테스트 격리, 자동 저장 전 백업
+    @MainActor
+    static func testDataSafety(_ dir: URL) async {
+        print("▶ 데이터 보호")
+        check(AppPaths.support.path.hasPrefix(dir.path), "셀프테스트 지원 폴더가 작업 폴더 안: \(AppPaths.support.path)")
+        check(EditorStore.recoveryURL.path.hasPrefix(dir.path), "셀프테스트 복구 파일이 실제 앱과 분리됨")
+        check(UserDefaults.standard.object(forKey: "autosave") as? Bool == false, "셀프테스트 중 자동 저장 꺼짐")
+        let url = dir.appendingPathComponent("백업 검사.easycut")
+        let bak = EditorStore.autosaveBackupURL(for: url)
+        try? FileManager.default.removeItem(at: bak)
+        try? Data("원본".utf8).write(to: url)
+        let store = EditorStore()
+        check(store.backupBeforeFirstAutosave(url), "자동 저장 전 백업 성공")
+        check((try? String(contentsOf: bak, encoding: .utf8)) == "원본", "백업에 원본 내용 보존: \(bak.lastPathComponent)")
+        try? Data("자동 저장 1".utf8).write(to: url)
+        store.backupBeforeFirstAutosave(url)
+        check((try? String(contentsOf: bak, encoding: .utf8)) == "원본", "같은 실행에서 두 번째 자동 저장은 백업을 덮어쓰지 않음")
+    }
+
+    /// 실제 앱의 복구 파일·자동 저장을 건드리지 않도록 이 프로세스만 따로 쓴다.
+    /// 지원 폴더는 작업 폴더 아래로 옮기고(모델은 실제 폴더를 읽기만 함), 자동 저장은 끈다.
+    static func isolateFromRealApp(_ dir: URL) {
+        if (ProcessInfo.processInfo.environment["EASYCUT_SUPPORT_DIR"] ?? "").isEmpty {
+            setenv("EASYCUT_SUPPORT_DIR", dir.appendingPathComponent("support", isDirectory: true).path, 1)
+            AppPaths.useRealModels = true
+        }
+        let defaults = UserDefaults.standard
+        var domain = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        domain["autosave"] = false
+        defaults.setVolatileDomain(domain, forName: UserDefaults.argumentDomain)
     }
 
     /// `--audio-probe 파일 시간` : 앱과 같은 재생 경로로 해당 파일 소리 측정
@@ -57,6 +90,11 @@ enum SelfTest {
     }
 
     static func runAsync(_ dir: URL) async throws {
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "data-safety" {
+            await testDataSafety(dir)
+            return
+        }
+        await testDataSafety(dir)
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "effects" {
             try await testEffects(dir)
             return
