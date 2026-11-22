@@ -108,8 +108,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         // 화면 파일 (영상 + 마이크)
         try? FileManager.default.removeItem(at: options.screenURL)
         let sw = try AVAssetWriter(outputURL: options.screenURL, fileType: .mp4)
-        // 앱이 강제 종료돼도 마지막 몇 초 전까지는 재생되도록 조각으로 나눠 쓴다
-        sw.movieFragmentInterval = CMTime(seconds: 5, preferredTimescale: 600)
+        // movieFragmentInterval(조각 쓰기)은 쓰지 않는다. 실시간 녹화에서 버퍼가 늦거나 불규칙하게 오면
+        // AVAssetWriter가 -11800(-16341)으로 실패해 녹화가 중간에 끊긴다 (2026-11-22 실측: 화면 10초, 카메라 5초에서 실패).
         let bitrate = min(40_000_000, max(8_000_000, w * h * options.fps / 10))
         let sv = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
@@ -138,8 +138,6 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         if options.systemAudio {
             try? FileManager.default.removeItem(at: options.audioURL)
             let aw = try AVAssetWriter(outputURL: options.audioURL, fileType: .m4a)
-            // 앱이 강제 종료돼도 마지막 몇 초 전까지는 재생되도록 조각으로 나눠 쓴다
-            aw.movieFragmentInterval = CMTime(seconds: 5, preferredTimescale: 600)
             let ai = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
             ])
@@ -434,8 +432,6 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         let dims = CMVideoFormatDescriptionGetDimensions(fd)
         try? FileManager.default.removeItem(at: options.cameraURL)
         guard let w = try? AVAssetWriter(outputURL: options.cameraURL, fileType: .mp4) else { return }
-        // 앱이 강제 종료돼도 마지막 몇 초 전까지는 재생되도록 조각으로 나눠 쓴다
-        w.movieFragmentInterval = CMTime(seconds: 5, preferredTimescale: 600)
         let v = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(dims.width), AVVideoHeightKey: Int(dims.height),

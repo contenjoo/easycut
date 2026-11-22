@@ -59,6 +59,8 @@ enum SelfTest {
         check(!SpeechCheck.judge(frameRMS: [Float](repeating: 0, count: 200)).likelySpeech, "무음은 말소리 아님")
         let talk = (0..<200).map { i -> Float in i % 7 == 0 ? 0.002 : [0.02, 0.15, 0.06, 0.3, 0.01][i % 5] }
         check(SpeechCheck.judge(frameRMS: talk).likelySpeech, "크기가 오르내리는 소리는 말소리")
+        let drift = (0..<600).map { i in Float(0.004 + 0.01 * Double(i) / 600) }
+        check(!SpeechCheck.judge(frameRMS: drift).likelySpeech, "크기가 서서히 바뀌는 소리는 말소리 아님")
         let repeated = Array(repeating: ["이", "녀석이", "너무", "잘", "안", "돼"], count: 4).flatMap { $0 }
         check(SpeechCheck.looksRepetitive(repeated), "같은 문장 반복은 의심스러운 인식")
         check(!SpeechCheck.looksRepetitive("안녕하세요 오늘은 방송 스튜디오 녹화를 확인합니다 화면과 카메라가 잘 나오는지 봅시다 그리고 끝".split(separator: " ").map(String.init)),

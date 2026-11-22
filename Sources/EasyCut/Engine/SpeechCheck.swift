@@ -6,18 +6,28 @@ enum SpeechCheck {
     struct Result: Equatable {
         var activeRatio: Double  // 소리가 있는 50ms 구간 비율
         var spreadDB: Double     // 소리 있는 구간 음량의 상위 10%와 하위 10% 차이(dB). 말은 크고, 시험음·웅웅거림은 작다
-        var likelySpeech: Bool { activeRatio >= 0.05 && spreadDB >= 10 }
+        var likelySpeech: Bool { activeRatio >= 0.05 && spreadDB >= 13 }
     }
 
     /// 50ms 구간별 RMS(0…1)로 판정한다. 테스트하기 쉽게 분리.
+    /// 말은 음절·쉼 때문에 2초 안에서도 크기가 크게 오르내린다. 음량이 서서히 바뀌는 시험음·잡음과 구별하려고
+    /// 2초 창마다 상위 10%와 하위 10% 차이를 구해 그 중앙값을 쓴다.
     static func judge(frameRMS: [Float]) -> Result {
         let threshold: Float = 0.003   // 약 -50 dBFS
-        let active = frameRMS.filter { $0 > threshold }
-        guard !frameRMS.isEmpty, !active.isEmpty else { return Result(activeRatio: 0, spreadDB: 0) }
-        let sorted = active.sorted()
-        let low = sorted[Int(Double(sorted.count - 1) * 0.1)], high = sorted[Int(Double(sorted.count - 1) * 0.9)]
-        return Result(activeRatio: Double(active.count) / Double(frameRMS.count),
-                      spreadDB: Double(20 * log10(high / max(low, 1e-6))))
+        let activeCount = frameRMS.filter { $0 > threshold }.count
+        guard !frameRMS.isEmpty, activeCount > 0 else { return Result(activeRatio: 0, spreadDB: 0) }
+        var spreads: [Double] = []
+        var i = 0
+        while i < frameRMS.count {
+            let window = frameRMS[i..<min(i + 40, frameRMS.count)].filter { $0 > threshold }.sorted()
+            if window.count >= 10 {
+                let low = window[Int(Double(window.count - 1) * 0.1)], high = window[Int(Double(window.count - 1) * 0.9)]
+                spreads.append(Double(20 * log10(high / max(low, 1e-6))))
+            }
+            i += 40
+        }
+        let median = spreads.isEmpty ? 0 : spreads.sorted()[spreads.count / 2]
+        return Result(activeRatio: Double(activeCount) / Double(frameRMS.count), spreadDB: median)
     }
 
     /// 파일의 첫 오디오 트랙을 최대 `limit`초 읽어 판정한다. 읽지 못하면 nil(판정 보류 → 기존처럼 인식).
