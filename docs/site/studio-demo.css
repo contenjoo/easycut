@@ -112,7 +112,7 @@ easycut-studio-demo [hidden] { display: none !important; }
 .ecd-layout-pip::after { content: ""; position: absolute; width: 6px; height: 4px; right: 1px; bottom: 1px; border-radius: 1px; background: currentColor; }
 
 .ecd-backdrop { position: relative; display: inline-flex; margin: 0; color: #dedfd1; align-items: center; gap: 6px; }
-.ecd-beta-caption { color: #c6cbb9; font-size: 10px; white-space: nowrap; }
+.ecd-background-caption { color: #c6cbb9; font-size: 10px; white-space: nowrap; }
 .ecd-select-wrap { position: relative; display: flex; }
 .ecd-backdrop select {
   background-color: #2b2e27; color: inherit;
@@ -136,7 +136,7 @@ easycut-studio-demo [hidden] { display: none !important; }
 
 @container ecd (max-width: 530px) {
   .ecd-backdrop { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-  .ecd-beta-caption { font-size: 9px; }
+  .ecd-background-caption { font-size: 9px; }
   .ecd-backdrop select { height: 25px; }
 }
 

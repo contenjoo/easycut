@@ -4,9 +4,9 @@
 
 쉬운 컷 편집 + 음성 인식(STT) 대본 편집 + 자막 + AI 편집을 한 앱에 담은 Mac·Windows 설치형 영상 편집기입니다. macOS 1.13.0·Windows 0.7.0부터 원하는 내용을 설명해 애니메이션·설명·홍보 영상을 만들고 타임라인에서 편집할 수 있습니다.
 
-**[⬇︎ Mac 1.18.1 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.18.1/EasyCut-1.18.1.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
+**[⬇︎ Mac 1.19.0 내려받기](https://github.com/contenjoo/easycut/releases/download/v1.19.0/EasyCut-1.19.0.dmg)** · [소개 페이지](https://contenjoo.github.io/easycut/)
 
-윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.11.0/EasyCut_0.11.0_x64-setup.exe) · [Windows 출시 소식](https://github.com/contenjoo/easycut/releases/tag/win-v0.11.0) · 소스는 [`windows/`](windows)
+윈도우 버전: [EasyCut for Windows 내려받기](https://github.com/contenjoo/easycut/releases/download/win-v0.12.0/EasyCut_0.12.0_x64-setup.exe) · [Windows 출시 소식](https://github.com/contenjoo/easycut/releases/tag/win-v0.12.0) · 소스는 [`windows/`](windows)
 
 Mac과 Windows의 **방송 스튜디오**에서 Google 계정으로 YouTube 방송을 예약하거나 바로 송출할 수 있습니다. 화면과 카메라의 위치, 크기, 앞뒤 순서를 조절하세요. 방송 중 전환한 장면은 녹화가 끝나면 편집기에 구간별로 들어옵니다. [계정 연결 및 방송 안내](docs/youtube-studio.html)
 
@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/c82c022a-1c3b-4895-94b8-a49f6609b6f9
 
 **M1 이상 Apple Silicon Mac, macOS 14 이상**이 필요합니다.
 
-1. [EasyCut-1.18.1.dmg](https://github.com/contenjoo/easycut/releases/download/v1.18.1/EasyCut-1.18.1.dmg)를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
+1. [EasyCut-1.19.0.dmg](https://github.com/contenjoo/easycut/releases/download/v1.19.0/EasyCut-1.19.0.dmg)를 받아 열고 EasyCut을 응용 프로그램 폴더로 끌어 놓습니다.
 2. 처음 열 때 한 번: 프로젝트 자체 서명을 사용하고 Apple 공증을 받지 않아 경고가 뜨면 시스템 설정 › 개인정보 보호 및 보안 › **[그래도 열기]**
 3. Whisper 모델(574MB)은 대본 탭의 **[Whisper 켜기]**, 유튜브 도구(yt-dlp)는 링크 창의 **[유튜브 도구 설치]** 한 번으로 받습니다.
 
@@ -40,7 +40,7 @@ AI 편집은 선택 기능입니다. AI 탭에서 **[Claude로 로그인]** 또�
 
 ### Windows
 
-**Windows 10/11 64비트**에서 [EasyCut_0.11.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.11.0/EasyCut_0.11.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
+**Windows 10/11 64비트**에서 [EasyCut_0.12.0_x64-setup.exe](https://github.com/contenjoo/easycut/releases/download/win-v0.12.0/EasyCut_0.12.0_x64-setup.exe)를 실행합니다. 상단 **영상 만들기**에서 새 영상을 제작할 수 있습니다. 영상 생성에는 Node.js LTS·npm과 Chrome 또는 Edge를 준비하세요. 렌더링 패키지는 처음 한 번 앱 전용 폴더에 설치합니다.
 
 ## 소스에서 빌드
 
