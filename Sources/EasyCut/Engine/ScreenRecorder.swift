@@ -5,6 +5,7 @@ import AppKit
 /// 화면(ScreenCaptureKit) + 카메라·마이크(AVCaptureSession)를 각각 파일로 녹화한다.
 /// 화면 파일에는 마이크 소리가 함께 들어가고, 카메라 파일은 영상만 담는다.
 /// 모든 파일은 같은 시작 시각(호스트 시계)에서 시작해 같은 시각에 끝나므로 타임라인 0초에 나란히 놓으면 맞는다.
+/// 각 파일은 30초 구간으로 나눠 써서(SegmentedWriter) 앱이 강제 종료돼도 마감된 구간까지는 남는다.
 final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
 
@@ -55,15 +56,13 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     private let queue = DispatchQueue(label: "easycut.recorder")
     private let options: Options
     private var stream: SCStream?
-    private var screenWriter: AVAssetWriter?
-    private var screenVideo: AVAssetWriterInput?
-    private var screenAudio: AVAssetWriterInput?
-    private var camWriter: AVAssetWriter?
-    private var camVideo: AVAssetWriterInput?
+    private var screenWriter: SegmentedWriter?
+    private var hasMicTrack = false
+    private var camWriter: SegmentedWriter?
     private var startTime: CMTime?
     private var endTime: CMTime?
-    private var sysWriter: AVAssetWriter?
-    private var sysAudio: AVAssetWriterInput?
+    private var sysWriter: SegmentedWriter?
+    private var segmentTimer: DispatchSourceTimer?
     private var sysFrames = 0
     private var screenFrames = 0
     private var failed = false
@@ -120,11 +119,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
 
         // 화면 파일 (영상 + 마이크)
         try? FileManager.default.removeItem(at: options.screenURL)
-        let sw = try AVAssetWriter(outputURL: options.screenURL, fileType: .mp4)
         // movieFragmentInterval(조각 쓰기)은 쓰지 않는다. 실시간 녹화에서 버퍼가 늦거나 불규칙하게 오면
         // AVAssetWriter가 -11800(-16341)으로 실패해 녹화가 중간에 끊긴다 (2026-11-22 실측: 화면 10초, 카메라 5초에서 실패).
+        // 대신 SegmentedWriter가 30초마다 파일을 정상 마감하고 정지할 때 잇는다.
         let bitrate = min(40_000_000, max(8_000_000, w * h * options.fps / 10))
-        let sv = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        var screenTracks = [SegmentedWriter.Track(mediaType: .video, settings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: w, AVVideoHeightKey: h,
             AVVideoCompressionPropertiesKey: [
@@ -132,33 +131,22 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
                 AVVideoExpectedSourceFrameRateKey: options.fps,
                 AVVideoMaxKeyFrameIntervalKey: options.fps * 2,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                // B프레임을 끈다: 구간마다 인코더가 다시 시작해도 프레임 순서가 어긋나지 않아 깨끗하게 이어진다
+                AVVideoAllowFrameReorderingKey: false,
             ],
-        ])
-        sv.expectsMediaDataInRealTime = true
-        sw.add(sv)
+        ])]
         if options.microphone != nil {
-            let sa = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            screenTracks.append(.init(mediaType: .audio, settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 128_000,
-            ])
-            sa.expectsMediaDataInRealTime = true
-            sw.add(sa)
-            screenAudio = sa
+            ]))
         }
-        screenWriter = sw
-        screenVideo = sv
+        hasMicTrack = options.microphone != nil
 
         // 컴퓨터 소리 (별도 m4a)
-        if options.systemAudio {
-            try? FileManager.default.removeItem(at: options.audioURL)
-            let aw = try AVAssetWriter(outputURL: options.audioURL, fileType: .m4a)
-            let ai = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
-            ])
-            ai.expectsMediaDataInRealTime = true
-            aw.add(ai)
-            sysWriter = aw
-            sysAudio = ai
-        }
+        if options.systemAudio { try? FileManager.default.removeItem(at: options.audioURL) }
+        let sysTracks = [SegmentedWriter.Track(mediaType: .audio, settings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
+        ])]
 
         if !session.isRunning { try startDevices() }
 
@@ -194,12 +182,21 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
 
         // 모든 파일의 0초 = 지금
         let t0 = Self.hostNow
-        queue.sync {
+        try queue.sync {
+            screenWriter = try SegmentedWriter(finalURL: options.screenURL, fileType: .mp4, tracks: screenTracks, origin: t0)
+            if options.systemAudio {
+                sysWriter = try SegmentedWriter(finalURL: options.audioURL, fileType: .m4a, tracks: sysTracks, origin: t0)
+            }
             startTime = t0
-            sw.startWriting()
-            sw.startSession(atSourceTime: t0)
-            sysWriter?.startWriting()
-            sysWriter?.startSession(atSourceTime: t0)
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + 1, repeating: 1)
+            timer.setEventHandler { [weak self] in
+                guard let self, self.endTime == nil else { return }
+                let now = self.mediaNow()
+                for writer in [self.screenWriter, self.camWriter, self.sysWriter] { writer?.tick(now: now) }
+            }
+            timer.resume()
+            segmentTimer = timer
         }
         try await st.startCapture()
         try options.studio?.start()
@@ -277,6 +274,11 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
     }
 
     /// 지금이 녹화 파일의 몇 초인지 (멈춤 중이거나 녹화 전후면 nil)
+    /// 녹화 파일 기준 지금 시각 (일시정지 시간을 뺀 호스트 시각). 녹화 큐에서 부른다.
+    private func mediaNow() -> CMTime {
+        (paused ? (pauseStart ?? Self.hostNow) : Self.hostNow) - pauseOffset
+    }
+
     func currentMediaTime() -> Double? {
         queue.sync {
             guard let t0 = startTime, !paused, endTime == nil else { return nil }
@@ -326,56 +328,43 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         stopObservingDevices()
 
         // 큐에 남은 버퍼를 마저 쓴 뒤 닫는다
-        let (sw, cw) = queue.sync { (screenWriter, camWriter) }
+        let (sw, cw) = queue.sync { () -> (SegmentedWriter?, SegmentedWriter?) in
+            segmentTimer?.cancel()
+            segmentTimer = nil
+            return (screenWriter, camWriter)
+        }
         guard let sw, let t0 = startTime else { throw MediaError.failed("녹화가 시작되지 않았습니다.") }
-        guard screenFrames > 0, sw.status == .writing else {
-            sw.cancelWriting()
+        guard screenFrames > 0, sw.error == nil else {
+            let reason = sw.error.map { " (\($0.localizedDescription))" } ?? ""
+            queue.sync { screenFrames > 0 ? sw.cancelOpen() : sw.abandon() }
             // 화면이 실패해도 카메라·컴퓨터 소리는 정상일 수 있으니 지우지 않고 마무리해 둔다
             let (camURL, sysURL) = await finishSideWriters(camera: cw, at: t1)
-            throw MediaError.failed("화면이 녹화되지 않았습니다." + (sw.error.map { " (\($0.localizedDescription))" } ?? "")
-                                    + Self.savedFilesNote([camURL, sysURL]))
+            throw MediaError.failed("화면이 녹화되지 않았습니다." + reason + Self.savedFilesNote([camURL, sysURL]))
         }
-        queue.sync {
-            screenVideo?.markAsFinished()
-            screenAudio?.markAsFinished()
-            sw.endSession(atSourceTime: t1)
-        }
-        await sw.finishWriting()
+        queue.sync { sw.close(at: t1) }
         let (camURL, sysURL) = await finishSideWriters(camera: cw, at: t1)
-        guard sw.status == .completed else {
-            throw MediaError.failed("녹화 파일을 저장하지 못했습니다: \(sw.error?.localizedDescription ?? "")" + Self.savedFilesNote([camURL, sysURL]))
+        do {
+            _ = try await sw.finish()
+        } catch {
+            throw MediaError.failed("녹화 파일을 저장하지 못했습니다: \(error.localizedDescription)\n"
+                                    + L("구간 파일은 남겨 두었습니다. EasyCut을 다시 열면 이어 붙입니다.") + Self.savedFilesNote([camURL, sysURL]))
         }
         return Result(screen: options.screenURL, camera: camURL, systemAudio: sysURL,
                       duration: (t1 - t0).seconds, sceneChanges: sceneChanges)
     }
 
     /// 카메라·컴퓨터 소리 파일을 마무리한다. 화면 파일이 실패해도 따로 살린다.
-    private func finishSideWriters(camera cw: AVAssetWriter?, at t1: CMTime) async -> (URL?, URL?) {
-        let sw = queue.sync { () -> AVAssetWriter? in
-            if let cw, cw.status == .writing {
-                camVideo?.markAsFinished()
-                cw.endSession(atSourceTime: t1)
-            }
-            if let aw = sysWriter, aw.status == .writing, sysFrames > 0 {
-                sysAudio?.markAsFinished()
-                aw.endSession(atSourceTime: t1)
-            }
-            return sysWriter
+    /// 잇지 못하면 구간 파일을 남겨 두고(다음 실행에서 복구) nil을 돌려준다.
+    private func finishSideWriters(camera cw: SegmentedWriter?, at t1: CMTime) async -> (URL?, URL?) {
+        let sys = queue.sync { () -> SegmentedWriter? in
+            cw?.close(at: t1)
+            guard let aw = sysWriter else { return nil }
+            if sysFrames > 0 { aw.close(at: t1); return aw }
+            aw.abandon()   // 소리가 한 번도 오지 않음
+            return nil
         }
-        var camURL: URL?
-        if let cw, cw.status == .writing {
-            await cw.finishWriting()
-            if cw.status == .completed { camURL = options.cameraURL }
-        }
-        var sysURL: URL?
-        if let aw = sw {
-            if aw.status == .writing, sysFrames > 0 {
-                await aw.finishWriting()
-                if aw.status == .completed { sysURL = options.audioURL }
-            } else if aw.status == .writing {
-                aw.cancelWriting()   // 소리가 한 번도 오지 않은 빈 파일
-            }
-        }
+        let camURL = try? await cw?.finish()
+        let sysURL = try? await sys?.finish()
         return (camURL, sysURL)
     }
 
@@ -384,16 +373,20 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         return saved.isEmpty ? "" : "\n" + L("저장된 파일: \(saved.joined(separator: ", "))")
     }
 
-    /// 시작·저장 실패 시 스트림, 장치와 미완료 writer를 해제한다. 파일은 보존한다.
+    /// 시작·저장 실패 시 스트림, 장치와 미완료 writer를 해제한다. 마감된 구간 파일은 보존한다(다음 실행에서 복구).
     func cancel() async {
-        queue.sync { endTime = Self.hostNow }
+        queue.sync {
+            endTime = Self.hostNow
+            segmentTimer?.cancel()
+            segmentTimer = nil
+        }
         options.studio?.stop()
         try? await stream?.stopCapture()
         stream = nil
         if session.isRunning { session.stopRunning() }
         stopObservingDevices()
         queue.sync {
-            for writer in [screenWriter, camWriter, sysWriter].compactMap({ $0 }) where writer.status == .writing || writer.status == .unknown { writer.cancelWriting() }
+            for writer in [screenWriter, camWriter, sysWriter] { writer?.cancelOpen() }
         }
     }
 
@@ -403,9 +396,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         guard let t0 = startTime, endTime == nil, !paused, sb.isValid, sb.presentationTimeStamp >= t0 else { return }
         if type == .audio {
             options.studio?.systemAudio(sb)
-            guard let a = sysAudio, a.isReadyForMoreMediaData, sysWriter?.status == .writing,
-                  let buf = shifted(sb, clock: nil) else { return }
-            if a.append(buf) { sysFrames += 1 }
+            guard let aw = sysWriter, let buf = shifted(sb, clock: nil) else { return }
+            if aw.append(buf, track: 0) == .appended { sysFrames += 1 }
             return
         }
         guard type == .screen else { return }
@@ -414,8 +406,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
               let raw = atts.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
               let buf = shifted(sb, clock: nil) else { return }
         options.studio?.screen(buf)
-        guard let input = screenVideo, input.isReadyForMoreMediaData else { return }
-        if input.append(buf) { screenFrames += 1 } else { fail(screenWriter?.error) }
+        guard let sw = screenWriter else { return }
+        switch sw.append(buf, track: 0) {
+        case .appended: screenFrames += 1
+        case .dropped: break
+        case .failed: fail(sw.error)
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -428,8 +424,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         guard let t0 = startTime, endTime == nil, !paused, let buf = shifted(sb, clock: session.synchronizationClock),
               buf.presentationTimeStamp >= t0 else { return }
         options.studio?.microphone(buf)
-        guard let a = screenAudio, a.isReadyForMoreMediaData, screenWriter?.status == .writing else { return }
-        if !a.append(buf) { fail(screenWriter?.error) }
+        guard hasMicTrack, let sw = screenWriter else { return }
+        if sw.append(buf, track: 1) == .failed { fail(sw.error) }
     }
 
     private func recordCamera(_ sample: CMSampleBuffer) {
@@ -437,8 +433,8 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
               buf.presentationTimeStamp >= t0 else { return }
         options.studio?.camera(buf)
         if camWriter == nil { makeCameraWriter(from: buf, start: t0) }
-        guard let v = camVideo, v.isReadyForMoreMediaData, camWriter?.status == .writing else { return }
-        if !v.append(buf) { fail(camWriter?.error) }
+        guard let cw = camWriter else { return }
+        if cw.append(buf, track: 0) == .failed { fail(cw.error) }
     }
 
     /// 카메라 해상도는 첫 프레임을 보고 정한다
@@ -446,18 +442,12 @@ final class ScreenRecorder: NSObject, SCStreamOutput, SCStreamDelegate,
         guard let fd = sb.formatDescription else { return }
         let dims = CMVideoFormatDescriptionGetDimensions(fd)
         try? FileManager.default.removeItem(at: options.cameraURL)
-        guard let w = try? AVAssetWriter(outputURL: options.cameraURL, fileType: .mp4) else { return }
-        let v = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        camWriter = try? SegmentedWriter(finalURL: options.cameraURL, fileType: .mp4, tracks: [.init(mediaType: .video, settings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(dims.width), AVVideoHeightKey: Int(dims.height),
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 6_000_000, AVVideoMaxKeyFrameIntervalKey: 60],
-        ])
-        v.expectsMediaDataInRealTime = true
-        w.add(v)
-        w.startWriting()
-        w.startSession(atSourceTime: start)
-        camWriter = w
-        camVideo = v
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 6_000_000, AVVideoMaxKeyFrameIntervalKey: 60,
+                                              AVVideoAllowFrameReorderingKey: false],
+        ])], origin: start)
     }
 
     /// 버퍼 시간을 호스트 시계로 맞추고(카메라·마이크), 일시정지한 시간만큼 앞으로 당긴다

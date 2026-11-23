@@ -290,6 +290,7 @@
 "EasyCut은 선택한 YouTube 채널과 방송 목록을 읽고 방송을 예약·송출합니다. 계정 연결을 유지하는 인증 정보는 이 Mac의 키체인에 저장합니다." = "EasyCut reads your selected YouTube channel and broadcast list to schedule and stream broadcasts. The credentials that keep your account connected are stored in this Mac’s Keychain.";
 "EasyCut을 켜 둔 상태에서 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다." = "With EasyCut open, just say something like \"cut the silences in EasyCut\". The connection stays inside this Mac.";
 "EasyCut을 켜 둔 상태에서 Claude에게 \"EasyCut에서 무음 잘라줘\"처럼 말하면 됩니다. 연결은 이 Mac 안에서만 이뤄집니다." = "With EasyCut open, just tell Claude something like \"cut the silences in EasyCut\". The connection stays inside this Mac.";
+"EasyCut이 녹화 중에 종료되어, 마지막 30초 안쪽을 뺀 부분을 이어 붙였습니다." = "EasyCut quit while recording. Everything except the last 30 seconds or less was joined back together.";
 "Finder에서 보기" = "Show in Finder";
 "Google Cloud 열기" = "Open Google Cloud";
 "Google Cloud에서 YouTube Data API v3를 사용 설정하고 데스크톱 앱용 OAuth 클라이언트 JSON을 가져오세요." = "Enable YouTube Data API v3 in Google Cloud, then import your desktop app OAuth client JSON.";
@@ -447,6 +448,8 @@
 "구간 시작 (I)" = "Mark in (I)";
 "구간 시작 / 끝 지정" = "Set range start / end";
 "구간 잘라내기" = "Cut Range";
+"구간 파일은 남겨 두었고 다음 실행 때 다시 시도합니다." = "The segment files were kept and will be tried again next time.";
+"구간 파일은 남겨 두었습니다. EasyCut을 다시 열면 이어 붙입니다." = "The segment files were kept. EasyCut will join them the next time it opens.";
 "구간 해제  (X)" = "Clear Range  (X)";
 "구간 해제 (X)" = "Clear range (X)";
 "군더더기" = "Fillers";
@@ -490,6 +493,8 @@
 "끝 지점 (O) %lld" = "Mark out (O) %lld";
 "끝 효과" = "Exit";
 "끝=재생헤드" = "End = playhead";
+"끝나지 못한 녹화를 복구하지 못했습니다" = "Couldn't recover an unfinished recording";
+"끝나지 못한 녹화를 복구했습니다" = "Recovered an unfinished recording";
 "끝으로  (End)" = "Go to End  (End)";
 "끝으로 (End)" = "Go to end (End)";
 "끼워 넣어 순서 바꾸기 (⌥+끌기 = 자유 이동)" = "Insert to reorder (⌥+drag = free move)";
@@ -516,6 +521,12 @@
 "네트워크 오류입니다. 연결을 확인하고 다시 시도하세요." = "Network error. Check your connection and try again.";
 "노랑" = "Yellow";
 "녹화" = "Record";
+"녹화 구간 파일을 만들지 못했습니다." = "Couldn't create a recording segment file.";
+"녹화 구간을 이어 붙이지 못했습니다." = "Couldn't join the recording segments.";
+"녹화 구간을 이어 붙이지 못했습니다: %@" = "Couldn't join the recording segments: %@";
+"녹화 구간을 이어 붙이지 못했습니다: %lf" = "Couldn't join the recording segments: %lf";
+"녹화 구간을 이어 붙이지 못했습니다: %lld" = "Couldn't join the recording segments: %lld";
+"녹화 구간을 저장하지 못했습니다." = "Couldn't save a recording segment.";
 "녹화 및 라이브 시작" = "Record and go live";
 "녹화 범위" = "Record";
 "녹화 시작" = "Start Recording";
@@ -1177,6 +1188,7 @@
 "이미지" = "Image";
 "이미지 선택…" = "Choose image…";
 "이미지 저장 실패" = "Image save failed";
+"이어 붙일 녹화 구간이 없습니다." = "There are no recording segments to join.";
 "이전 / 다음 편집점" = "Previous / next edit point";
 "이전 / 다음 프레임" = "Previous / next frame";
 "이전 편집점  (↑)" = "Previous Edit Point  (↑)";

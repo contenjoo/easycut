@@ -60,6 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 MainActor.assumeIsolated {
                     store.offerRecovery()
+                    // 녹화 중 강제 종료로 남은 구간 파일을 이어 붙인다 (오래 걸릴 수 있어 기다리지 않음)
+                    Task { await RecordController.recoverInterruptedRecordings() }
                     self.ready = true
                     if !self.pending.isEmpty { let u = self.pending; self.pending = []; self.openURLs(u) }
                     Updater.checkInBackground(store: store)
