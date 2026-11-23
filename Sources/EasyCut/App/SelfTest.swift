@@ -37,6 +37,169 @@ enum SelfTest {
     }
 
     /// 셀프테스트 격리, 자동 저장 전 백업
+    /// 녹화 구간 쓰기: 정지하면 한 파일로 잇고, 강제 종료로 남은 구간은 다음 실행에서 복구한다
+    static func testRecordingSegments(_ dir: URL) async {
+        print("▶ 녹화 구간 쓰기·복구")
+        let root = dir.appendingPathComponent("segments", isDirectory: true)
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let tracks = [
+            SegmentedWriter.Track(mediaType: .video, settings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 240,
+                                                                AVVideoCompressionPropertiesKey: [AVVideoAllowFrameReorderingKey: false]]),
+            SegmentedWriter.Track(mediaType: .audio, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 96_000]),
+        ]
+        guard let pixel = makeGrayPixelBuffer(320, 240, 200) else { check(false, "테스트 프레임 만들기"); return }
+        let q = DispatchQueue(label: "selftest.segments")
+
+        /// 0초부터 `until`초까지 30fps 영상(gap 동안은 화면이 그대로라 프레임 없음)과 21ms 단위 소리를 넣는다
+        func feed(_ w: SegmentedWriter, until: Double, gap: ClosedRange<Double>?) {
+            var vt = 0.0, at = 0.0
+            while vt < until || at < until {
+                if at <= vt {
+                    if let sb = makeToneBuffer(at: at) { appendRetrying(w, sb, 1) }
+                    at += 1024.0 / 48000
+                } else {
+                    if gap?.contains(vt) != true, let sb = makeVideoBuffer(pixel, at: vt) { appendRetrying(w, sb, 0) }
+                    vt += 1.0 / 30
+                }
+                q.sync { w.tick(now: CMTime(seconds: min(vt, at), preferredTimescale: 600)) }
+            }
+        }
+        func appendRetrying(_ w: SegmentedWriter, _ sb: CMSampleBuffer, _ track: Int) {
+            for _ in 0..<200 {
+                if q.sync(execute: { w.append(sb, track: track) }) != .dropped { return }
+                usleep(2000)
+            }
+        }
+
+        // 1) 정상 정지: 1초 구간 4개를 한 파일로 잇는다. 1.2~2.6초는 화면이 그대로(프레임 없음)
+        let final = root.appendingPathComponent("녹화 화면.mp4")
+        do {
+            let w = try SegmentedWriter(finalURL: final, fileType: .mp4, tracks: tracks, origin: .zero, length: 1)
+            feed(w, until: 3.5, gap: 1.2...2.6)
+            q.sync { w.close(at: CMTime(seconds: 3.5, preferredTimescale: 600)) }
+            let url = try await w.finish()
+            let asset = AVURLAsset(url: url)
+            let d = (try? await asset.load(.duration).seconds) ?? 0
+            check(abs(d - 3.5) < 0.1, "구간 4개를 이은 길이 3.5초: \(d)")
+            let v = (try? await asset.loadTracks(withMediaType: .video)) ?? []
+            let a = (try? await asset.loadTracks(withMediaType: .audio)) ?? []
+            check(v.count == 1 && a.count == 1, "이은 파일의 영상·소리 트랙 하나씩: \(v.count)·\(a.count)")
+            if let vt = v.first {
+                let fds = (try? await vt.load(.formatDescriptions)) ?? []
+                check(fds.count == 1, "이은 영상 형식 정보 하나 (FFmpeg 호환): \(fds.count)")
+                // 구간마다 편집 목록이 생기면 FFmpeg가 프레임 시각을 잘못 읽는다
+                let segs = (try? await vt.load(.segments)) ?? []
+                check(segs.count <= 2, "이은 영상 편집 목록이 구간마다 생기지 않음 (FFmpeg 호환): \(segs.count)")
+            }
+            if let at = a.first, let r = try? await at.load(.timeRange) {
+                check(abs(r.duration.seconds - 3.5) < 0.1, "이은 소리 길이 3.5초 (구간 이음매 빈틈 없음): \(r.duration.seconds)")
+            }
+            // 화면이 그대로인 동안 시작한 2초 구간도 직전 프레임으로 채워져야 한다 (검은 화면 아님)
+            let gen = AVAssetImageGenerator(asset: asset)
+            gen.requestedTimeToleranceBefore = .zero
+            gen.requestedTimeToleranceAfter = .zero
+            if let img = try? await gen.image(at: CMTime(seconds: 2.3, preferredTimescale: 600)).image {
+                let lum = averageLuma(img)
+                check(lum > 150, "화면이 멈춘 동안 새 구간도 직전 화면 유지 (밝기 \(Int(lum)))")
+            } else {
+                check(false, "2.3초 프레임 읽기")
+            }
+            check(!FileManager.default.fileExists(atPath: SegmentedWriter.partsDir(for: final).path), "잇고 나면 구간 폴더 정리")
+        } catch {
+            check(false, "구간 녹화 정지: \(error.localizedDescription)")
+        }
+
+        // 2) 강제 종료: 마감된 구간(0~2초)만 남고, 쓰던 구간은 망가진 채 남는다
+        let crashed = root.appendingPathComponent("녹화 카메라.mp4")
+        do {
+            let w = try SegmentedWriter(finalURL: crashed, fileType: .mp4, tracks: tracks, origin: .zero, length: 1)
+            check(SegmentedWriter.leftovers(in: root).isEmpty, "녹화 중인 구간 폴더는 복구 대상 아님")
+            feed(w, until: 2.5, gap: nil)
+            q.sync { w.tick(now: CMTime(seconds: 4.6, preferredTimescale: 600)) }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)   // 마감 중인 구간 쓰기가 끝나길 기다림
+            q.sync { w.cancelOpen() }   // 강제 종료처럼 잠금이 풀린다
+            try? Data(repeating: 7, count: 4096).write(to: SegmentedWriter.partsDir(for: crashed).appendingPathComponent("part-00004.mp4"))
+            let left = SegmentedWriter.leftovers(in: root)
+            check(left.count == 1, "강제 종료로 남은 구간 폴더 찾음: \(left.count)")
+            if let d = left.first, let url = try await SegmentedWriter.recover(d) {
+                let dur = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+                check(url.lastPathComponent == crashed.lastPathComponent && abs(dur - 2.0) < 0.15,
+                      "망가진 구간은 건너뛰고 마감된 2초 복구: \(url.lastPathComponent) \(dur)")
+                check(!FileManager.default.fileExists(atPath: d.path), "복구하고 나면 구간 폴더 정리")
+            } else {
+                check(false, "강제 종료 녹화 복구")
+            }
+            // 같은 이름이 이미 있으면 덮어쓰지 않고 "(복구)" 이름으로 만든다
+            let w2 = try SegmentedWriter(finalURL: crashed, fileType: .mp4, tracks: tracks, origin: .zero, length: 1)
+            feed(w2, until: 1.2, gap: nil)
+            q.sync { w2.tick(now: CMTime(seconds: 3.1, preferredTimescale: 600)) }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            q.sync { w2.cancelOpen() }
+            if let d = SegmentedWriter.leftovers(in: root).first, let url = try await SegmentedWriter.recover(d) {
+                check(url.lastPathComponent == "녹화 카메라 (복구).mp4", "기존 파일 보존, 복구본 새 이름: \(url.lastPathComponent)")
+            } else {
+                check(false, "같은 이름 복구")
+            }
+        } catch {
+            check(false, "강제 종료 복구: \(error.localizedDescription)")
+        }
+    }
+
+    static func makeGrayPixelBuffer(_ w: Int, _ h: Int, _ value: UInt8) -> CVPixelBuffer? {
+        var pb: CVPixelBuffer?
+        CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pb)
+        guard let pb else { return nil }
+        CVPixelBufferLockBaseAddress(pb, [])
+        memset(CVPixelBufferGetBaseAddress(pb), Int32(value), CVPixelBufferGetDataSize(pb))
+        CVPixelBufferUnlockBaseAddress(pb, [])
+        return pb
+    }
+
+    static func makeVideoBuffer(_ pb: CVPixelBuffer, at t: Double) -> CMSampleBuffer? {
+        var fd: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pb, formatDescriptionOut: &fd)
+        guard let fd else { return nil }
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30), presentationTimeStamp: CMTime(seconds: t, preferredTimescale: 48000), decodeTimeStamp: .invalid)
+        var sb: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pb, formatDescription: fd, sampleTiming: &timing, sampleBufferOut: &sb)
+        return sb
+    }
+
+    /// 440Hz 16비트 모노 PCM 1024샘플
+    static func makeToneBuffer(at t: Double) -> CMSampleBuffer? {
+        let n = 1024
+        var asbd = AudioStreamBasicDescription(mSampleRate: 48000, mFormatID: kAudioFormatLinearPCM,
+                                               mFormatFlags: kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
+                                               mBytesPerPacket: 2, mFramesPerPacket: 1, mBytesPerFrame: 2, mChannelsPerFrame: 1, mBitsPerChannel: 16, mReserved: 0)
+        var fd: CMAudioFormatDescription?
+        CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &fd)
+        guard let fd else { return nil }
+        let start = Int((t * 48000).rounded())
+        var samples = (0..<n).map { i in Int16(sin(Double(start + i) * 2 * .pi * 440 / 48000) * 8000) }
+        var block: CMBlockBuffer?
+        CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: n * 2, blockAllocator: nil, customBlockSource: nil,
+                                           offsetToData: 0, dataLength: n * 2, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block)
+        guard let block else { return nil }
+        CMBlockBufferReplaceDataBytes(with: &samples, blockBuffer: block, offsetIntoDestination: 0, dataLength: n * 2)
+        var sb: CMSampleBuffer?
+        CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: nil, dataBuffer: block, formatDescription: fd, sampleCount: n,
+                                                             presentationTimeStamp: CMTime(value: CMTimeValue(start), timescale: 48000),
+                                                             packetDescriptions: nil, sampleBufferOut: &sb)
+        return sb
+    }
+
+    static func averageLuma(_ img: CGImage) -> Double {
+        let w = 16, h = 16
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var sum = 0.0
+        for i in stride(from: 0, to: px.count, by: 4) { sum += Double(px[i]) * 0.299 + Double(px[i + 1]) * 0.587 + Double(px[i + 2]) * 0.114 }
+        return sum / Double(w * h)
+    }
+
     @MainActor
     static func testDataSafety(_ dir: URL) async {
         print("▶ 데이터 보호")
@@ -239,7 +402,12 @@ enum SelfTest {
             await testDataSafety(dir)
             return
         }
+        if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "recording-segments" {
+            await testRecordingSegments(dir)
+            return
+        }
         await testDataSafety(dir)
+        await testRecordingSegments(dir)
         if ProcessInfo.processInfo.environment["EASYCUT_SELFTEST_ONLY"] == "effects" {
             try await testEffects(dir)
             return

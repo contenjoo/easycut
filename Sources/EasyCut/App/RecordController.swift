@@ -151,6 +151,39 @@ final class RecordController: ObservableObject {
         return d
     }
 
+    /// 녹화 중 강제 종료·크래시·전원 차단으로 끝나지 못한 녹화의 구간 파일을 이어 붙이고 알린다.
+    /// 마지막 구간(최대 약 30초)은 쓰던 중이라 잃는다.
+    static func recoverInterruptedRecordings() async {
+        let dirs = SegmentedWriter.leftovers(in: folder)
+        guard !dirs.isEmpty else { return }
+        var saved: [URL] = []
+        var failed: [String] = []
+        for d in dirs {
+            do {
+                if let u = try await SegmentedWriter.recover(d) { saved.append(u) }
+            } catch {
+                failed.append(error.localizedDescription)
+            }
+        }
+        guard !saved.isEmpty || !failed.isEmpty else { return }
+        let a = NSAlert()
+        a.messageText = saved.isEmpty ? "끝나지 못한 녹화를 복구하지 못했습니다" : "끝나지 못한 녹화를 복구했습니다"
+        var info: [String] = []
+        if !saved.isEmpty {
+            info.append(L("EasyCut이 녹화 중에 종료되어, 마지막 30초 안쪽을 뺀 부분을 이어 붙였습니다."))
+            info.append(saved.map(\.lastPathComponent).joined(separator: "\n"))
+        }
+        if !failed.isEmpty {
+            info.append(L("구간 파일은 남겨 두었고 다음 실행 때 다시 시도합니다.") + "\n" + failed.joined(separator: "\n"))
+        }
+        a.informativeText = info.joined(separator: "\n\n")
+        a.addButton(withTitle: "Finder에서 보기")
+        a.addButton(withTitle: "닫기")
+        if a.localized().runModal() == .alertFirstButtonReturn {
+            if saved.isEmpty { NSWorkspace.shared.open(folder) } else { NSWorkspace.shared.activateFileViewerSelecting(saved) }
+        }
+    }
+
     lazy var automation = AutomationRecording(owner: self)
     var isBusy: Bool { preparing || phase != .idle || automation.isBusy }
 
