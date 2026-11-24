@@ -16,7 +16,7 @@ mkdir -p "$ROOT/.build" "$ROOT/dist"
 WORK=$(mktemp -d "$ROOT/.build/app-build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 APP="$WORK/EasyCut.app"
-VERSION="1.19.1"
+VERSION="1.19.2"
 
 # 서명: 키체인에 'EasyCut Self-Signed' 인증서가 있으면 그것으로 (업데이트해도 macOS 권한이 유지됨), 없으면 ad-hoc
 SIGN_ID="${EASYCUT_SIGN_ID:-EasyCut Self-Signed}"
