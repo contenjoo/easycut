@@ -110,6 +110,27 @@ enum SelfTest {
             check(false, "구간 녹화 정지: \(error.localizedDescription)")
         }
 
+        // 1-1) 구간 하나로 끝난 짧은 녹화: 0.3초 뒤로 화면이 그대로여도 영상 트랙이 끝까지 이어져야 한다
+        let short = root.appendingPathComponent("짧은 녹화 화면.mp4")
+        do {
+            let w = try SegmentedWriter(finalURL: short, fileType: .mp4, tracks: tracks, origin: .zero, length: 30)
+            feed(w, until: 2.0, gap: 0.3...2.0)
+            q.sync { w.close(at: CMTime(seconds: 2.0, preferredTimescale: 600)) }
+            let asset = AVURLAsset(url: try await w.finish())
+            if let vt = try? await asset.loadTracks(withMediaType: .video).first, let r = try? await vt.load(.timeRange) {
+                check(abs(r.end.seconds - 2.0) < 0.1, "구간 하나짜리 녹화도 멈춘 화면이 끝까지 이어짐: \(r.end.seconds)")
+            } else {
+                check(false, "짧은 녹화 영상 트랙 읽기")
+            }
+            let gen = AVAssetImageGenerator(asset: asset)
+            gen.requestedTimeToleranceBefore = .zero
+            gen.requestedTimeToleranceAfter = .zero
+            let img = try? await gen.image(at: CMTime(seconds: 1.8, preferredTimescale: 600)).image
+            check(img.map { averageLuma($0) > 150 } == true, "짧은 녹화 1.8초에도 마지막 화면 표시")
+        } catch {
+            check(false, "짧은 녹화 정지: \(error.localizedDescription)")
+        }
+
         // 2) 강제 종료: 마감된 구간(0~2초)만 남고, 쓰던 구간은 망가진 채 남는다
         let crashed = root.appendingPathComponent("녹화 카메라.mp4")
         do {

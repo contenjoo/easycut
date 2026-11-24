@@ -249,15 +249,11 @@ final class SegmentedWriter {
                   let d = try? await asset.load(.duration), d.seconds > 0 else { continue }
             usable.append(Source(index: k, asset: asset, tracks: ts, duration: d))
         }
-        guard let first = usable.first else { throw NoUsableParts() }
+        guard !usable.isEmpty else { throw NoUsableParts() }
 
         try? fm.removeItem(at: url)
-        // 구간이 하나뿐이고 0초부터면 그대로 옮긴다
-        if usable.count == 1, first.index == 0 {
-            try fm.moveItem(at: first.asset.url, to: url)
-            return first.duration.seconds
-        }
-
+        // 구간이 하나여도 그대로 옮기지 않는다. 화면이 멈춰 있으면 구간 파일의 영상 트랙이
+        // 마지막으로 바뀐 프레임에서 끝나므로, 다시 묶으면서 마지막 프레임을 구간 끝까지 늘린다.
         let tmp = url.deletingLastPathComponent().appendingPathComponent(".merge-\(UUID().uuidString.prefix(8)).\(url.pathExtension)")
         do {
             let seconds = try await remux(usable, length: length, fileType: fileType, into: tmp)
