@@ -197,8 +197,13 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f
         }
         child.wait().is_ok_and(|s| s.success()) && std::fs::metadata(out).is_ok_and(|m| m.len() > 0)
     };
+    // 소리가 이미 AAC면 다시 압축하지 않는다 (1시간 소리를 다시 압축하면 몇 분 걸린다)
+    let audio_copy = media::audio_copyable(src);
     if audio_only {
         let out = dest.with_extension("m4a");
+        if audio_copy && run(&["-vn", "-c:a", "copy"], &out) {
+            return Ok(out);
+        }
         if run(&["-vn", "-c:a", "aac", "-b:a", "192k"], &out) {
             return Ok(out);
         }
@@ -212,7 +217,10 @@ fn finalize_file(src: &Path, dest: &Path, audio_only: bool, crop: Option<(f64, f
                 return Ok(out);
             }
         }
-        // 영상은 그대로, 소리는 맥에서도 열리게 AAC로
+        // 영상은 그대로, 소리는 맥에서도 열리게 AAC로 (이미 AAC면 소리도 그대로)
+        if is_mp4 && crop.is_none() && audio_copy && run(&["-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart"], &out) {
+            return Ok(out);
+        }
         if is_mp4 && crop.is_none() && run(&["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"], &out) {
             return Ok(out);
         }
@@ -248,23 +256,38 @@ pub fn finish(
         }).collect()
     };
     let dir = folder();
-    let mut out: HashMap<String, PathBuf> = HashMap::new();
-    let n = files.len().max(1) as f64;
-    for (i, (kind, src)) in files.iter().enumerate() {
-        if std::fs::metadata(src).map_or(0, |m| m.len()) == 0 {
-            continue;
-        }
-        let name = src.file_name().unwrap().to_string_lossy().replace(".rec", "");
-        let dest = dir.join(name);
-        let a2 = app.clone();
-        let base = i as f64 / n;
-        let crop = if kind == "screen" { area } else { None };
-        let r = finalize_file(src, &dest, kind == "system", crop, &move |v| job(&a2, "record", base + v / n, "녹화 파일 정리 중…"));
-        if let Ok(p) = r {
-            let _ = std::fs::remove_file(src);
-            out.insert(kind.clone(), p);
-        }
-    }
+    // 화면·카메라·소리 파일을 한꺼번에 정리한다. 진행률은 파일들의 평균
+    let n = files.len().max(1);
+    let progress = Mutex::new(vec![0.0_f64; n]);
+    let out: HashMap<String, PathBuf> = std::thread::scope(|s| {
+        let handles: Vec<_> = files
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, src))| std::fs::metadata(src).map_or(0, |m| m.len()) > 0)
+            .map(|(i, (kind, src))| {
+                let (dir, progress) = (&dir, &progress);
+                s.spawn(move || {
+                    let name = src.file_name().unwrap().to_string_lossy().replace(".rec", "");
+                    let dest = dir.join(name);
+                    let crop = if kind == "screen" { area } else { None };
+                    let report = |v: f64| {
+                        let avg = {
+                            let mut p = progress.lock().unwrap();
+                            p[i] = v;
+                            p.iter().sum::<f64>() / n as f64
+                        };
+                        job(app, "record", avg, "녹화 파일 정리 중…");
+                    };
+                    let r = finalize_file(src, &dest, kind == "system", crop, &report);
+                    r.ok().map(|p| {
+                        let _ = std::fs::remove_file(src);
+                        (kind.clone(), p)
+                    })
+                })
+            })
+            .collect();
+        handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
+    });
     job(app, "record", 1.0, "");
     let screen = out.get("screen").ok_or("녹화 파일을 만들지 못했습니다.")?;
     let mut sa = media::probe(screen)?;

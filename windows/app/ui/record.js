@@ -203,7 +203,7 @@ async function pickArea() {
 function pickMime(kind, resizable = false) {
   const mp4 = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1,opus", "video/mp4"];
   const webm = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
-  const cand = kind === "system" ? ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"] : resizable ? [...webm, ...mp4] : [...mp4, ...webm];
+  const cand = kind === "system" ? ["audio/mp4;codecs=mp4a.40.2", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"] : resizable ? [...webm, ...mp4] : [...mp4, ...webm];
   const found = cand.find((m) => MediaRecorder.isTypeSupported(m)) || "";
   return { mime: found, ext: found.startsWith("video/mp4") || found.startsWith("audio/mp4") ? "mp4" : "webm" };
 }

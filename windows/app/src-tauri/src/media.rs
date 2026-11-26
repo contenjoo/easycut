@@ -114,6 +114,7 @@ const CONVERTIBLE: &[&str] = &["mkv", "webm", "avi", "flv", "wmv", "ts", "mts", 
 struct Info {
     video_codec: Option<String>,
     has_audio: bool,
+    audio_codec: Option<String>,
     text_subtitle: bool,
     duration: f64,
 }
@@ -129,18 +130,28 @@ fn info(path: &Path) -> Result<Info, String> {
         return Err(format!("파일을 읽을 수 없습니다: {}", name_of(path)));
     }
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
-    let mut i = Info { video_codec: None, has_audio: false, text_subtitle: false, duration: 0.0 };
+    let mut i = Info { video_codec: None, has_audio: false, audio_codec: None, text_subtitle: false, duration: 0.0 };
     for st in v["streams"].as_array().into_iter().flatten() {
         let name = st["codec_name"].as_str().unwrap_or("");
         match st["codec_type"].as_str() {
             Some("video") if i.video_codec.is_none() && name != "mjpeg" && name != "png" => i.video_codec = Some(name.to_string()),
-            Some("audio") => i.has_audio = true,
+            Some("audio") => {
+                i.has_audio = true;
+                if i.audio_codec.is_none() {
+                    i.audio_codec = Some(name.to_string());
+                }
+            }
             Some("subtitle") if ["subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"].contains(&name) => i.text_subtitle = true,
             _ => {}
         }
     }
     i.duration = v["format"]["duration"].as_str().and_then(|d| d.parse().ok()).unwrap_or(0.0);
     Ok(i)
+}
+
+/// 소리를 다시 압축하지 않고 그대로 옮겨도 되나: 소리가 없거나 AAC면 맥에서도 그대로 열린다
+pub fn audio_copyable(path: &Path) -> bool {
+    matches!(info(path), Ok(i) if !i.has_audio || i.audio_codec.as_deref() == Some("aac"))
 }
 
 /// 가져오기 전에 바꿔야 하나: 위 확장자, 또는 H.264가 아닌 영상(HEVC·VP9·AV1 등, 윈도우에서 재생이 안 되거나 맥과 호환이 안 됨)
