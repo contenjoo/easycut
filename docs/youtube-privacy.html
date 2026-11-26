@@ -12,7 +12,7 @@ a{color:#17589a;text-underline-offset:.18em}h1,h2{line-height:1.35}h1{font-size:
 <body><main>
 <nav><a href="youtube-studio.html">EasyCut 방송 스튜디오 안내</a></nav>
 <h1>EasyCut의 YouTube 연동 개인정보처리방침</h1>
-<p><small>주식회사 오늘배움 · 2026년 11월 22일</small></p>
+<p><small>주식회사 오늘배움 · 2026년 11월 26일</small></p>
 <p>EasyCut의 Mac·Windows용 방송 스튜디오는 Google 로그인을 통해 본인의 YouTube 채널에 라이브 방송을 예약하고 송출할 수 있는 기능입니다. 이 안내는 방송 스튜디오에서 Google 계정을 연결할 때 적용됩니다.</p>
 <h2>어떤 정보를 왜 사용하는지</h2>
 <p>계정을 연결하면 앱은 YouTube Data API를 통해 사용자가 선택한 채널의 이름과 식별자를 확인합니다. 방송 예약에는 제목, 시작 예정 시각, 공개 범위와 아동용 콘텐츠 여부를 사용합니다. 앱은 선택한 예약의 송출 주소를 받아 방송을 시작하고 종료 상태를 확인합니다. Google 동의 화면에 표시되는 YouTube 계정 관리 권한은 이 작업을 수행하는 데 사용됩니다.</p>
@@ -20,6 +20,13 @@ a{color:#17589a;text-underline-offset:.18em}h1,h2{line-height:1.35}h1{font-size:
 <p>계정 연결을 유지하는 인증 정보는 Mac에서는 해당 사용자의 키체인에, Windows에서는 해당 사용자의 자격 증명 관리자에 저장합니다. Windows 자격 증명에는 연결된 채널의 이름과 식별자도 함께 보관합니다.</p>
 <p>앱은 이 기기에서 만든 예약을 다시 불러오기 위해 채널별 방송 식별자를 보관합니다. Mac은 앱 설정을 사용합니다. Windows는 앱 데이터 폴더의 <code>youtube-broadcasts.json</code>에 방송 식별자와 전용 스트림 식별자를 저장합니다. 송출용 키는 인코더를 연결하는 동안에만 사용합니다.</p>
 <p>예약 정보는 사용자의 Google 계정을 통해 YouTube로 전송됩니다. 라이브를 시작하면 선택한 화면과 소리가 해당 YouTube 채널로 전송됩니다. 방송 공개 범위는 사용자가 예약할 때 정하며 기본값은 비공개입니다. 녹화 원본과 편집 프로젝트는 사용자의 기기에 저장됩니다. 이 연동 기능은 Google 인증 정보나 방송 영상을 오늘배움 서버에 전송하지 않습니다.</p>
+<section id="sharing"><h2>Google 사용자 데이터의 제공 대상과 목적</h2>
+<h3>Google LLC(YouTube)가 받는 정보</h3>
+<p>사용자가 방송을 예약하면 EasyCut은 기기에서 Google LLC(YouTube)로 제목, 시작 예정 시각, 공개 범위와 아동용 콘텐츠 여부를 전송합니다. 앱은 채널을 확인하고 방송과 스트림을 연결하며 방송 상태를 조회하거나 종료할 때 Google 액세스 토큰으로 요청을 인증하고 해당 방송·스트림 식별자를 사용합니다. 라이브를 시작하면 사용자가 송출하도록 선택한 영상과 음성이 YouTube로 전송됩니다.</p>
+<h3>시청자가 볼 수 있는 정보</h3>
+<p>YouTube는 방송 제목과 송출 영상·음성을 채널 소유자가 정한 공개 범위에 따라 시청자에게 표시합니다. 공개 방송은 누구나, 일부 공개 방송은 링크를 가진 사람이, 비공개 방송은 채널 소유자와 YouTube에서 시청 권한을 부여한 사람만 볼 수 있습니다. 시청자에게 OAuth 토큰이나 송출용 스트림 키가 제공되지는 않습니다.</p>
+<p>이 YouTube 연동에서 EasyCut이 Google 사용자 데이터를 전송하는 외부 서비스 제공자는 Google LLC(YouTube)입니다. EasyCut은 이 데이터를 오늘배움 서버로 수집하거나 광고주, 분석 서비스 또는 데이터 중개업체에 제공·판매하지 않습니다.</p>
+<div lang="en"><h3>Who receives Google user data?</h3><p>Google LLC (YouTube) receives the broadcast title, scheduled start time, privacy setting and made-for-kids designation to schedule the broadcast. EasyCut authenticates requests with a Google access token and uses broadcast and stream identifiers to connect, monitor and end the broadcast. When the user starts streaming, Google LLC (YouTube) receives the selected video and audio.</p><p>YouTube viewers can see the broadcast title and streamed content according to the channel owner’s settings: anyone for public broadcasts, people with the link for unlisted broadcasts, and the owner and authorized viewers for private broadcasts. Viewers do not receive OAuth tokens or stream keys. EasyCut does not send Google user data from this integration to Learn Today servers, advertisers, analytics providers or data brokers.</p></div></section>
 <h2>연결 해제와 데이터 삭제</h2>
 <ul>
 <li>Mac의 방송 스튜디오에서는 <strong>방송 일정 → 계정 연결 해제</strong>를 누릅니다. Windows에서는 <strong>송출 설정 → 목적지 → YouTube Live</strong>에서 <strong>계정 연결 해제</strong>를 누릅니다. 앱이 해당 사용자의 인증 정보를 지우고 Google에 접근 권한 철회를 요청합니다. Google 계정에서도 직접 권한을 취소할 수 있습니다. <a href="https://myaccount.google.com/connections">서드 파티 연결 관리</a></li>
